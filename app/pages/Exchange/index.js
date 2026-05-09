@@ -141,11 +141,37 @@ class Exchange extends Component {
   }
 
   canUseMarketplaceActions() {
+    return this.isBobReadyForMarketplace() && this.isMarketReadyForActions();
+  }
+
+  isBobReadyForMarketplace() {
     return this.props.nodeProgress >= 1 && !this.props.walletSync;
   }
 
+  isMarketReadyForActions() {
+    const { marketStatus } = this.state;
+
+    if (!marketStatus || marketStatus.reachable === false)
+      return false;
+
+    if (typeof marketStatus.progress !== 'number')
+      return true;
+
+    return marketStatus.progress >= 0.99;
+  }
+
+  getMarketplaceNotReadyMessage() {
+    if (!this.isBobReadyForMarketplace())
+      return this.context.t('marketplaceWaitForSync');
+
+    if (!this.isMarketReadyForActions())
+      return this.context.t('marketplaceWaitForMarketSync');
+
+    return '';
+  }
+
   showMarketplaceNotReady() {
-    this.props.showError(this.context.t('marketplaceWaitForSync'));
+    this.props.showError(this.getMarketplaceNotReadyMessage());
   }
 
   refreshMarketplace = async () => {
@@ -768,7 +794,7 @@ class Exchange extends Component {
       walletSync,
       walletHeight,
       rescanHeight,
-      chainHeight,
+      height,
       isCustomRPCConnected,
     } = this.props;
     const {
@@ -785,6 +811,10 @@ class Exchange extends Component {
     const marketProgress = marketStatus && typeof marketStatus.progress === 'number'
       ? Math.min(100, marketStatus.progress * 100).toFixed(2)
       : null;
+    const marketIsSyncing = marketReachable
+      && typeof marketStatus.progress === 'number'
+      && marketStatus.progress < 0.99;
+    const marketplaceNotReadyMessage = this.getMarketplaceNotReadyMessage();
 
     return (
       <div className="exchange-readiness">
@@ -797,11 +827,13 @@ class Exchange extends Component {
         <div className="exchange-readiness__item">
           <div className="exchange-readiness__label">{t('bobSync')}</div>
           <div className={classNames('exchange-readiness__value', {
-            'exchange-readiness__value--ready': this.canUseMarketplaceActions(),
-            'exchange-readiness__value--waiting': !this.canUseMarketplaceActions(),
+            'exchange-readiness__value--ready': this.isBobReadyForMarketplace(),
+            'exchange-readiness__value--waiting': !this.isBobReadyForMarketplace(),
           })}>
-            {this.canUseMarketplaceActions()
-              ? `${t('ready')} (${chainHeight})`
+            {this.isBobReadyForMarketplace()
+              ? height
+                ? `${t('ready')} (${height})`
+                : t('ready')
               : walletSync && walletPercent
                 ? `${t('rescanning')} ${walletPercent}%`
                 : `${t('synchronizing')} ${nodePercent}%`}
@@ -817,14 +849,14 @@ class Exchange extends Component {
               ? t('checking')
               : marketReachable
                 ? marketProgress
-                  ? `${t('online')} (${marketProgress}%)`
+                  ? `${marketIsSyncing ? t('synchronizing') : t('online')} (${marketProgress}%)`
                   : t('online')
                 : t('unreachable')}
           </div>
         </div>
-        {!this.canUseMarketplaceActions() && (
+        {marketplaceNotReadyMessage && (
           <div className="exchange-readiness__note">
-            {t('marketplaceWaitForSync')}
+            {marketplaceNotReadyMessage}
           </div>
         )}
         {marketStatusCheckedAt && (

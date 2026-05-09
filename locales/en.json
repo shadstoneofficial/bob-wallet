@@ -218,6 +218,7 @@
   "learnHnsSellerLockWarning": "This starts a real on-chain transfer. Use only a name you are willing to list, and back up your Exchange listing data after the transfer is submitted.",
   "spvMarketplaceEnabled": "SPV mode can browse and buy marketplace listings after Bob finishes syncing. Creating seller listings still requires full-node mode.",
   "marketplaceWaitForSync": "Marketplace actions are paused until Bob finishes syncing and wallet rescanning.",
+  "marketplaceWaitForMarketSync": "Marketplace buying is paused until LearnHNS Market finishes syncing its Handshake node.",
   "bobMode": "Bob Mode",
   "bobSync": "Bob Sync",
   "spvMode": "SPV Mode",
