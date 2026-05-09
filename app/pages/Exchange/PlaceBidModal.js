@@ -21,7 +21,7 @@ export class PlaceBidModal extends Component {
     const {t} = this.context;
 
     return (
-      <MiniModal title={t('placeBid')} onClose={() => {
+      <MiniModal title={t('buyMarketplaceName')} onClose={() => {
         if (this.props.isPlacingBid) {
           return;
         }
@@ -36,7 +36,7 @@ export class PlaceBidModal extends Component {
             />
           )}
           <p>
-            {t('shakedexPlaceBidWarning')}
+            {t('marketplaceBuyWarning')}
           </p>
           <table className="place-bid-modal__table">
             <tbody>
@@ -65,7 +65,7 @@ export class PlaceBidModal extends Component {
               onClick={() => this.props.placeExchangeBid(auction, bid)}
               disabled={this.props.isPlacingBid}
             >
-              {this.props.isPlacingBid ? t('loading') : t('fulfillAuction')}
+              {this.props.isPlacingBid ? t('loading') : t('confirmBuy')}
             </button>
           </div>
         </div>

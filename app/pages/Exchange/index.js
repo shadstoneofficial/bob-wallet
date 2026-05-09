@@ -45,6 +45,7 @@ import { Auction } from 'shakedex/src/auction.js';
 
 const analytics = aClientStub(() => require('electron').ipcRenderer);
 const shakedex = sClientStub(() => require('electron').ipcRenderer);
+const MARKET_API_HOST = process.env.LEARNHNS_MARKET_API_HOST || 'market.learnhns.com';
 
 class Exchange extends Component {
   static propTypes = {
@@ -80,7 +81,7 @@ class Exchange extends Component {
     analytics.screenView('Exchange');
     this.props.getExchangeFullfillments();
     this.props.getExchangeListings();
-    if (this.props.network === 'main')
+    if (this.isMarketplaceVisible())
       this.fetchShakedex();
   }
 
@@ -99,6 +100,10 @@ class Exchange extends Component {
     } catch (e) {
       this.setState({ isLoading: false });
     }
+  }
+
+  isMarketplaceVisible() {
+    return this.props.network === 'main' || Boolean(process.env.LEARNHNS_MARKET_API_HOST);
   }
 
   getCurrentBidForAuction = async (auction) => {
@@ -207,13 +212,16 @@ class Exchange extends Component {
   onClickDownload = async (auction) => {
     try {
       const submission = {
+        version: auction.version || 2,
         lockingOutputIdx: auction.lockingOutputIdx,
         lockingTxHash: auction.lockingTxHash,
         name: auction.name,
         paymentAddr: auction.paymentAddr,
         publicKey: auction.publicKey,
+        feeAddr: auction.feeAddr || null,
         data: auction.bids.map(bid => ({
           price: bid.price,
+          fee: bid.fee || 0,
           lockTime: bid.lockTime,
           signature: bid.signature,
         })),
@@ -421,7 +429,7 @@ class Exchange extends Component {
           )}
         </Table>
 
-        {this.props.network === 'main' ? <><h2>{t('liveAuctions')}</h2>
+        {this.isMarketplaceVisible() ? <><h2>{t('learnHnsMarketplace')}</h2>
         <Table className="exchange-table">
           <Header />
           {this.state.isLoading && (
@@ -434,7 +442,7 @@ class Exchange extends Component {
           {!this.state.isLoading && !this.props.auctions.length && (
             <TableRow>
               <TableItem>
-                {t('noAuctionsFound')}
+                {t('noMarketplaceListingsFound')}
               </TableItem>
             </TableRow>
           )}
@@ -689,11 +697,11 @@ class Exchange extends Component {
       <TableRow
         key={auction.id}
         className="exchange__auction-listing__row"
-        onClick={() => shell.openExternal(`https://market.learnhns.com/listing/${auction.name}`)}
+        onClick={() => shell.openExternal(`https://${MARKET_API_HOST}/listing/${auction.name}`)}
       >
         <TableItem>{formatName(auction.name)}</TableItem>
         <TableItem>{currentPriceText}</TableItem>
-        <TableItem>{this.renderNextBid(auction)}</TableItem>
+        <TableItem>{this.renderMarketplaceMode(auction)}</TableItem>
         <TableItem>
           {
             !auction.spendingStatus && (
@@ -709,7 +717,7 @@ class Exchange extends Component {
                     });
                   }}
                 >
-                  {t('fill')}
+                  {t('buyNow')}
                 </div>
                 <div
                   className="bid-action__link"
@@ -764,6 +772,14 @@ class Exchange extends Component {
 
     return moment(nextBid.lockTime*1000).fromNow();
   }
+
+  renderMarketplaceMode(auction) {
+    if (isFixedPriceAuction(auction)) {
+      return this.context.t('buyNow');
+    }
+
+    return this.renderNextBid(auction);
+  }
 }
 
 class Header extends Component {
@@ -774,12 +790,16 @@ class Header extends Component {
     return (
       <HeaderRow>
         <HeaderItem>{t('domain')}</HeaderItem>
-        <HeaderItem>{t('currentBid')}</HeaderItem>
-        <HeaderItem>{t('nextBid')}</HeaderItem>
+        <HeaderItem>{t('marketplacePrice')}</HeaderItem>
+        <HeaderItem>{t('listingMode')}</HeaderItem>
         <HeaderItem />
       </HeaderRow>
     );
   }
+}
+
+function isFixedPriceAuction(auction) {
+  return Array.isArray(auction?.bids) && auction.bids.length === 1;
 }
 
 export default connect(
