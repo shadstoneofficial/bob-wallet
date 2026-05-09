@@ -81,6 +81,56 @@
   display: flex;
 }
 
+.bid-action__link--disabled {
+  color: $manatee-gray;
+  cursor: not-allowed;
+}
+
+.exchange-readiness {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: .75rem;
+  margin-bottom: 1rem;
+  padding: .85rem 1rem;
+  border: 1px solid $athens-gray;
+  border-radius: 8px;
+  background: $white;
+}
+
+.exchange-readiness__item {
+  min-width: 10rem;
+}
+
+.exchange-readiness__label {
+  color: $manatee-gray;
+  font-size: .625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  margin-bottom: .25rem;
+}
+
+.exchange-readiness__value {
+  color: $dark-grey;
+  font-size: .875rem;
+  font-weight: 600;
+}
+
+.exchange-readiness__value--ready {
+  color: $success-green;
+}
+
+.exchange-readiness__value--waiting {
+  color: $school-bus-yellow;
+}
+
+.exchange-readiness__note {
+  flex: 1 0 100%;
+  color: $manatee-gray;
+  font-size: .75rem;
+  line-height: 1.2rem;
+}
+
 .exchange-table {
   .loader {
     height: 1rem;

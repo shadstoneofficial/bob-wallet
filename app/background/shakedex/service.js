@@ -140,12 +140,15 @@ async function getMarketListingCoin(auction) {
   return data.coin;
 }
 
-async function getMarketHsdStatus() {
+export async function getMarketHsdStatus() {
   try {
     const resp = await fetch(`${MARKET_API_BASE_URL}/api/v2/hsd/status`);
     return await resp.json();
   } catch (e) {
-    return null;
+    return {
+      reachable: false,
+      error: e.message,
+    };
   }
 }
 
@@ -655,6 +658,7 @@ const methods = {
   listAuction,
   getFeeInfo,
   getBestBid,
+  getMarketHsdStatus,
 };
 
 export async function start(server) {

@@ -50,6 +50,11 @@ const MARKET_API_HOST = process.env.LEARNHNS_MARKET_API_HOST || 'market.learnhns
 class Exchange extends Component {
   static propTypes = {
     spv: PropTypes.bool.isRequired,
+    nodeProgress: PropTypes.number,
+    walletSync: PropTypes.bool.isRequired,
+    walletHeight: PropTypes.number.isRequired,
+    rescanHeight: PropTypes.number,
+    isCustomRPCConnected: PropTypes.bool.isRequired,
     deeplinkParams: PropTypes.object.isRequired,
     clearDeeplinkParams: PropTypes.func.isRequired,
     network: PropTypes.string.isRequired,
@@ -74,6 +79,8 @@ class Exchange extends Component {
       isLoading: true,
       shakedexDeprecatedToggle: false,
       currentBidsMap: new Map(),
+      marketStatus: null,
+      marketStatusLoading: false,
     };
   }
 
@@ -81,8 +88,10 @@ class Exchange extends Component {
     analytics.screenView('Exchange');
     this.props.getExchangeFullfillments();
     this.props.getExchangeListings();
-    if (this.isMarketplaceVisible())
+    if (this.isMarketplaceVisible()) {
       this.fetchShakedex();
+      this.fetchMarketStatus();
+    }
   }
 
   async componentDidUpdate(prevProps, prevState) {
@@ -102,8 +111,35 @@ class Exchange extends Component {
     }
   }
 
+  async fetchMarketStatus() {
+    try {
+      this.setState({ marketStatusLoading: true });
+      const marketStatus = await shakedex.getMarketHsdStatus();
+      this.setState({
+        marketStatus,
+        marketStatusLoading: false,
+      });
+    } catch (e) {
+      this.setState({
+        marketStatus: {
+          reachable: false,
+          error: e.message,
+        },
+        marketStatusLoading: false,
+      });
+    }
+  }
+
   isMarketplaceVisible() {
     return this.props.network === 'main' || Boolean(process.env.LEARNHNS_MARKET_API_HOST);
+  }
+
+  canUseMarketplaceActions() {
+    return this.props.nodeProgress >= 1 && !this.props.walletSync;
+  }
+
+  showMarketplaceNotReady() {
+    this.props.showError(this.context.t('marketplaceWaitForSync'));
   }
 
   getCurrentBidForAuction = async (auction) => {
@@ -349,18 +385,21 @@ class Exchange extends Component {
     }
 
     const isSpv = this.props.spv;
+    const canUseMarketplaceActions = this.canUseMarketplaceActions();
 
     return (
       <div className="exchange">
+        {this.isMarketplaceVisible() && this.renderReadinessPanel()}
         {!isSpv && (
           <>
             <div className="exchange__button-header">
               <h2>{t('yourListings')}</h2>
               <button
                 className="exchange__button-header-button extension_cta_button"
-                onClick={() => this.setState({
-                  isPlacingListing: true,
-                })}
+                disabled={!canUseMarketplaceActions}
+                onClick={() => canUseMarketplaceActions
+                  ? this.setState({ isPlacingListing: true })
+                  : this.showMarketplaceNotReady()}
               >
                 {t('createListing')}
               </button>
@@ -438,7 +477,7 @@ class Exchange extends Component {
         {this.isMarketplaceVisible() ? <><h2>{t('learnHnsMarketplace')}</h2>
         {isSpv && (
           <div className="exchange__button-header__sub">
-            {t('spvMarketplaceBrowsingOnly')}
+            {t('spvMarketplaceEnabled')}
           </div>
         )}
         <Table className="exchange-table">
@@ -576,6 +615,76 @@ class Exchange extends Component {
     )
   }
 
+  renderReadinessPanel() {
+    const { t } = this.context;
+    const {
+      spv,
+      nodeProgress,
+      walletSync,
+      walletHeight,
+      rescanHeight,
+      chainHeight,
+      isCustomRPCConnected,
+    } = this.props;
+    const {
+      marketStatus,
+      marketStatusLoading,
+    } = this.state;
+
+    const nodePercent = nodeProgress ? Math.min(100, nodeProgress * 100).toFixed(2) : '0.00';
+    const walletPercent = walletSync && rescanHeight
+      ? Math.min(100, (walletHeight * 100) / rescanHeight).toFixed(0)
+      : null;
+    const marketReachable = marketStatus && marketStatus.reachable !== false;
+    const marketProgress = marketStatus && typeof marketStatus.progress === 'number'
+      ? Math.min(100, marketStatus.progress * 100).toFixed(2)
+      : null;
+
+    return (
+      <div className="exchange-readiness">
+        <div className="exchange-readiness__item">
+          <div className="exchange-readiness__label">{t('bobMode')}</div>
+          <div className="exchange-readiness__value">
+            {isCustomRPCConnected ? t('customRpcMode') : spv ? t('spvMode') : t('fullNodeMode')}
+          </div>
+        </div>
+        <div className="exchange-readiness__item">
+          <div className="exchange-readiness__label">{t('bobSync')}</div>
+          <div className={classNames('exchange-readiness__value', {
+            'exchange-readiness__value--ready': this.canUseMarketplaceActions(),
+            'exchange-readiness__value--waiting': !this.canUseMarketplaceActions(),
+          })}>
+            {this.canUseMarketplaceActions()
+              ? `${t('ready')} (${chainHeight})`
+              : walletSync && walletPercent
+                ? `${t('rescanning')} ${walletPercent}%`
+                : `${t('synchronizing')} ${nodePercent}%`}
+          </div>
+        </div>
+        <div className="exchange-readiness__item">
+          <div className="exchange-readiness__label">{t('learnHnsMarket')}</div>
+          <div className={classNames('exchange-readiness__value', {
+            'exchange-readiness__value--ready': marketReachable,
+            'exchange-readiness__value--waiting': !marketReachable,
+          })}>
+            {marketStatusLoading || !marketStatus
+              ? t('checking')
+              : marketReachable
+                ? marketProgress
+                  ? `${t('online')} (${marketProgress}%)`
+                  : t('online')
+                : t('unreachable')}
+          </div>
+        </div>
+        {!this.canUseMarketplaceActions() && (
+          <div className="exchange-readiness__note">
+            {t('marketplaceWaitForSync')}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   renderListingRow = (l, idx) => {
     const { auction, deprecated, lowestDeprecatedPrice } = l;
     const listingMode = l.params.mode || 'reverse';
@@ -618,7 +727,9 @@ class Exchange extends Component {
             <div className="bid-action">
               <div
                 className="bid-action__link"
-                onClick={() => this.props.finalizeExchangeLock(l.nameLock)}
+                onClick={() => this.canUseMarketplaceActions()
+                  ? this.props.finalizeExchangeLock(l.nameLock)
+                  : this.showMarketplaceNotReady()}
               >
                 {this.props.finalizingName === l.nameLock.name ? `${t('finalizing')}...` : t('finalize')}
               </div>
@@ -641,7 +752,9 @@ class Exchange extends Component {
             <div className="bid-action">
               <div
                 className="bid-action__link"
-                onClick={() => this.props.finalizeCancelExchangeLock(l.nameLock)}
+                onClick={() => this.canUseMarketplaceActions()
+                  ? this.props.finalizeCancelExchangeLock(l.nameLock)
+                  : this.showMarketplaceNotReady()}
               >
                 {t('finalizeCancel')}
               </div>
@@ -681,7 +794,9 @@ class Exchange extends Component {
                   </div>
                   : <div
                     className="bid-action__link"
-                    onClick={() => this.onClickSubmitShakedex(l)}
+                    onClick={() => this.canUseMarketplaceActions()
+                      ? this.onClickSubmitShakedex(l)
+                      : this.showMarketplaceNotReady()}
                   >
                     {t('submit')}
                   </div>
@@ -689,7 +804,9 @@ class Exchange extends Component {
 
               <div
                 className="bid-action__link"
-                onClick={() => this.props.cancelExchangeLock(l.nameLock)}
+                onClick={() => this.canUseMarketplaceActions()
+                  ? this.props.cancelExchangeLock(l.nameLock)
+                  : this.showMarketplaceNotReady()}
               >
                 {t('cancel')}
               </div>
@@ -723,9 +840,15 @@ class Exchange extends Component {
             !auction.spendingStatus && (
               <div className="exchange__auction-row-buttons">
                 <div
-                  className="bid-action__link"
+                  className={classNames('bid-action__link', {
+                    'bid-action__link--disabled': !this.canUseMarketplaceActions(),
+                  })}
                   onClick={(e) => {
                     e.stopPropagation();
+                    if (!this.canUseMarketplaceActions()) {
+                      this.showMarketplaceNotReady();
+                      return;
+                    }
                     if (!currentBid) return;
                     this.setState({
                       placingAuction: auction,
@@ -830,6 +953,11 @@ export default connect(
     walletType: state.wallet.type,
     walletWatchOnly: state.wallet.watchOnly,
     spv: state.node.spv,
+    nodeProgress: state.node.chain.progress || 0,
+    walletSync: state.wallet.walletSync,
+    walletHeight: state.wallet.walletHeight,
+    rescanHeight: state.wallet.rescanHeight,
+    isCustomRPCConnected: state.node.isCustomRPCConnected,
     network: state.wallet.network,
     height: state.node.chain.height,
   }),
