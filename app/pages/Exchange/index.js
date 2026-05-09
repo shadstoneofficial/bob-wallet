@@ -332,10 +332,6 @@ class Exchange extends Component {
 
   render() {
     const { t } = this.context;
-    if (this.props.spv) {
-      return t('notSupportInSPV');
-    }
-
     if (this.props.walletWatchOnly) {
       return t('notSupportWithLedger');
     }
@@ -348,88 +344,99 @@ class Exchange extends Component {
       return t('loading');
     }
 
+    const isSpv = this.props.spv;
+
     return (
       <div className="exchange">
-        <div className="exchange__button-header">
-          <h2>{t('yourListings')}</h2>
-          <button
-            className="exchange__button-header-button extension_cta_button"
-            onClick={() => this.setState({
-              isPlacingListing: true,
-            })}
-          >
-            {t('createListing')}
-          </button>
-        </div>
-        <ShakedexDeprecated toggle={this.state.shakedexDeprecatedToggle} />
-        <div className="exchange__button-header__sub">
-          {t('sdBackupReminder', '')}
-          <Link to="/settings/exchange/backup">Settings/Exchange</Link>
-        </div>
-        <Table className="exchange-table">
-          <HeaderRow>
-            <HeaderItem>{t('domain')}</HeaderItem>
-            <HeaderItem>{t('status')}</HeaderItem>
-            <HeaderItem>{t('startingPrice')}</HeaderItem>
-            <HeaderItem>{t('endingPrice')}</HeaderItem>
-            <HeaderItem />
-          </HeaderRow>
-          {!this.props.listings.length && (
-            <TableRow>
-              <TableItem>
-                {t('noListingFound')}
-              </TableItem>
-            </TableRow>
-          )}
-          {!!this.props.listings.length && this.props.listings.map((l, i) => this.renderListingRow(l, i))}
-        </Table>
+        {!isSpv && (
+          <>
+            <div className="exchange__button-header">
+              <h2>{t('yourListings')}</h2>
+              <button
+                className="exchange__button-header-button extension_cta_button"
+                onClick={() => this.setState({
+                  isPlacingListing: true,
+                })}
+              >
+                {t('createListing')}
+              </button>
+            </div>
+            <ShakedexDeprecated toggle={this.state.shakedexDeprecatedToggle} />
+            <div className="exchange__button-header__sub">
+              {t('sdBackupReminder', '')}
+              <Link to="/settings/exchange/backup">Settings/Exchange</Link>
+            </div>
+            <Table className="exchange-table">
+              <HeaderRow>
+                <HeaderItem>{t('domain')}</HeaderItem>
+                <HeaderItem>{t('status')}</HeaderItem>
+                <HeaderItem>{t('startingPrice')}</HeaderItem>
+                <HeaderItem>{t('endingPrice')}</HeaderItem>
+                <HeaderItem />
+              </HeaderRow>
+              {!this.props.listings.length && (
+                <TableRow>
+                  <TableItem>
+                    {t('noListingFound')}
+                  </TableItem>
+                </TableRow>
+              )}
+              {!!this.props.listings.length && this.props.listings.map((l, i) => this.renderListingRow(l, i))}
+            </Table>
 
-        <div className="exchange__button-header">
-          <h2>{t('yourFills')}</h2>
-          <button
-            className="exchange__button-header-button extension_cta_button"
-            onClick={this.onUploadPresigns}
-          >
-            {t('loadAuctionFile')}
-          </button>
-        </div>
-        <Table className="exchange-table">
-          <HeaderRow>
-            <HeaderItem>{t('domain')}</HeaderItem>
-            <HeaderItem>{t('status')}</HeaderItem>
-            <HeaderItem>{t('amount')}</HeaderItem>
-            <HeaderItem>{t('fillPlacedAt')}</HeaderItem>
-            <HeaderItem />
-          </HeaderRow>
+            <div className="exchange__button-header">
+              <h2>{t('yourFills')}</h2>
+              <button
+                className="exchange__button-header-button extension_cta_button"
+                onClick={this.onUploadPresigns}
+              >
+                {t('loadAuctionFile')}
+              </button>
+            </div>
+            <Table className="exchange-table">
+              <HeaderRow>
+                <HeaderItem>{t('domain')}</HeaderItem>
+                <HeaderItem>{t('status')}</HeaderItem>
+                <HeaderItem>{t('amount')}</HeaderItem>
+                <HeaderItem>{t('fillPlacedAt')}</HeaderItem>
+                <HeaderItem />
+              </HeaderRow>
 
-          {!!this.props.fulfillments.length && this.props.fulfillments.map((f, idx) => (
-            <TableRow key={idx}>
-              <TableItem>{formatName(f.fulfillment.name)}</TableItem>
-              <TableItem>{this.renderFulfillmentStatus(f.status)}</TableItem>
-              <TableItem>{displayBalance(f.fulfillment.price, true)}</TableItem>
-              <TableItem>{moment(f.fulfillment.broadcastAt).format('MM/DD/YYYY HH:MM:SS')}</TableItem>
-              <TableItem>
-                {[FULFILLMENT_STATUS.CONFIRMED].includes(f.status)  && (
-                  <div className="bid-action">
-                    <div
-                      className="bid-action__link"
-                      onClick={() => this.props.finalizeExchangeBid(f.fulfillment)}
-                    >
-                      {this.props.finalizingName === f.name ? 'Finalizing...' : 'Finalize'}
-                    </div>
-                  </div>
-                )}
-              </TableItem>
-            </TableRow>
-          ))}
-          {!this.props.fulfillments.length && (
-            <TableRow>
-              <TableItem>{t('noFillsFound')}</TableItem>
-            </TableRow>
-          )}
-        </Table>
+              {!!this.props.fulfillments.length && this.props.fulfillments.map((f, idx) => (
+                <TableRow key={idx}>
+                  <TableItem>{formatName(f.fulfillment.name)}</TableItem>
+                  <TableItem>{this.renderFulfillmentStatus(f.status)}</TableItem>
+                  <TableItem>{displayBalance(f.fulfillment.price, true)}</TableItem>
+                  <TableItem>{moment(f.fulfillment.broadcastAt).format('MM/DD/YYYY HH:MM:SS')}</TableItem>
+                  <TableItem>
+                    {[FULFILLMENT_STATUS.CONFIRMED].includes(f.status)  && (
+                      <div className="bid-action">
+                        <div
+                          className="bid-action__link"
+                          onClick={() => this.props.finalizeExchangeBid(f.fulfillment)}
+                        >
+                          {this.props.finalizingName === f.name ? 'Finalizing...' : 'Finalize'}
+                        </div>
+                      </div>
+                    )}
+                  </TableItem>
+                </TableRow>
+              ))}
+              {!this.props.fulfillments.length && (
+                <TableRow>
+                  <TableItem>{t('noFillsFound')}</TableItem>
+                </TableRow>
+              )}
+            </Table>
+          </>
+        )}
 
         {this.isMarketplaceVisible() ? <><h2>{t('learnHnsMarketplace')}</h2>
+        {isSpv && (
+          <div className="exchange__button-header__sub">
+            {t('spvMarketplaceBrowsingOnly')}
+          </div>
+        )}
         <Table className="exchange-table">
           <Header />
           {this.state.isLoading && (
@@ -710,6 +717,10 @@ class Exchange extends Component {
                   className="bid-action__link"
                   onClick={(e) => {
                     e.stopPropagation();
+                    if (this.props.spv) {
+                      this.props.showError(t('spvMarketplaceBuyDisabled'));
+                      return;
+                    }
                     if (!currentBid) return;
                     this.setState({
                       placingAuction: auction,

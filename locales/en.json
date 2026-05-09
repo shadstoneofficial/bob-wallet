@@ -540,6 +540,8 @@
   "settingRevealSeedTitle": "Reveal recovery seed phrase",
   "settingSPVNodeDesc": "Use Bob Wallet without running a full node. New installs use SPV by default.",
   "settingSPVNodeTitle": "SPV Node",
+  "spvMarketplaceBrowsingOnly": "SPV mode can browse LearnHNS Marketplace listings. Buying from SPV is coming after additional swap verification.",
+  "spvMarketplaceBuyDisabled": "Buying marketplace names from SPV mode is not enabled yet. Switch to full node mode or download the proof to test manually.",
   "settingWallet": "Wallet",
   "settingZapCTA": "Zap",
   "settingZapDesc": "This will only remove pending tx from the wallet",
