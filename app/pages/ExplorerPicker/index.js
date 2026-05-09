@@ -36,7 +36,7 @@ export default class ExplorerPicker extends Component {
         <Dropdown
           reversed
           items={EXPLORERS}
-          currentIndex={EXPLORERS.findIndex((x) => x.label == explorer.label)}
+          currentIndex={Math.max(0, EXPLORERS.findIndex((x) => x.label == explorer.label))}
           onChange={(i) => {
             changeExplorer(EXPLORERS[i]);
           }}

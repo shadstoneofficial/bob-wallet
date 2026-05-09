@@ -122,11 +122,11 @@ async function getMarketListingCoin(auction) {
     if (status && status.reachable && status.progress < 0.99) {
       const percent = Math.max(0, Math.min(100, status.progress * 100)).toFixed(2);
       throw new Error(
-        `LearnHNS Market is still syncing its Handshake node (${percent}% complete, height ${status.height}). Please try again after sync completes.`,
+        `This Shakedex channel is still syncing its Handshake node (${percent}% complete, height ${status.height}). Please try again after sync completes.`,
       );
     }
 
-    throw new Error(data.error || 'LearnHNS Market could not provide listing coin data.');
+    throw new Error(data.error || 'The Shakedex channel could not provide listing coin data.');
   }
 
   if (
@@ -134,7 +134,7 @@ async function getMarketListingCoin(auction) {
     || data.lockingOutputIdx !== auction.lockingOutputIdx
     || !data.coin
   ) {
-    throw new Error('LearnHNS Market returned coin data for a different listing.');
+    throw new Error('The Shakedex channel returned coin data for a different listing.');
   }
 
   return data.coin;

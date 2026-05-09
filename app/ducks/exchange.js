@@ -516,7 +516,7 @@ export const launchExchangeAuction = (nameLock, overrideParams) => async (dispat
     type: LAUNCH_EXCHANGE_AUCTION_OK,
   });
 
-  dispatch(showSuccess('Successfully generated proof. Submit it to LearnHNS Market or download a backup copy.'));
+  dispatch(showSuccess('Successfully generated proof. Submit it to a Shakedex channel or download a backup copy.'));
 };
 
 export const submitToShakedex = (auction) => async dispatch => {
@@ -527,10 +527,10 @@ export const submitToShakedex = (auction) => async dispatch => {
       return;
     }
 
-    dispatch(showSuccess('Your auction is now listed on LearnHNS Market'));
+    dispatch(showSuccess('Your auction is now listed on the Shakedex channel'));
   } catch (e) {
     console.error(e);
-    dispatch(showError('Failed to post to LearnHNS Market. You can still download your proofs and distribute them.'));
+    dispatch(showError('Failed to post to the Shakedex channel. You can still download your proofs and distribute them.'));
   }
 };
 

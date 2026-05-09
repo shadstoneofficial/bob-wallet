@@ -41,6 +41,7 @@ import VerifyMessage from "../VerifyMessage";
 import {fetchLocale, initHip2, checkForUpdates} from "../../ducks/app";
 import Multisig from "../Multisig";
 import {I18nContext} from "../../utils/i18n";
+import {EXPLORERS} from "../../constants/explorers";
 const connClient = cClientStub(() => require('electron').ipcRenderer);
 const settingClient = sClientStub(() => require('electron').ipcRenderer);
 
@@ -110,12 +111,12 @@ class App extends Component {
 
   async fetchExplorer() {
     const explorer = await settingClient.getExplorer();
-    return explorer || {
-      label: 'ShakeShift',
-      tx: 'https://shakeshift.com/transaction/%s',
-      name: 'https://shakeshift.com/name/%s',
-      address: 'https://shakeshift.com/address/%s',
-    }
+    if (!explorer)
+      return EXPLORERS[0];
+
+    return EXPLORERS.find((item) => (
+      item.label === explorer.label || item.tx === explorer.tx
+    )) || EXPLORERS[0];
   }
 
   render() {
