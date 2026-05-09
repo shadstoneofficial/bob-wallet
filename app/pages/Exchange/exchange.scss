@@ -64,6 +64,72 @@
   font-size: .75rem;
 }
 
+.exchange-seller-tools {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding: 1rem;
+  border: 1px solid $athens-gray;
+  border-radius: 8px;
+  background: $white;
+}
+
+.exchange-seller-tools__copy {
+  flex: 1 1 auto;
+  min-width: 0;
+
+  h2 {
+    padding: 0;
+    margin: 0 0 .35rem;
+  }
+
+  p {
+    color: $manatee-gray;
+    font-size: .75rem;
+    line-height: 1.2rem;
+    margin: 0 0 .65rem;
+  }
+}
+
+.exchange-seller-tools__eyebrow {
+  color: $manatee-gray;
+  font-size: .625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  margin-bottom: .25rem;
+}
+
+.exchange-seller-tools__modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem;
+  margin-bottom: .65rem;
+
+  span {
+    border: 1px solid rgba($azure-blue, .25);
+    border-radius: 6px;
+    color: $azure-blue;
+    font-size: .65rem;
+    font-weight: 600;
+    padding: .25rem .45rem;
+  }
+}
+
+.exchange-seller-tools__note {
+  color: $manatee-gray;
+  font-size: .7rem;
+  line-height: 1.1rem;
+}
+
+.exchange-seller-tools__button {
+  @extend %btn-secondary;
+  flex: 0 0 auto;
+  width: auto;
+  padding: .65rem .85rem;
+  font-size: .75rem;
+}
+
 .exchange-marketplace-filters {
   display: flex;
   align-items: center;

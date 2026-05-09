@@ -144,6 +144,10 @@ class Exchange extends Component {
     return this.isBobReadyForMarketplace() && this.isMarketReadyForActions();
   }
 
+  canStartSellerListing() {
+    return !this.props.spv && this.isBobReadyForMarketplace();
+  }
+
   isBobReadyForMarketplace() {
     return this.props.nodeProgress >= 1 && !this.props.walletSync;
   }
@@ -172,6 +176,14 @@ class Exchange extends Component {
 
   showMarketplaceNotReady() {
     this.props.showError(this.getMarketplaceNotReadyMessage());
+  }
+
+  showSellerNotReady() {
+    this.props.showError(
+      this.props.spv
+        ? this.context.t('learnHnsSellerRequiresFullNode')
+        : this.context.t('marketplaceWaitForSync'),
+    );
   }
 
   refreshMarketplace = async () => {
@@ -490,22 +502,22 @@ class Exchange extends Component {
     }
 
     const isSpv = this.props.spv;
-    const canUseMarketplaceActions = this.canUseMarketplaceActions();
     const marketplaceAuctions = this.getVisibleMarketplaceAuctions();
 
     return (
       <div className="exchange">
         {this.isMarketplaceVisible() && this.renderReadinessPanel()}
+        {this.isMarketplaceVisible() && this.renderSellerToolsPanel()}
         {!isSpv && (
           <>
             <div className="exchange__button-header">
               <h2>{t('yourListings')}</h2>
               <button
                 className="exchange__button-header-button extension_cta_button"
-                disabled={!canUseMarketplaceActions}
-                onClick={() => canUseMarketplaceActions
+                disabled={!this.canStartSellerListing()}
+                onClick={() => this.canStartSellerListing()
                   ? this.setState({ isPlacingListing: true })
-                  : this.showMarketplaceNotReady()}
+                  : this.showSellerNotReady()}
               >
                 {t('createListing')}
               </button>
@@ -782,6 +794,39 @@ class Exchange extends Component {
             {t('clearFilters')}
           </button>
         )}
+      </div>
+    );
+  }
+
+  renderSellerToolsPanel() {
+    const { t } = this.context;
+    const canStartSellerListing = this.canStartSellerListing();
+
+    return (
+      <div className="exchange-seller-tools">
+        <div className="exchange-seller-tools__copy">
+          <div className="exchange-seller-tools__eyebrow">{t('sellerTools')}</div>
+          <h2>{t('sellOnLearnHns')}</h2>
+          <p>{t('learnHnsSellerToolsIntro')}</p>
+          <div className="exchange-seller-tools__modes">
+            <span>{t('buyNow')}</span>
+            <span>{t('reverseAuction')}</span>
+          </div>
+          <div className="exchange-seller-tools__note">
+            {this.props.spv
+              ? t('learnHnsSellerRequiresFullNode')
+              : t('learnHnsSellerFlowNote')}
+          </div>
+        </div>
+        <button
+          className="exchange-seller-tools__button"
+          disabled={!canStartSellerListing}
+          onClick={() => canStartSellerListing
+            ? this.setState({ isPlacingListing: true })
+            : this.showSellerNotReady()}
+        >
+          {t('createListing')}
+        </button>
       </div>
     );
   }
