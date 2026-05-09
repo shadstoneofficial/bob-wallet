@@ -111,8 +111,54 @@ export async function listAuction(auction) {
   return resp.json();
 }
 
+async function getMarketListingCoin(auction) {
+  const resp = await fetch(
+    `${MARKET_API_BASE_URL}/api/v2/listings/${encodeURIComponent(auction.name)}/coin`,
+  );
+  const data = await resp.json();
+
+  if (!resp.ok) {
+    throw new Error(data.error || 'LearnHNS Market could not provide listing coin data.');
+  }
+
+  if (
+    data.lockingTxHash !== auction.lockingTxHash
+    || data.lockingOutputIdx !== auction.lockingOutputIdx
+    || !data.coin
+  ) {
+    throw new Error('LearnHNS Market returned coin data for a different listing.');
+  }
+
+  return data.coin;
+}
+
+async function attachMarketCoinFallback(context, auction) {
+  if (!await nodeService.getSpvMode()) {
+    return;
+  }
+
+  const localGetCoin = context.nodeClient.getCoin.bind(context.nodeClient);
+  context.nodeClient.getCoin = async (hash, index) => {
+    const isListingCoin = hash === auction.lockingTxHash && index === auction.lockingOutputIdx;
+
+    try {
+      const coin = await localGetCoin(hash, index);
+      if (coin || !isListingCoin) {
+        return coin;
+      }
+    } catch (e) {
+      if (!isListingCoin) {
+        throw e;
+      }
+    }
+
+    return getMarketListingCoin(auction);
+  };
+}
+
 export async function fulfillSwap(auction, bid, passphrase) {
   const context = getContext(passphrase);
+  await attachMarketCoinFallback(context, auction);
   const proof = new SwapProof({
     lockingTxHash: auction.lockingTxHash,
     lockingOutputIdx: auction.lockingOutputIdx,

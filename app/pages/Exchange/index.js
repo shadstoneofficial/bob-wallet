@@ -717,10 +717,6 @@ class Exchange extends Component {
                   className="bid-action__link"
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (this.props.spv) {
-                      this.props.showError(t('spvMarketplaceBuyDisabled'));
-                      return;
-                    }
                     if (!currentBid) return;
                     this.setState({
                       placingAuction: auction,
