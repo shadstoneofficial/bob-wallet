@@ -183,12 +183,6 @@ class Sidebar extends Component {
         </div>
         <div className="sidebar__actions">
           <NavLink
-            to="/get_coins"
-            className={isActive => `sidebar__action ${isActive ? "sidebar__action--selected" : ''}`}
-          >
-            {t('headingClaimAirdropName')}
-          </NavLink>
-          <NavLink
             to="/sign_message"
             className={isActive => `sidebar__action ${isActive ? "sidebar__action--selected" : ''}`}
           >

@@ -2,6 +2,7 @@ import React, { Component } from 'react';
 import { withRouter } from 'react-router';
 import { connect } from 'react-redux';
 import PropTypes from 'prop-types';
+import moment from 'moment';
 import * as myDomainsActions from '../../ducks/myDomains';
 import { formatName } from '../../utils/nameHelpers';
 import './domain-manager.scss';
@@ -32,9 +33,13 @@ const ITEM_PER_DROPDOWN = [
   {label: '10', value: 10},
   {label: '20', value: 20},
   {label: '50', value: 50},
+  {label: '100', value: 100},
+  {label: '250', value: 250},
+  {label: '500', value: 500},
 ];
 
 const DM_ITEMS_PER_PAGE_KEY = 'domain-manager-items-per-page';
+const AVERAGE_BLOCK_TIME = 10 * 60 * 1000;
 
 class DomainManager extends Component {
   static propTypes = {
@@ -97,8 +102,45 @@ class DomainManager extends Component {
   }
 
   handleExportClick() {
-    let names = this.props.namesList;
-    let data = names.join('\n');
+    const {
+      height,
+      names,
+      namesList,
+      network,
+    } = this.props;
+    const renewalWindow = networks[network].names.renewalWindow;
+    const headers = [
+      'name',
+      'expiration_height',
+      'estimated_expiration_date',
+      'renewal_height',
+      'hns_paid',
+      'transfer_height',
+      'owner_hash',
+      'owner_index',
+    ];
+    const rows = [...namesList].sort().map((name) => {
+      const domain = names[name] || {};
+      const expirationHeight = domain.renewal + renewalWindow;
+      const expirationDate = height && expirationHeight
+        ? moment().add((expirationHeight - height) * AVERAGE_BLOCK_TIME).format('YYYY-MM-DD')
+        : '';
+
+      return [
+        formatName(name),
+        expirationHeight || '',
+        expirationDate,
+        domain.renewal || '',
+        typeof domain.highest === 'number' ? domain.highest / 1e6 : '',
+        domain.transfer || '',
+        domain.owner?.hash || '',
+        typeof domain.owner?.index === 'number' ? domain.owner.index : '',
+      ];
+    });
+    const data = [
+      headers,
+      ...rows,
+    ].map(row => row.map(escapeCSVValue).join(',')).join('\n');
 
     let savePath = dialog.showSaveDialogSync({
       filters: [{name: 'spreadsheet', extensions: ['csv']}],
@@ -386,6 +428,11 @@ class DomainManager extends Component {
       </>
     );
   }
+}
+
+function escapeCSVValue(value) {
+  const stringValue = String(value ?? '');
+  return `"${stringValue.replace(/"/g, '""')}"`;
 }
 
 export default withRouter(

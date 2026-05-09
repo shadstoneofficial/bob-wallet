@@ -398,7 +398,7 @@ export const transferExchangeLock = (name, params) => async (dispatch) => {
   dispatch({
     type: PLACE_EXCHANGE_LISTING_OK,
   });
-  dispatch(showSuccess('Listing lock transfer submitted. Back up your Exchange listings, then wait for the transfer lockup before finalizing.'));
+  dispatch(showSuccess('Listing lock transfer submitted. Back up your Marketplace listings, then wait for the transfer lockup before finalizing.'));
 };
 
 

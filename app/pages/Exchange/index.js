@@ -546,7 +546,7 @@ class Exchange extends Component {
             <ShakedexDeprecated toggle={this.state.shakedexDeprecatedToggle} />
             <div className="exchange__button-header__sub">
               {t('sdBackupReminder', '')}
-              <Link to="/settings/exchange/backup">Settings/Exchange</Link>
+              <Link to="/settings/exchange/backup">Settings/Marketplace</Link>
             </div>
             <Table className="exchange-table">
               <HeaderRow>
