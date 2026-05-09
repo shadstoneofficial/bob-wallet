@@ -64,6 +64,10 @@ export class PlaceBidModal extends Component {
                 </tr>
               )}
               <tr>
+                <td><strong>{`${t('total')}:`}</strong></td>
+                <td>{displayBalance(requiredBalance, true)}</td>
+              </tr>
+              <tr>
                 <td><strong>{`${t('spendable')}:`}</strong></td>
                 <td>{displayBalance(spendableBalance, true)}</td>
               </tr>
