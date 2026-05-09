@@ -13,6 +13,12 @@ import path from 'path';
 import {encrypt} from "./utils/encrypt";
 
 const Sentry = require('@sentry/electron/main');
+const isLearnHnsTestBuild = app.getName() === 'Bob LearnHNS Test'
+  || process.env.BOB_LEARNHNS_TEST === 'true';
+
+if (isLearnHnsTestBuild) {
+  app.setPath('userData', path.join(app.getPath('appData'), 'Bob LearnHNS Test'));
+}
 
 if (process.env.NODE_ENV === 'production') {
   const sourceMapSupport = require('source-map-support');
@@ -26,7 +32,9 @@ if (
   require('electron-debug')();
 }
 
-if (process.env.NODE_ENV === 'development' && (process.platform === 'win32' || process.platform === 'linux')) {
+if (isLearnHnsTestBuild) {
+  // Do not let local test builds take over production Bob deep links.
+} else if (process.env.NODE_ENV === 'development' && (process.platform === 'win32' || process.platform === 'linux')) {
   app.setAsDefaultProtocolClient('bob', process.execPath, [
     path.resolve(path.join(app.getAppPath(), 'dist', 'main.js')),
   ]);
