@@ -52,6 +52,7 @@ const shakedex = sClientStub(() => require('electron').ipcRenderer);
 const MARKET_STATUS_REFRESH_INTERVAL = 60000;
 const MARKET_API_HOST = ACTIVE_SHAKEDEX_CHANNEL.host;
 const MARKET_API_BASE_URL = getShakedexChannelBaseUrl();
+const ENABLE_SPV_SELLER_BETA = process.env.BOB_SHAKEDEX_SPV_SELLER_BETA === 'true';
 
 class Exchange extends Component {
   static propTypes = {
@@ -165,7 +166,7 @@ class Exchange extends Component {
   }
 
   canStartSellerListing() {
-    return !this.props.spv && this.isBobReadyForMarketplace();
+    return this.isBobReadyForMarketplace() && (!this.props.spv || ENABLE_SPV_SELLER_BETA);
   }
 
   isBobReadyForMarketplace() {
@@ -201,7 +202,7 @@ class Exchange extends Component {
   showSellerNotReady() {
     this.props.showError(
       this.props.spv
-        ? this.context.t('learnHnsSellerRequiresFullNode')
+        ? this.context.t('spvSellerBetaPending')
         : this.context.t('marketplaceWaitForSync'),
     );
   }
@@ -845,7 +846,9 @@ class Exchange extends Component {
           </div>
           <div className="exchange-seller-tools__note">
             {this.props.spv
-              ? t('learnHnsSellerRequiresFullNode')
+              ? ENABLE_SPV_SELLER_BETA
+                ? t('spvSellerBetaEnabled')
+                : t('spvSellerBetaPending')
               : t('learnHnsSellerFlowNote')}
           </div>
         </div>
