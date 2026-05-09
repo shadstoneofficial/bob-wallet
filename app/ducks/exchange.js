@@ -242,7 +242,9 @@ export const getExchangeListings = (page = 1) => async (dispatch, getState) => {
     }
 
     if (!finalizeTx) {
-      listing.status = info.chain.height - transferTx.height > transferLockup
+      const blocksSinceTransfer = info.chain.height - transferTx.height;
+      listing.blocksUntilFinalize = Math.max(transferLockup - blocksSinceTransfer, 0);
+      listing.status = blocksSinceTransfer > transferLockup
         ? LISTING_STATUS.TRANSFER_CONFIRMED
         : LISTING_STATUS.TRANSFER_CONFIRMED_LOCKUP;
       continue;
@@ -374,14 +376,14 @@ export const finalizeExchangeBid = (fulfillment) => async (dispatch, getState) =
   dispatch(showSuccess('Successfully finalized bid! Please wait 15 minutes for it to confirm on-chain.'));
 };
 
-export const transferExchangeLock = (name, startPrice, endPrice, durationDays) => async (dispatch) => {
+export const transferExchangeLock = (name, params) => async (dispatch) => {
   dispatch({
     type: PLACE_EXCHANGE_LISTING,
   });
 
   try {
     const passphrase = await new Promise((resolve, reject) => dispatch(getPassphrase(resolve, reject)));
-    await shakedex.transferLock(name, startPrice, endPrice, durationDays, passphrase);
+    await shakedex.transferLock(name, params, passphrase);
   } catch (e) {
     dispatch({
       type: PLACE_EXCHANGE_LISTING_ERR,
@@ -396,6 +398,7 @@ export const transferExchangeLock = (name, startPrice, endPrice, durationDays) =
   dispatch({
     type: PLACE_EXCHANGE_LISTING_OK,
   });
+  dispatch(showSuccess('Listing lock transfer submitted. Back up your Exchange listings, then wait for the transfer lockup before finalizing.'));
 };
 
 
@@ -513,7 +516,7 @@ export const launchExchangeAuction = (nameLock, overrideParams) => async (dispat
     type: LAUNCH_EXCHANGE_AUCTION_OK,
   });
 
-  dispatch(showSuccess('Successfully generated presigns! You can post your auctions to Shakedex, or download and distribute however you wish.'));
+  dispatch(showSuccess('Successfully generated proof. Submit it to LearnHNS Market or download a backup copy.'));
 };
 
 export const submitToShakedex = (auction) => async dispatch => {

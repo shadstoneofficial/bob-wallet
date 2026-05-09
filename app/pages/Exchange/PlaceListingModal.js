@@ -17,6 +17,8 @@ export class PlaceListingModal extends Component {
     this.durationOpts = [1, 3, 5, 7, 14];
 
     this.state = {
+      listingMode: 'fixed',
+      price: '',
       startPrice: '',
       endPrice: '',
       nameIdx: 0,
@@ -44,11 +46,21 @@ export class PlaceListingModal extends Component {
 
   createListing = async () => {
     try {
+      const params = this.state.listingMode === 'fixed'
+        ? {
+          mode: 'fixed',
+          price: Math.round(Number(this.state.price) * 1e6),
+        }
+        : {
+          mode: 'reverse',
+          startPrice: Math.round(Number(this.state.startPrice) * 1e6),
+          endPrice: Math.round(Number(this.state.endPrice) * 1e6),
+          durationDays: this.durationOpts[this.state.durationIdx],
+        };
+
       await this.props.transferExchangeLock(
         this.props.names[this.state.nameIdx],
-        Number(this.state.startPrice) * 1e6,
-        Number(this.state.endPrice) * 1e6,
-        this.durationOpts[this.state.durationIdx]
+        params,
       );
     } catch (e) {
       this.setState({
@@ -61,21 +73,23 @@ export class PlaceListingModal extends Component {
     const {onClose, names} = this.props;
     const {t} = this.context;
 
-    const isValid = this.state.startPrice.length &&
-      this.state.endPrice.length &&
-      Number(this.state.startPrice) > 0 &&
-      Number(this.state.endPrice) > 0 &&
-      Number(this.state.startPrice) > Number(this.state.endPrice);
+    const isFixed = this.state.listingMode === 'fixed';
+    const isValid = isFixed
+      ? this.state.price.length && Number(this.state.price) > 0
+      : this.state.startPrice.length &&
+        this.state.endPrice.length &&
+        Number(this.state.startPrice) > 0 &&
+        Number(this.state.endPrice) > 0 &&
+        Number(this.state.startPrice) > Number(this.state.endPrice);
 
     return (
-      <MiniModal title={t('createListing')} onClose={onClose}>
+      <MiniModal title={t('createLearnHnsListing')} onClose={onClose}>
         <div className="exchange__place-listing-modal">
-          <p>
-            {t('shakedexCreateListingNote')}
-          </p>
-          <p>
-            <Anchor href="https://github.com/kurumiimari/shakedex#selling-a-name">{t('learnMore')}</Anchor>
-          </p>
+          <Alert type="warning">
+            {t('learnHnsSellerLockWarning')}
+          </Alert>
+          <p>{t('learnHnsSellerFlowNote')}</p>
+          <p><Anchor href="https://market.learnhns.com/docs">{t('learnMore')}</Anchor></p>
           <div className="exchange__label">{`${t('chooseName')}:`}</div>
           <div className="exchange__input">
             <Dropdown
@@ -90,41 +104,72 @@ export class PlaceListingModal extends Component {
             />
           </div>
 
-          <label className="exchange__label">{`${t('startingPrice')}:`}</label>
-          <div className="exchange__input send__input">
-            <input
-              type="number"
-              value={this.state.startPrice}
-              onChange={(e) => this.setState({
-                startPrice: e.target.value,
-                errorMessage: '',
-              })}
-            />
-          </div>
-
-          <label className="exchange__label">{`${t('endingPrice')}:`}</label>
-          <div className="exchange__input send__input">
-            <input
-              type="number"
-              value={this.state.endPrice}
-              onChange={(e) => this.setState({
-                endPrice: e.target.value,
-                errorMessage: '',
-              })}
-            />
-          </div>
-
-          <label className="exchange__label">{`${t('duration')}:`}</label>
+          <label className="exchange__label">{`${t('listingType')}:`}</label>
           <Dropdown
-            items={this.durationOpts.map(d => ({
-              label: `${d} ${t('days')}`,
-            }))}
+            items={[
+              { label: t('buyNow') },
+              { label: t('reverseAuction') },
+            ]}
             onChange={(i) => this.setState({
-              durationIdx: i,
+              listingMode: i === 0 ? 'fixed' : 'reverse',
               errorMessage: '',
             })}
-            currentIndex={this.state.durationIdx}
+            currentIndex={isFixed ? 0 : 1}
           />
+
+          {isFixed ? (
+            <>
+              <label className="exchange__label">{`${t('buyNowPrice')}:`}</label>
+              <div className="exchange__input send__input">
+                <input
+                  type="number"
+                  value={this.state.price}
+                  onChange={(e) => this.setState({
+                    price: e.target.value,
+                    errorMessage: '',
+                  })}
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <label className="exchange__label">{`${t('startingPrice')}:`}</label>
+              <div className="exchange__input send__input">
+                <input
+                  type="number"
+                  value={this.state.startPrice}
+                  onChange={(e) => this.setState({
+                    startPrice: e.target.value,
+                    errorMessage: '',
+                  })}
+                />
+              </div>
+
+              <label className="exchange__label">{`${t('endingPrice')}:`}</label>
+              <div className="exchange__input send__input">
+                <input
+                  type="number"
+                  value={this.state.endPrice}
+                  onChange={(e) => this.setState({
+                    endPrice: e.target.value,
+                    errorMessage: '',
+                  })}
+                />
+              </div>
+
+              <label className="exchange__label">{`${t('duration')}:`}</label>
+              <Dropdown
+                items={this.durationOpts.map(d => ({
+                  label: `${d} ${t('days')}`,
+                }))}
+                onChange={(i) => this.setState({
+                  durationIdx: i,
+                  errorMessage: '',
+                })}
+                currentIndex={this.state.durationIdx}
+              />
+            </>
+          )}
           <Alert type="error" message={this.state.errorMessage} />
           <div className="place-bid-modal__buttons">
             <button
@@ -140,7 +185,7 @@ export class PlaceListingModal extends Component {
               onClick={this.createListing}
               disabled={this.props.isPlacingListing || !isValid}
             >
-              {this.props.isPlacingListing ? t('loading') : t('placeListing')}
+              {this.props.isPlacingListing ? t('loading') : t('startListingLock')}
             </button>
           </div>
         </div>
@@ -158,11 +203,9 @@ export default connect(
   }),
   (dispatch) => ({
     getMyNames: () => dispatch(getMyNames()),
-    transferExchangeLock: (name, startPrice, endPrice, durationDays) => dispatch(transferExchangeLock(
+    transferExchangeLock: (name, params) => dispatch(transferExchangeLock(
       name,
-      startPrice,
-      endPrice,
-      durationDays,
+      params,
     )),
   }),
 )(PlaceListingModal);

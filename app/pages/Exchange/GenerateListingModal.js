@@ -19,8 +19,11 @@ export class GenerateListingModal extends Component {
     super(props);
 
     this.durationOpts = [1, 3, 5, 7, 14];
+    const listingMode = props.listing.params.mode || 'reverse';
 
     this.state = {
+      listingMode,
+      price: Number(props.listing.params.price || 0) / 1e6 || '',
       startPrice: Number(props.listing.params.startPrice) / 1e6,
       endPrice: Number(props.listing.params.endPrice) / 1e6,
       durationIdx: this.durationOpts.indexOf(props.listing.params.durationDays),
@@ -31,10 +34,17 @@ export class GenerateListingModal extends Component {
   generateProofs = async () => {
     try {
       const { launchExchangeAuction, listing } = this.props;
-      const { startPrice, endPrice, durationIdx } = this.state;
+      const { listingMode, price, startPrice, endPrice, durationIdx } = this.state;
       const durationDays = this.durationOpts[durationIdx];
 
-      const overrideParams = { startPrice: startPrice * 1e6, endPrice: endPrice  * 1e6, durationDays };
+      const overrideParams = listingMode === 'fixed'
+        ? { mode: 'fixed', price: Math.round(price * 1e6) }
+        : {
+          mode: 'reverse',
+          startPrice: Math.round(startPrice * 1e6),
+          endPrice: Math.round(endPrice * 1e6),
+          durationDays,
+        };
       if (listing.lowestDeprecatedPrice) {
         overrideParams.lowestDeprecatedPrice = listing.lowestDeprecatedPrice;
       }
@@ -52,14 +62,17 @@ export class GenerateListingModal extends Component {
     const {onClose, listing} = this.props;
     const {t} = this.context;
 
-    const isValid = String(this.state.startPrice).length &&
-      String(this.state.endPrice).length &&
-      Number(this.state.startPrice) > 0 &&
-      Number(this.state.endPrice) > 0 &&
-      Number(this.state.startPrice) > Number(this.state.endPrice);
+    const isFixed = this.state.listingMode === 'fixed';
+    const isValid = isFixed
+      ? String(this.state.price).length && Number(this.state.price) > 0
+      : String(this.state.startPrice).length &&
+        String(this.state.endPrice).length &&
+        Number(this.state.startPrice) > 0 &&
+        Number(this.state.endPrice) > 0 &&
+        Number(this.state.startPrice) > Number(this.state.endPrice);
 
     return (
-      <MiniModal title={t('createListing')} onClose={onClose}>
+      <MiniModal title={t('generateListingProof')} onClose={onClose}>
         <div className="exchange__place-listing-modal">
           {listing.lowestDeprecatedPrice &&
             <Alert type="warning">
@@ -73,41 +86,72 @@ export class GenerateListingModal extends Component {
             {formatName(listing.nameLock.name)}
           </div>
 
-          <label className="exchange__label">{`${t('startingPrice')}:`}</label>
-          <div className="exchange__input send__input">
-            <input
-              type="number"
-              value={this.state.startPrice}
-              onChange={(e) => this.setState({
-                startPrice: e.target.value,
-                errorMessage: '',
-              })}
-            />
-          </div>
-
-          <label className="exchange__label">{`${t('endingPrice')}:`}</label>
-          <div className="exchange__input send__input">
-            <input
-              type="number"
-              value={this.state.endPrice}
-              onChange={(e) => this.setState({
-                endPrice: e.target.value,
-                errorMessage: '',
-              })}
-            />
-          </div>
-
-          <label className="exchange__label">{`${t('duration')}:`}</label>
+          <label className="exchange__label">{`${t('listingType')}:`}</label>
           <Dropdown
-            items={this.durationOpts.map(d => ({
-              label: `${d} ${t('days')}`,
-            }))}
+            items={[
+              { label: t('buyNow') },
+              { label: t('reverseAuction') },
+            ]}
             onChange={(i) => this.setState({
-              durationIdx: i,
+              listingMode: i === 0 ? 'fixed' : 'reverse',
               errorMessage: '',
             })}
-            currentIndex={this.state.durationIdx}
+            currentIndex={isFixed ? 0 : 1}
           />
+
+          {isFixed ? (
+            <>
+              <label className="exchange__label">{`${t('buyNowPrice')}:`}</label>
+              <div className="exchange__input send__input">
+                <input
+                  type="number"
+                  value={this.state.price}
+                  onChange={(e) => this.setState({
+                    price: e.target.value,
+                    errorMessage: '',
+                  })}
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <label className="exchange__label">{`${t('startingPrice')}:`}</label>
+              <div className="exchange__input send__input">
+                <input
+                  type="number"
+                  value={this.state.startPrice}
+                  onChange={(e) => this.setState({
+                    startPrice: e.target.value,
+                    errorMessage: '',
+                  })}
+                />
+              </div>
+
+              <label className="exchange__label">{`${t('endingPrice')}:`}</label>
+              <div className="exchange__input send__input">
+                <input
+                  type="number"
+                  value={this.state.endPrice}
+                  onChange={(e) => this.setState({
+                    endPrice: e.target.value,
+                    errorMessage: '',
+                  })}
+                />
+              </div>
+
+              <label className="exchange__label">{`${t('duration')}:`}</label>
+              <Dropdown
+                items={this.durationOpts.map(d => ({
+                  label: `${d} ${t('days')}`,
+                }))}
+                onChange={(i) => this.setState({
+                  durationIdx: i,
+                  errorMessage: '',
+                })}
+                currentIndex={this.state.durationIdx}
+              />
+            </>
+          )}
           <Alert type="error" message={this.state.errorMessage} />
           <div className="place-bid-modal__buttons">
             <button

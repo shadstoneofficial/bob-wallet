@@ -311,6 +311,7 @@ export function listingStatusToI18nKey(status) {
     [LISTING_STATUS.ACTIVE]: 'shakedexStatusActive',
     [LISTING_STATUS.TRANSFER_CONFIRMING]: 'shakedexStatusTransferConfirming',
     [LISTING_STATUS.TRANSFER_CONFIRMED]: 'shakedexStatusTransferConfirmed',
+    [LISTING_STATUS.TRANSFER_CONFIRMED_LOCKUP]: 'shakedexStatusTransferConfirmedLockup',
     [LISTING_STATUS.FINALIZE_CONFIRMING]: 'shakedexStatusFinalizeConfirming',
     [LISTING_STATUS.FINALIZE_CONFIRMED]: 'shakedexStatusFinalizeConfirmed',
     [LISTING_STATUS.CANCEL_CONFIRMING]: 'shakedexStatusCancelConfirming',

@@ -256,7 +256,7 @@ class Exchange extends Component {
     });
   };
 
-  renderListingStatus(status) {
+  renderListingStatus(status, listing = {}) {
     let statusText = status;
     const {t} = this.context;
 
@@ -264,6 +264,10 @@ class Exchange extends Component {
 
     if (i18nKey)
       statusText = t(i18nKey);
+
+    if (status === LISTING_STATUS.TRANSFER_CONFIRMED_LOCKUP && listing.blocksUntilFinalize > 0) {
+      statusText = `${statusText} (${listing.blocksUntilFinalize} ${t('blocks')})`;
+    }
 
     return (
       <div className={classNames('exchange-table__listing-status', {
@@ -370,8 +374,8 @@ class Exchange extends Component {
               <HeaderRow>
                 <HeaderItem>{t('domain')}</HeaderItem>
                 <HeaderItem>{t('status')}</HeaderItem>
-                <HeaderItem>{t('startingPrice')}</HeaderItem>
-                <HeaderItem>{t('endingPrice')}</HeaderItem>
+                <HeaderItem>{t('listingType')}</HeaderItem>
+                <HeaderItem>{t('price')}</HeaderItem>
                 <HeaderItem />
               </HeaderRow>
               {!this.props.listings.length && (
@@ -574,6 +578,7 @@ class Exchange extends Component {
 
   renderListingRow = (l, idx) => {
     const { auction, deprecated, lowestDeprecatedPrice } = l;
+    const listingMode = l.params.mode || 'reverse';
     const { data = [] } = auction || {};
     const lastBid = data[data.length - 1];
     const { lockTime = 0 } = lastBid || {}
@@ -601,9 +606,13 @@ class Exchange extends Component {
             : null
           }
         </TableItem>
-        <TableItem>{this.renderListingStatus(l.status)}</TableItem>
-        <TableItem>{displayBalance(l.params.startPrice)}</TableItem>
-        <TableItem>{displayBalance(l.params.endPrice)}</TableItem>
+        <TableItem>{this.renderListingStatus(l.status, l)}</TableItem>
+        <TableItem>{listingMode === 'fixed' ? t('buyNow') : t('reverseAuction')}</TableItem>
+        <TableItem>
+          {listingMode === 'fixed'
+            ? displayBalance(l.params.price)
+            : `${displayBalance(l.params.startPrice)} -> ${displayBalance(l.params.endPrice)}`}
+        </TableItem>
         <TableItem>
           {l.status === LISTING_STATUS.TRANSFER_CONFIRMED && (
             <div className="bid-action">

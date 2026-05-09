@@ -235,7 +235,12 @@ function listingPrefix() {
   return `exchange/listings/${walletName}`;
 }
 
-export async function transferLock(name, startPrice, endPrice, durationDays, password) {
+const LISTING_MODES = {
+  FIXED: 'fixed',
+  REVERSE: 'reverse',
+};
+
+export async function transferLock(name, params, password) {
   const context = getContext(password);
   const nameLock = await transferNameLock(context, name);
   const {privateKey, ...nameLockJSON} = nameLock.toJSON();
@@ -244,11 +249,7 @@ export async function transferLock(name, startPrice, endPrice, durationDays, pas
       ...nameLockJSON,
       encryptedPrivateKey: encrypt(privateKey, password)
     },
-    params: {
-      startPrice,
-      endPrice,
-      durationDays,
-    },
+    params,
   };
   await put(
     `${listingPrefix()}/${nameLockJSON.name}/${nameLockJSON.transferTxHash}`,
@@ -406,10 +407,59 @@ export async function launchAuction(nameLock, passphrase, paramsOverride, persis
   const key = `${listingPrefix()}/${nameLock.name}/${nameLock.transferTxHash}`;
   const listing = await get(key);
 
-  const {startPrice, endPrice, durationDays, feeRate, feeAddr, lowestDeprecatedPrice} = paramsOverride || listing.params;
+  const params = paramsOverride || listing.params;
+  const {
+    mode,
+    price,
+    startPrice,
+    endPrice,
+    durationDays,
+    feeRate,
+    feeAddr,
+    lowestDeprecatedPrice,
+  } = params;
 
   if (paramsOverride) {
     listing.params = paramsOverride;
+  }
+
+  const effectiveMode = mode || LISTING_MODES.REVERSE;
+
+  if (effectiveMode === LISTING_MODES.FIXED) {
+    const {
+      tx: finalizeTx,
+      coin: finalizeCoin,
+    } = await getFinalizeFromTransferTx(
+      listing.nameLock.transferTxHash,
+      listing.nameLock.name,
+      nodeService,
+    );
+
+    if (!finalizeCoin) throw new Error('cannot find finalize coin');
+
+    const mtp = await nodeService.getMTP();
+    const fixedAuction = await createFixedPriceAuction({
+      context,
+      lockFinalize: new NameLockFinalize({
+        ...listing.nameLock,
+        finalizeTxHash: finalizeTx.hash,
+        finalizeOutputIdx: finalizeCoin.index,
+        privateKey: decrypt(listing.nameLock.encryptedPrivateKey, passphrase),
+      }),
+      price,
+      lockTime: mtp >>> 0,
+      feeRate: feeRate || 0,
+      feeAddr,
+    });
+    const auctionJSON = fixedAuction.toJSON(context);
+    if (persist) {
+      listing.auction = auctionJSON;
+      await put(
+        key,
+        listing,
+      );
+    }
+    return auctionJSON;
   }
 
   let reductionTime;
@@ -473,6 +523,54 @@ export async function launchAuction(nameLock, passphrase, paramsOverride, persis
     );
   }
   return auctionJSON;
+}
+
+async function createFixedPriceAuction(options) {
+  const {
+    context,
+    lockFinalize,
+    price,
+    lockTime,
+    feeRate,
+    feeAddr,
+  } = options;
+
+  if (feeRate > 0 && !feeAddr) {
+    throw new Error('Must specify a fee address if feeRate > 0.');
+  }
+
+  const paymentAddr = (await context.wallet.createAddress('default')).address;
+  const fee = Math.floor(((feeRate || 0) / 10000) * price);
+  const swapProof = new SwapProof({
+    lockingTxHash: lockFinalize.finalizeTxHash,
+    lockingOutputIdx: lockFinalize.finalizeOutputIdx,
+    name: lockFinalize.name,
+    publicKey: lockFinalize.publicKey,
+    paymentAddr,
+    price,
+    lockTime,
+    feeAddr,
+    fee,
+  });
+  await swapProof.sign(context, lockFinalize.privateKey);
+
+  return new Auction({
+    version: 2,
+    name: lockFinalize.name,
+    lockingTxHash: lockFinalize.finalizeTxHash,
+    lockingOutputIdx: lockFinalize.finalizeOutputIdx,
+    publicKey: lockFinalize.publicKey,
+    paymentAddr,
+    feeAddr,
+    data: [
+      {
+        price,
+        lockTime,
+        fee,
+        signature: swapProof.signature,
+      },
+    ],
+  });
 }
 
 export async function getFeeInfo() {
