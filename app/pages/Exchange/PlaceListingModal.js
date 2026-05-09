@@ -7,6 +7,9 @@ import { transferExchangeLock } from '../../ducks/exchange.js';
 import Anchor from "../../components/Anchor";
 import Alert from "../../components/Alert";
 import {I18nContext} from "../../utils/i18n";
+import {getShakedexChannelBaseUrl} from '../../constants/shakedexChannels.js';
+
+const MARKET_API_BASE_URL = getShakedexChannelBaseUrl();
 
 export class PlaceListingModal extends Component {
   static contextType = I18nContext;
@@ -89,7 +92,7 @@ export class PlaceListingModal extends Component {
             {t('learnHnsSellerLockWarning')}
           </Alert>
           <p>{t('learnHnsSellerFlowNote')}</p>
-          <p><Anchor href="https://market.learnhns.com/docs">{t('learnMore')}</Anchor></p>
+          <p><Anchor href={`${MARKET_API_BASE_URL}/docs`}>{t('learnMore')}</Anchor></p>
           <div className="exchange__label">{`${t('chooseName')}:`}</div>
           <div className="exchange__input">
             <Dropdown

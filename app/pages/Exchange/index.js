@@ -42,11 +42,16 @@ import SpinnerSVG from '../../assets/images/brick-loader.svg';
 import ConfirmFeeModal from './ConfirmFeeModal.js';
 import {I18nContext} from "../../utils/i18n";
 import { Auction } from 'shakedex/src/auction.js';
+import {
+  ACTIVE_SHAKEDEX_CHANNEL,
+  getShakedexChannelBaseUrl,
+} from '../../constants/shakedexChannels.js';
 
 const analytics = aClientStub(() => require('electron').ipcRenderer);
 const shakedex = sClientStub(() => require('electron').ipcRenderer);
-const MARKET_API_HOST = process.env.LEARNHNS_MARKET_API_HOST || 'market.learnhns.com';
 const MARKET_STATUS_REFRESH_INTERVAL = 60000;
+const MARKET_API_HOST = ACTIVE_SHAKEDEX_CHANNEL.host;
+const MARKET_API_BASE_URL = getShakedexChannelBaseUrl();
 
 class Exchange extends Component {
   static propTypes = {
@@ -612,7 +617,7 @@ class Exchange extends Component {
           <div>
             <h2>{t('learnHnsMarketplace')}</h2>
             <div className="exchange-marketplace-header__channel">
-              {`${t('activeChannel')}: ${MARKET_API_HOST}`}
+              {`${t('activeChannel')}: ${ACTIVE_SHAKEDEX_CHANNEL.label} (${MARKET_API_HOST})`}
             </div>
           </div>
           <div className="exchange-marketplace-header__actions">
@@ -625,13 +630,13 @@ class Exchange extends Component {
             </button>
             <button
               className="exchange-marketplace-header__button"
-              onClick={() => shell.openExternal(`https://${MARKET_API_HOST}`)}
+              onClick={() => shell.openExternal(MARKET_API_BASE_URL)}
             >
               {t('openLearnHnsMarket')}
             </button>
             <button
               className="exchange-marketplace-header__button"
-              onClick={() => shell.openExternal(`https://${MARKET_API_HOST}/status`)}
+              onClick={() => shell.openExternal(`${MARKET_API_BASE_URL}/status`)}
             >
               {t('openChannelStatus')}
             </button>
@@ -1084,7 +1089,7 @@ class Exchange extends Component {
       <TableRow
         key={auction.id}
         className="exchange__auction-listing__row"
-        onClick={() => shell.openExternal(`https://${MARKET_API_HOST}/listing/${auction.name}`)}
+        onClick={() => shell.openExternal(`${MARKET_API_BASE_URL}/listing/${auction.name}`)}
       >
         <TableItem>{formatName(auction.name)}</TableItem>
         <TableItem>{currentPriceText}</TableItem>
@@ -1125,7 +1130,7 @@ class Exchange extends Component {
                   className="bid-action__link"
                   onClick={(e) => {
                     e.stopPropagation();
-                    shell.openExternal(`https://${MARKET_API_HOST}/listing/${auction.name}`);
+                    shell.openExternal(`${MARKET_API_BASE_URL}/listing/${auction.name}`);
                   }}
                 >
                   {t('viewListing')}

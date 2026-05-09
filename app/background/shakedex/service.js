@@ -28,11 +28,15 @@ import {
   paramSchema
 } from "../../utils/shakedex";
 import {Client} from "bcurl";
+import {
+  ACTIVE_SHAKEDEX_CHANNEL,
+  getShakedexChannelBaseUrl,
+} from '../../constants/shakedexChannels.js';
 
 let db;
 
-const MARKET_API_HOST = process.env.LEARNHNS_MARKET_API_HOST || 'market.learnhns.com';
-const MARKET_API_BASE_URL = `https://${MARKET_API_HOST}`;
+const MARKET_API_HOST = ACTIVE_SHAKEDEX_CHANNEL.host;
+const MARKET_API_BASE_URL = getShakedexChannelBaseUrl();
 
 const client = new Client({
   host: MARKET_API_HOST,
