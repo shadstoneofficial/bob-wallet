@@ -22,6 +22,7 @@ const isLearnHnsTestBuild = process.env.BOB_LEARNHNS_TEST === 'true'
   || appRuntimeHints.includes('com.learnhns.BobTest');
 
 if (isLearnHnsTestBuild) {
+  process.env.BOB_LEARNHNS_TEST = 'true';
   app.setName('Bob LearnHNS Test');
   app.setPath('userData', path.join(app.getPath('appData'), 'Bob LearnHNS Test'));
 }

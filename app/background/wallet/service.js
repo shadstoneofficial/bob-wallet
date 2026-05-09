@@ -118,7 +118,7 @@ class WalletService {
 
     this.client = new WalletClient({
       network: this.network,
-      port: this.network.walletPort,
+      port: this.nodeService.getWalletPort(this.network),
       apiKey: this.walletApiKey,
       timeout: 10000,
     });
@@ -217,7 +217,7 @@ class WalletService {
 
     this.client = new WalletClient({
       network,
-      port: network.walletPort,
+      port: this.nodeService.getWalletPort(network),
       apiKey: this.walletApiKey,
       timeout: 10000,
     });

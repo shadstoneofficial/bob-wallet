@@ -38,6 +38,7 @@ const NODE_API_KEY = 'nodeApiKey';
 const NODE_NO_DNS = 'nodeNoDns1';
 const SPV_MODE = 'nodeSpvMode';
 const HANDSHAKE_API_BASE_URL = 'https://api.handshakeapi.com/hsd';
+const LEARNHNS_TEST_PORT_OFFSET = 1000;
 
 export class NodeService extends EventEmitter {
   constructor() {
@@ -196,6 +197,26 @@ export class NodeService extends EventEmitter {
     this.spv = await this.getSpvMode();
   }
 
+  getPortOffset() {
+    return process.env.BOB_LEARNHNS_TEST === 'true' ? LEARNHNS_TEST_PORT_OFFSET : 0;
+  }
+
+  getRpcPort(network = this.network) {
+    return network.rpcPort + this.getPortOffset();
+  }
+
+  getWalletPort(network = this.network) {
+    return network.walletPort + this.getPortOffset();
+  }
+
+  getNsPort() {
+    return 9891 + this.getPortOffset();
+  }
+
+  getRsPort() {
+    return 9892 + this.getPortOffset();
+  }
+
   async startNode() {
     if (this.hsd) {
       // The app was restarted but the nodes are already running,
@@ -228,11 +249,13 @@ export class NodeService extends EventEmitter {
       prefix: dir,
       indexAddress: true,
       indexTX: true,
+      httpPort: this.getRpcPort(),
       apiKey: this.apiKey,
       walletApiKey: walletApiKey,
+      walletHttpPort: this.getWalletPort(),
       cors: true,
-      rsPort: 9892,
-      nsPort: 9891,
+      rsPort: this.getRsPort(),
+      nsPort: this.getNsPort(),
       noDns: this.noDns,
       listen: this.networkName === 'regtest', // improves remote rpc dev/testing
       chainMigrate: 3,
@@ -281,7 +304,7 @@ export class NodeService extends EventEmitter {
 
     this.client = new NodeClient({
       network: this.network,
-      port: this.network.rpcPort,
+      port: this.getRpcPort(),
       apiKey: this.apiKey,
     });
 
