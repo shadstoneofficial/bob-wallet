@@ -73,6 +73,7 @@ function getInitialState() {
     isError: false,
     isPlacingBid: false,
     isPlacingBidError: false,
+    placingBidErrorMessage: '',
     finalizingName: null,
     isPlacingListing: false,
     isPlacingListingError: false,
@@ -598,6 +599,7 @@ export default function (state = getInitialState(), action) {
         ...state,
         isPlacingBid: true,
         isPlacingBidError: false,
+        placingBidErrorMessage: '',
       };
     }
     case PLACE_EXCHANGE_BID_OK: {
@@ -605,6 +607,7 @@ export default function (state = getInitialState(), action) {
         ...state,
         isPlacingBid: false,
         isPlacingBidError: false,
+        placingBidErrorMessage: '',
       };
     }
     case PLACE_EXCHANGE_BID_ERR: {
@@ -612,6 +615,7 @@ export default function (state = getInitialState(), action) {
         ...state,
         isPlacingBid: false,
         isPlacingBidError: true,
+        placingBidErrorMessage: action.payload.message,
       };
     }
     case FINALIZE_EXCHANGE_BID: {

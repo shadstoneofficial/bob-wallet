@@ -118,6 +118,14 @@ async function getMarketListingCoin(auction) {
   const data = await resp.json();
 
   if (!resp.ok) {
+    const status = await getMarketHsdStatus();
+    if (status && status.reachable && status.progress < 0.99) {
+      const percent = Math.max(0, Math.min(100, status.progress * 100)).toFixed(2);
+      throw new Error(
+        `LearnHNS Market is still syncing its Handshake node (${percent}% complete, height ${status.height}). Please try again after sync completes.`,
+      );
+    }
+
     throw new Error(data.error || 'LearnHNS Market could not provide listing coin data.');
   }
 
@@ -130,6 +138,15 @@ async function getMarketListingCoin(auction) {
   }
 
   return data.coin;
+}
+
+async function getMarketHsdStatus() {
+  try {
+    const resp = await fetch(`${MARKET_API_BASE_URL}/api/v2/hsd/status`);
+    return await resp.json();
+  } catch (e) {
+    return null;
+  }
 }
 
 async function attachMarketCoinFallback(context, auction) {

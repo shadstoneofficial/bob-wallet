@@ -550,7 +550,7 @@
   "shakedexFee1": "The auction provider charges a fee of %s.",
   "shakedexFee2": "The fee will be sent to %s. Do you still want to post your auctions?",
   "shakedexNote": "Your auction presigns will be regenerated prior to upload. However, the presigns stored locally will remain without a fee.",
-  "shakedexPlaceBidError": "An error occurred while fulfilling the auction. Please try again.",
+  "shakedexPlaceBidError": "An error occurred while buying this marketplace name. Please try again.",
   "shakedexPlaceBidWarning": "Please confirm your auction details below. Note that fulfilling an auction is irreversible.",
   "shakedexStatusActive": "Active",
   "shakedexStatusCancelConfirmed": "Ready to Finalize Cancel",

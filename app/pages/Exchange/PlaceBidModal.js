@@ -32,7 +32,7 @@ export class PlaceBidModal extends Component {
             <Alert
               className="place-bid-modal__alert"
               type="error"
-              message={t('shakedexPlaceBidError')}
+              message={this.props.placingBidErrorMessage || t('shakedexPlaceBidError')}
             />
           )}
           <p>
@@ -78,6 +78,7 @@ export default connect(
   (state) => ({
     isPlacingBid: state.exchange.isPlacingBid,
     isPlacingBidError: state.exchange.isPlacingBidError,
+    placingBidErrorMessage: state.exchange.placingBidErrorMessage,
   }),
   (dispatch) => ({
     placeExchangeBid: (auction, bid) => dispatch(placeExchangeBid(auction, bid)),
