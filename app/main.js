@@ -4,8 +4,6 @@ import "isomorphic-fetch";
   //process.env.NODE_BACKEND = 'js';
 // }
 
-require('./sentry');
-
 import {app, dialog} from 'electron';
 import MenuBuilder from './menu';
 import showMainWindow, {dispatchToMainWindow, sendDeeplinkToMainWindow} from './mainWindow';
@@ -13,12 +11,22 @@ import path from 'path';
 import {encrypt} from "./utils/encrypt";
 
 const Sentry = require('@sentry/electron/main');
-const isLearnHnsTestBuild = app.getName() === 'Bob LearnHNS Test'
-  || process.env.BOB_LEARNHNS_TEST === 'true';
+const appRuntimeHints = [
+  app.getName(),
+  process.execPath,
+  process.resourcesPath || '',
+  process.argv.join(' '),
+].join(' ');
+const isLearnHnsTestBuild = process.env.BOB_LEARNHNS_TEST === 'true'
+  || appRuntimeHints.includes('Bob LearnHNS Test')
+  || appRuntimeHints.includes('com.learnhns.BobTest');
 
 if (isLearnHnsTestBuild) {
+  app.setName('Bob LearnHNS Test');
   app.setPath('userData', path.join(app.getPath('appData'), 'Bob LearnHNS Test'));
 }
+
+require('./sentry');
 
 if (process.env.NODE_ENV === 'production') {
   const sourceMapSupport = require('source-map-support');
