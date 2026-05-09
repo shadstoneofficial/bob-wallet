@@ -155,6 +155,12 @@ class Exchange extends Component {
     ]);
   }
 
+  clearMarketplaceFilters = () => this.setState({
+    marketplaceQuery: '',
+    marketplaceModeFilter: 'all',
+    marketplaceSort: 'name',
+  });
+
   getMarketplaceModeItems() {
     const { t } = this.context;
 
@@ -714,6 +720,9 @@ class Exchange extends Component {
     const sortItems = this.getMarketplaceSortItems();
     const currentModeIndex = modeItems.findIndex(item => item.value === this.state.marketplaceModeFilter);
     const currentSortIndex = sortItems.findIndex(item => item.value === this.state.marketplaceSort);
+    const isFiltered = Boolean(this.state.marketplaceQuery.trim())
+      || this.state.marketplaceModeFilter !== 'all'
+      || this.state.marketplaceSort !== 'name';
 
     return (
       <div className="exchange-marketplace-filters">
@@ -739,6 +748,14 @@ class Exchange extends Component {
         <div className="exchange-marketplace-filters__count">
           {`${visibleCount} ${visibleCount === 1 ? t('listing') : t('listings')}`}
         </div>
+        {isFiltered && (
+          <button
+            className="exchange-marketplace-filters__clear"
+            onClick={this.clearMarketplaceFilters}
+          >
+            {t('clearFilters')}
+          </button>
+        )}
       </div>
     );
   }
@@ -1000,6 +1017,15 @@ class Exchange extends Component {
                   }}
                 >
                   {t('downloadProofs')}
+                </div>
+                <div
+                  className="bid-action__link"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    shell.openExternal(`https://${MARKET_API_HOST}/listing/${auction.name}`);
+                  }}
+                >
+                  {t('viewListing')}
                 </div>
               </div>
             )

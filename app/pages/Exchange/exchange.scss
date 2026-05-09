@@ -107,6 +107,14 @@
   font-weight: 600;
 }
 
+.exchange-marketplace-filters__clear {
+  @extend %btn-secondary;
+  flex: 0 0 auto;
+  width: auto;
+  padding: .55rem .75rem;
+  font-size: .75rem;
+}
+
 .place-bid-modal__table {
   margin-left: -3px;
 
