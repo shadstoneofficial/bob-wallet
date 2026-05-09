@@ -64,6 +64,45 @@
   font-size: .75rem;
 }
 
+.exchange-marketplace-filters {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  margin-bottom: .75rem;
+}
+
+.exchange-marketplace-filters__search {
+  flex: 1 1 auto;
+  min-width: 12rem;
+
+  input {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid rgba($black, .1);
+    border-radius: .5rem;
+    outline: none;
+    padding: .7rem .85rem;
+    font-size: .85rem;
+    font-weight: 500;
+    transition: border-color 200ms ease-in-out;
+
+    &:focus {
+      border-color: rgba($azure-blue, .6);
+    }
+  }
+}
+
+.exchange-marketplace-filters__mode {
+  flex: 0 0 10rem;
+}
+
+.exchange-marketplace-filters__count {
+  flex: 0 0 auto;
+  color: $manatee-gray;
+  font-size: .75rem;
+  font-weight: 600;
+}
+
 .place-bid-modal__table {
   margin-left: -3px;
 

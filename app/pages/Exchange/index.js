@@ -82,6 +82,8 @@ class Exchange extends Component {
       marketStatus: null,
       marketStatusLoading: false,
       marketStatusCheckedAt: null,
+      marketplaceQuery: '',
+      marketplaceModeFilter: 'all',
     };
   }
 
@@ -150,6 +152,31 @@ class Exchange extends Component {
       this.fetchShakedex(),
       this.fetchMarketStatus(),
     ]);
+  }
+
+  getMarketplaceModeItems() {
+    const { t } = this.context;
+
+    return [
+      { label: t('allListings'), value: 'all' },
+      { label: t('buyNow'), value: 'fixed' },
+      { label: t('reverseAuction'), value: 'reverse' },
+    ];
+  }
+
+  getVisibleMarketplaceAuctions() {
+    const query = this.state.marketplaceQuery.trim().toLowerCase();
+    const mode = this.state.marketplaceModeFilter;
+
+    return this.props.auctions.filter((auction) => {
+      const matchesQuery = !query || auction.name.toLowerCase().includes(query);
+      const isFixed = isFixedPriceAuction(auction);
+      const matchesMode = mode === 'all'
+        || (mode === 'fixed' && isFixed)
+        || (mode === 'reverse' && !isFixed);
+
+      return matchesQuery && matchesMode;
+    });
   }
 
   getCurrentBidForAuction = async (auction) => {
@@ -396,6 +423,7 @@ class Exchange extends Component {
 
     const isSpv = this.props.spv;
     const canUseMarketplaceActions = this.canUseMarketplaceActions();
+    const marketplaceAuctions = this.getVisibleMarketplaceAuctions();
 
     return (
       <div className="exchange">
@@ -503,6 +531,7 @@ class Exchange extends Component {
             </button>
           </div>
         </div>
+        {this.renderMarketplaceFilters(marketplaceAuctions.length)}
         {isSpv && (
           <div className="exchange__button-header__sub">
             {t('spvMarketplaceEnabled')}
@@ -515,9 +544,9 @@ class Exchange extends Component {
               <div className="loader" style={{ backgroundImage: `url(${SpinnerSVG})`}} />
             </TableRow>
           )}
-          {!this.state.isLoading && !!this.props.auctions.length && this.props.auctions.map(this.renderAuctionRow)}
+          {!this.state.isLoading && !!marketplaceAuctions.length && marketplaceAuctions.map(this.renderAuctionRow)}
           {this.renderListingControls()}
-          {!this.state.isLoading && !this.props.auctions.length && (
+          {!this.state.isLoading && !marketplaceAuctions.length && (
             <TableRow>
               <TableItem>
                 {t('noMarketplaceListingsFound')}
@@ -641,6 +670,33 @@ class Exchange extends Component {
         </div>
       </div>
     )
+  }
+
+  renderMarketplaceFilters(visibleCount) {
+    const { t } = this.context;
+    const modeItems = this.getMarketplaceModeItems();
+    const currentModeIndex = modeItems.findIndex(item => item.value === this.state.marketplaceModeFilter);
+
+    return (
+      <div className="exchange-marketplace-filters">
+        <div className="exchange-marketplace-filters__search">
+          <input
+            value={this.state.marketplaceQuery}
+            onChange={(e) => this.setState({ marketplaceQuery: e.target.value })}
+            placeholder={t('searchMarketplaceListings')}
+          />
+        </div>
+        <Dropdown
+          className="exchange-marketplace-filters__mode"
+          items={modeItems}
+          currentIndex={Math.max(currentModeIndex, 0)}
+          onChange={(marketplaceModeFilter) => this.setState({ marketplaceModeFilter })}
+        />
+        <div className="exchange-marketplace-filters__count">
+          {`${visibleCount} ${visibleCount === 1 ? t('listing') : t('listings')}`}
+        </div>
+      </div>
+    );
   }
 
   renderReadinessPanel() {
