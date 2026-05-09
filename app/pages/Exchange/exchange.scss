@@ -41,6 +41,29 @@
   width: auto !important;
 }
 
+.exchange-marketplace-header {
+  display: flex;
+  align-items: center;
+
+  h2 {
+    margin-right: 1rem;
+  }
+}
+
+.exchange-marketplace-header__actions {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  margin-left: auto;
+}
+
+.exchange-marketplace-header__button {
+  @extend %btn-secondary;
+  width: auto;
+  padding: .55rem .75rem;
+  font-size: .75rem;
+}
+
 .place-bid-modal__table {
   margin-left: -3px;
 

@@ -81,6 +81,7 @@ class Exchange extends Component {
       currentBidsMap: new Map(),
       marketStatus: null,
       marketStatusLoading: false,
+      marketStatusCheckedAt: null,
     };
   }
 
@@ -118,6 +119,7 @@ class Exchange extends Component {
       this.setState({
         marketStatus,
         marketStatusLoading: false,
+        marketStatusCheckedAt: Date.now(),
       });
     } catch (e) {
       this.setState({
@@ -126,6 +128,7 @@ class Exchange extends Component {
           error: e.message,
         },
         marketStatusLoading: false,
+        marketStatusCheckedAt: Date.now(),
       });
     }
   }
@@ -140,6 +143,13 @@ class Exchange extends Component {
 
   showMarketplaceNotReady() {
     this.props.showError(this.context.t('marketplaceWaitForSync'));
+  }
+
+  refreshMarketplace = async () => {
+    await Promise.all([
+      this.fetchShakedex(),
+      this.fetchMarketStatus(),
+    ]);
   }
 
   getCurrentBidForAuction = async (auction) => {
@@ -474,7 +484,25 @@ class Exchange extends Component {
           </>
         )}
 
-        {this.isMarketplaceVisible() ? <><h2>{t('learnHnsMarketplace')}</h2>
+        {this.isMarketplaceVisible() ? <>
+        <div className="exchange-marketplace-header">
+          <h2>{t('learnHnsMarketplace')}</h2>
+          <div className="exchange-marketplace-header__actions">
+            <button
+              className="exchange-marketplace-header__button"
+              disabled={this.state.isLoading || this.state.marketStatusLoading}
+              onClick={this.refreshMarketplace}
+            >
+              {t('refresh')}
+            </button>
+            <button
+              className="exchange-marketplace-header__button"
+              onClick={() => shell.openExternal(`https://${MARKET_API_HOST}`)}
+            >
+              {t('openLearnHnsMarket')}
+            </button>
+          </div>
+        </div>
         {isSpv && (
           <div className="exchange__button-header__sub">
             {t('spvMarketplaceEnabled')}
@@ -629,6 +657,7 @@ class Exchange extends Component {
     const {
       marketStatus,
       marketStatusLoading,
+      marketStatusCheckedAt,
     } = this.state;
 
     const nodePercent = nodeProgress ? Math.min(100, nodeProgress * 100).toFixed(2) : '0.00';
@@ -679,6 +708,11 @@ class Exchange extends Component {
         {!this.canUseMarketplaceActions() && (
           <div className="exchange-readiness__note">
             {t('marketplaceWaitForSync')}
+          </div>
+        )}
+        {marketStatusCheckedAt && (
+          <div className="exchange-readiness__note">
+            {`${t('marketStatusChecked')} ${moment(marketStatusCheckedAt).format('HH:mm:ss')}`}
           </div>
         )}
       </div>
