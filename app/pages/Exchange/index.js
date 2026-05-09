@@ -46,6 +46,7 @@ import { Auction } from 'shakedex/src/auction.js';
 const analytics = aClientStub(() => require('electron').ipcRenderer);
 const shakedex = sClientStub(() => require('electron').ipcRenderer);
 const MARKET_API_HOST = process.env.LEARNHNS_MARKET_API_HOST || 'market.learnhns.com';
+const MARKET_STATUS_REFRESH_INTERVAL = 60000;
 
 class Exchange extends Component {
   static propTypes = {
@@ -86,6 +87,8 @@ class Exchange extends Component {
       marketplaceModeFilter: 'all',
       marketplaceSort: 'name',
     };
+
+    this.marketStatusTimer = null;
   }
 
   componentDidMount() {
@@ -95,6 +98,16 @@ class Exchange extends Component {
     if (this.isMarketplaceVisible()) {
       this.fetchShakedex();
       this.fetchMarketStatus();
+      this.marketStatusTimer = setInterval(
+        () => this.fetchMarketStatus({ silent: true }),
+        MARKET_STATUS_REFRESH_INTERVAL,
+      );
+    }
+  }
+
+  componentWillUnmount() {
+    if (this.marketStatusTimer) {
+      clearInterval(this.marketStatusTimer);
     }
   }
 
@@ -115,9 +128,11 @@ class Exchange extends Component {
     }
   }
 
-  async fetchMarketStatus() {
+  async fetchMarketStatus({ silent = false } = {}) {
     try {
-      this.setState({ marketStatusLoading: true });
+      if (!silent) {
+        this.setState({ marketStatusLoading: true });
+      }
       const marketStatus = await shakedex.getMarketHsdStatus();
       this.setState({
         marketStatus,
@@ -613,6 +628,12 @@ class Exchange extends Component {
               onClick={() => shell.openExternal(`https://${MARKET_API_HOST}`)}
             >
               {t('openLearnHnsMarket')}
+            </button>
+            <button
+              className="exchange-marketplace-header__button"
+              onClick={() => shell.openExternal(`https://${MARKET_API_HOST}/status`)}
+            >
+              {t('openChannelStatus')}
             </button>
           </div>
         </div>

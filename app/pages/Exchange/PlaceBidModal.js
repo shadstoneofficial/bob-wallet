@@ -17,8 +17,10 @@ export class PlaceBidModal extends Component {
   }
 
   render() {
-    const {auction, bid, onClose} = this.props;
+    const {auction, bid, onClose, spendableBalance} = this.props;
     const {t} = this.context;
+    const requiredBalance = bid.price + (bid.fee || 0);
+    const hasEnoughBalance = spendableBalance >= requiredBalance;
 
     return (
       <MiniModal title={t('buyMarketplaceName')} onClose={() => {
@@ -38,6 +40,13 @@ export class PlaceBidModal extends Component {
           <p>
             {t('marketplaceBuyWarning')}
           </p>
+          {!hasEnoughBalance && (
+            <Alert
+              className="place-bid-modal__alert"
+              type="warning"
+              message={t('marketplaceInsufficientBalance')}
+            />
+          )}
           <table className="place-bid-modal__table">
             <tbody>
               <tr>
@@ -47,6 +56,16 @@ export class PlaceBidModal extends Component {
               <tr>
                 <td><strong>{`${t('price')}:`}</strong></td>
                 <td>{displayBalance(bid.price, true)}</td>
+              </tr>
+              {!!bid.fee && (
+                <tr>
+                  <td><strong>{`${t('marketplaceFee')}:`}</strong></td>
+                  <td>{displayBalance(bid.fee, true)}</td>
+                </tr>
+              )}
+              <tr>
+                <td><strong>{`${t('spendable')}:`}</strong></td>
+                <td>{displayBalance(spendableBalance, true)}</td>
               </tr>
             </tbody>
           </table>
@@ -63,7 +82,7 @@ export class PlaceBidModal extends Component {
             <button
               className="place-bid-modal__send"
               onClick={() => this.props.placeExchangeBid(auction, bid)}
-              disabled={this.props.isPlacingBid}
+              disabled={this.props.isPlacingBid || !hasEnoughBalance}
             >
               {this.props.isPlacingBid ? t('loading') : t('confirmBuy')}
             </button>
@@ -79,6 +98,7 @@ export default connect(
     isPlacingBid: state.exchange.isPlacingBid,
     isPlacingBidError: state.exchange.isPlacingBidError,
     placingBidErrorMessage: state.exchange.placingBidErrorMessage,
+    spendableBalance: state.wallet.balance.spendable,
   }),
   (dispatch) => ({
     placeExchangeBid: (auction, bid) => dispatch(placeExchangeBid(auction, bid)),
