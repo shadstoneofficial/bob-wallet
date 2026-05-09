@@ -15,8 +15,35 @@
   }
 
   &__search {
+    width: 14rem;
+  }
+
+  &__filters {
+    @extend %row-nowrap;
+    align-items: center;
+    justify-content: space-between;
     margin: 1rem 0;
-    width: 10rem;
+  }
+
+  &__sort {
+    @extend %row-nowrap;
+    align-items: center;
+
+    &__label {
+      color: rgba($black, .6);
+      font-size: .75rem;
+      font-weight: 500;
+      margin-right: .5rem;
+      white-space: nowrap;
+    }
+
+    &__dropdown {
+      .dropdown {
+        &__current-item {
+          min-width: 9.5rem;
+        }
+      }
+    }
   }
 
   &__domain {

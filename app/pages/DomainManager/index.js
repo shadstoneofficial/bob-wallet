@@ -39,7 +39,15 @@ const ITEM_PER_DROPDOWN = [
 ];
 
 const DM_ITEMS_PER_PAGE_KEY = 'domain-manager-items-per-page';
+const DM_SORT_BY_KEY = 'domain-manager-sort-by';
 const AVERAGE_BLOCK_TIME = 10 * 60 * 1000;
+
+const SORT_DROPDOWN = [
+  {labelKey: 'sortName', value: 'name-asc'},
+  {labelKey: 'sortNameDesc', value: 'name-desc'},
+  {labelKey: 'sortExpirationSoonest', value: 'expiration-asc'},
+  {labelKey: 'sortExpirationLatest', value: 'expiration-desc'},
+];
 
 class DomainManager extends Component {
   static propTypes = {
@@ -58,6 +66,7 @@ class DomainManager extends Component {
     isConfirmingBulkFinalize: false,
     currentPageIndex: 0,
     itemsPerPage: 10,
+    sortBy: 'name-asc',
   };
 
   shouldComponentUpdate(nextProps, nextState) {
@@ -68,15 +77,18 @@ class DomainManager extends Component {
       || this.state.isShowingBulkTransfer !== nextState.isShowingBulkTransfer
       || this.state.isConfirmingBulkFinalize !== nextState.isConfirmingBulkFinalize
       || this.state.currentPageIndex !== nextState.currentPageIndex
-      || this.state.itemsPerPage !== nextState.itemsPerPage;
+      || this.state.itemsPerPage !== nextState.itemsPerPage
+      || this.state.sortBy !== nextState.sortBy;
   }
 
   async componentDidMount() {
     this.props.getMyNames();
     const itemsPerPage = await dbClient.get(DM_ITEMS_PER_PAGE_KEY);
+    const sortBy = await dbClient.get(DM_SORT_BY_KEY);
 
     this.setState({
       itemsPerPage: itemsPerPage || 10,
+      sortBy: SORT_DROPDOWN.some(({ value }) => value === sortBy) ? sortBy : 'name-asc',
     });
 
     analytics.screenView('Domain Manager');
@@ -90,15 +102,52 @@ class DomainManager extends Component {
 
   getNamesList() {
     let namesList = Array.from(this.props.namesList);
-    let { query } = this.state;
+    let { query, sortBy } = this.state;
 
     if (query) {
       query = query.toLowerCase();
       namesList = namesList.filter(name => name.includes(query));
     }
 
-    namesList.sort();
+    namesList.sort((a, b) => {
+      const nameCompare = a.localeCompare(b);
+
+      if (sortBy === 'name-desc') {
+        return -nameCompare;
+      }
+
+      if (sortBy === 'expiration-asc' || sortBy === 'expiration-desc') {
+        const aExpiration = this.getExpirationHeight(a);
+        const bExpiration = this.getExpirationHeight(b);
+        const expirationCompare = aExpiration - bExpiration;
+
+        if (expirationCompare !== 0) {
+          return sortBy === 'expiration-asc' ? expirationCompare : -expirationCompare;
+        }
+      }
+
+      return nameCompare;
+    });
     return namesList;
+  }
+
+  getExpirationHeight(name) {
+    const domain = this.props.names[name];
+    const network = networks[this.props.network];
+
+    if (!domain?.renewal || !network?.names?.renewalWindow) {
+      return Number.MAX_SAFE_INTEGER;
+    }
+
+    return domain.renewal + network.names.renewalWindow;
+  }
+
+  getSortDropdownItems() {
+    const { t } = this.context;
+    return SORT_DROPDOWN.map(({ labelKey, value }) => ({
+      label: t(labelKey),
+      value,
+    }));
   }
 
   handleExportClick() {
@@ -291,12 +340,14 @@ class DomainManager extends Component {
     const {t} = this.context;
     const {
       query,
+      sortBy,
       currentPageIndex: i,
       itemsPerPage: n,
     } = this.state;
 
     const start = i * n;
     const end = start + n;
+    const sortItems = this.getSortDropdownItems();
 
     return (
       <div className="domain-manager">
@@ -325,12 +376,29 @@ class DomainManager extends Component {
           </button>
           {this.renderBulkFinalize()}
         </div>
-        <BidSearchInput
-          className="domain-manager__search"
-          placeholder={t('domainSearchPlaceholder')}
-          onChange={this.onChange('query')}
-          value={query}
-        />
+        <div className="domain-manager__filters">
+          <BidSearchInput
+            className="domain-manager__search"
+            placeholder={t('domainSearchPlaceholder')}
+            onChange={this.onChange('query')}
+            value={query}
+          />
+          <div className="domain-manager__sort">
+            <div className="domain-manager__sort__label">{`${t('sortBy')}:`}</div>
+            <Dropdown
+              className="domain-manager__sort__dropdown"
+              items={sortItems}
+              onChange={async nextSortBy => {
+                await dbClient.put(DM_SORT_BY_KEY, nextSortBy);
+                this.setState({
+                  sortBy: nextSortBy,
+                  currentPageIndex: 0,
+                });
+              }}
+              currentIndex={SORT_DROPDOWN.findIndex(({ value }) => value === sortBy)}
+            />
+          </div>
+        </div>
         <Table className="domain-manager__table">
           <HeaderRow>
             <HeaderItem>{t('domain')}</HeaderItem>
