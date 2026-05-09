@@ -31,8 +31,11 @@ import {Client} from "bcurl";
 
 let db;
 
+const MARKET_API_HOST = process.env.LEARNHNS_MARKET_API_HOST || 'market.learnhns.com';
+const MARKET_API_BASE_URL = `https://${MARKET_API_HOST}`;
+
 const client = new Client({
-  host: 'api.shakedex.com',
+  host: MARKET_API_HOST,
   ssl: true,
 });
 
@@ -96,7 +99,7 @@ export async function getExchangeAuctions(currentPage = 1) {
 }
 
 export async function listAuction(auction) {
-  const resp = await fetch(`https://api.shakedex.com/api/v2/auctions`, {
+  const resp = await fetch(`${MARKET_API_BASE_URL}/api/v2/auctions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
@@ -410,7 +413,7 @@ export async function launchAuction(nameLock, passphrase, paramsOverride, persis
 }
 
 export async function getFeeInfo() {
-  const resp = await fetch(`https://api.shakedex.com/api/v2/fee_info`);
+  const resp = await fetch(`${MARKET_API_BASE_URL}/api/v2/fee_info`);
   if (resp.status === 404) {
     return {
       rate: 0,

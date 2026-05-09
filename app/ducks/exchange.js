@@ -1,4 +1,3 @@
-import { Client } from 'bcurl';
 import { getPassphrase } from './walletActions.js';
 import { clientStub as shakedexClientStub } from '../background/shakedex/client.js';
 import { clientStub as nodeClientStub } from '../background/node/client.js';
@@ -9,11 +8,6 @@ import { LISTING_STATUS } from '../constants/exchange.js';
 
 const shakedex = shakedexClientStub(() => require('electron').ipcRenderer);
 const nodeClient = nodeClientStub(() => require('electron').ipcRenderer);
-
-const client = new Client({
-  host: 'api.shakedex.com',
-  ssl: true,
-});
 
 export const GET_EXCHANGE_AUCTIONS = 'GET/EXCHANGE_AUCTIONS';
 export const GET_EXCHANGE_AUCTIONS_OK = 'GET/EXCHANGE_AUCTIONS/OK';
@@ -529,10 +523,10 @@ export const submitToShakedex = (auction) => async dispatch => {
       return;
     }
 
-    dispatch(showSuccess('Your auction is now listed on Shakedex Web'));
+    dispatch(showSuccess('Your auction is now listed on LearnHNS Market'));
   } catch (e) {
     console.error(e);
-    dispatch(showError('Failed to post to Shakedex Web. You can still download your proofs and distribute them.'));
+    dispatch(showError('Failed to post to LearnHNS Market. You can still download your proofs and distribute them.'));
   }
 };
 

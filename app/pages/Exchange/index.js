@@ -689,7 +689,7 @@ class Exchange extends Component {
       <TableRow
         key={auction.id}
         className="exchange__auction-listing__row"
-        onClick={() => shell.openExternal(`https://shakedex.com/a/${auction.name}`)}
+        onClick={() => shell.openExternal(`https://market.learnhns.com/listing/${auction.name}`)}
       >
         <TableItem>{formatName(auction.name)}</TableItem>
         <TableItem>{currentPriceText}</TableItem>
