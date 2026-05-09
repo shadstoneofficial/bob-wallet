@@ -844,6 +844,12 @@ class Exchange extends Component {
             <span>{t('buyNow')}</span>
             <span>{t('reverseAuction')}</span>
           </div>
+          <div className="exchange-seller-tools__steps">
+            <div>{t('sellerStepLock')}</div>
+            <div>{t('sellerStepWait')}</div>
+            <div>{t('sellerStepFinalize')}</div>
+            <div>{t('sellerStepBackup')}</div>
+          </div>
           <div className="exchange-seller-tools__note">
             {this.props.spv
               ? ENABLE_SPV_SELLER_BETA
