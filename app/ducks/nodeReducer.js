@@ -33,7 +33,7 @@ export function getInitialState() {
     rsPort: 9892,
     nsPort: 9891,
     noDns: false,
-    spv: false,
+    spv: true,
     compactingTree: false,
     fees: {
       slow: 0,

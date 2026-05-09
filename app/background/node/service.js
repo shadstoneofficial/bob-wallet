@@ -80,7 +80,7 @@ export class NodeService extends EventEmitter {
       return spv === '1';
     }
 
-    return false;
+    return true;
   }
 
   async getDir() {
