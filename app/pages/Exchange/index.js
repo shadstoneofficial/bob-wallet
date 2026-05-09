@@ -594,7 +594,12 @@ class Exchange extends Component {
 
         {this.isMarketplaceVisible() ? <>
         <div className="exchange-marketplace-header">
-          <h2>{t('learnHnsMarketplace')}</h2>
+          <div>
+            <h2>{t('learnHnsMarketplace')}</h2>
+            <div className="exchange-marketplace-header__channel">
+              {`${t('activeChannel')}: ${MARKET_API_HOST}`}
+            </div>
+          </div>
           <div className="exchange-marketplace-header__actions">
             <button
               className="exchange-marketplace-header__button"

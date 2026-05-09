@@ -12,9 +12,9 @@ export const EXPLORERS = [
     address: 'https://shakeshift/address/%s',
   },
   {
-    label: 'e.hns.com',
-    tx: 'https://e.hns.com/tx/%s',
-    name: 'https://e.hns.com/name/%s',
-    address: 'https://e.hns.com/address/%s',
+    label: 'HNS Fans',
+    tx: 'https://e.hnsfans.com/tx/%s',
+    name: 'https://e.hnsfans.com/name/%s',
+    address: 'https://e.hnsfans.com/address/%s',
   },
 ]

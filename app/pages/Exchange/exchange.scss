@@ -46,8 +46,15 @@
   align-items: center;
 
   h2 {
-    margin-right: 1rem;
+    padding-bottom: .25rem;
   }
+}
+
+.exchange-marketplace-header__channel {
+  color: $manatee-gray;
+  font-size: .7rem;
+  font-weight: 500;
+  margin-bottom: .75rem;
 }
 
 .exchange-marketplace-header__actions {
