@@ -84,6 +84,7 @@ class Exchange extends Component {
       marketStatusCheckedAt: null,
       marketplaceQuery: '',
       marketplaceModeFilter: 'all',
+      marketplaceSort: 'name',
     };
   }
 
@@ -164,11 +165,23 @@ class Exchange extends Component {
     ];
   }
 
+  getMarketplaceSortItems() {
+    const { t } = this.context;
+
+    return [
+      { label: t('sortName'), value: 'name' },
+      { label: t('sortLowestPrice'), value: 'price-asc' },
+      { label: t('sortHighestPrice'), value: 'price-desc' },
+      { label: t('sortListingMode'), value: 'mode' },
+    ];
+  }
+
   getVisibleMarketplaceAuctions() {
     const query = this.state.marketplaceQuery.trim().toLowerCase();
     const mode = this.state.marketplaceModeFilter;
+    const sort = this.state.marketplaceSort;
 
-    return this.props.auctions.filter((auction) => {
+    const filtered = this.props.auctions.filter((auction) => {
       const matchesQuery = !query || auction.name.toLowerCase().includes(query);
       const isFixed = isFixedPriceAuction(auction);
       const matchesMode = mode === 'all'
@@ -176,6 +189,29 @@ class Exchange extends Component {
         || (mode === 'reverse' && !isFixed);
 
       return matchesQuery && matchesMode;
+    });
+
+    return [...filtered].sort((a, b) => {
+      if (sort === 'mode') {
+        const modeCompare = Number(isFixedPriceAuction(b)) - Number(isFixedPriceAuction(a));
+        return modeCompare || a.name.localeCompare(b.name);
+      }
+
+      if (sort === 'price-asc' || sort === 'price-desc') {
+        const aPrice = getKnownCurrentPrice(a, this.state.currentBidsMap);
+        const bPrice = getKnownCurrentPrice(b, this.state.currentBidsMap);
+
+        if (aPrice === null && bPrice === null) {
+          return a.name.localeCompare(b.name);
+        }
+
+        if (aPrice === null) return 1;
+        if (bPrice === null) return -1;
+
+        return sort === 'price-asc' ? aPrice - bPrice : bPrice - aPrice;
+      }
+
+      return a.name.localeCompare(b.name);
     });
   }
 
@@ -675,7 +711,9 @@ class Exchange extends Component {
   renderMarketplaceFilters(visibleCount) {
     const { t } = this.context;
     const modeItems = this.getMarketplaceModeItems();
+    const sortItems = this.getMarketplaceSortItems();
     const currentModeIndex = modeItems.findIndex(item => item.value === this.state.marketplaceModeFilter);
+    const currentSortIndex = sortItems.findIndex(item => item.value === this.state.marketplaceSort);
 
     return (
       <div className="exchange-marketplace-filters">
@@ -691,6 +729,12 @@ class Exchange extends Component {
           items={modeItems}
           currentIndex={Math.max(currentModeIndex, 0)}
           onChange={(marketplaceModeFilter) => this.setState({ marketplaceModeFilter })}
+        />
+        <Dropdown
+          className="exchange-marketplace-filters__sort"
+          items={sortItems}
+          currentIndex={Math.max(currentSortIndex, 0)}
+          onChange={(marketplaceSort) => this.setState({ marketplaceSort })}
         />
         <div className="exchange-marketplace-filters__count">
           {`${visibleCount} ${visibleCount === 1 ? t('listing') : t('listings')}`}
@@ -1029,6 +1073,16 @@ class Header extends Component {
 
 function isFixedPriceAuction(auction) {
   return Array.isArray(auction?.bids) && auction.bids.length === 1;
+}
+
+function getKnownCurrentPrice(auction, currentBidsMap) {
+  const currentBid = currentBidsMap.get(auction.id);
+
+  if (currentBid === undefined || currentBid === null) {
+    return null;
+  }
+
+  return currentBid.price;
 }
 
 export default connect(
