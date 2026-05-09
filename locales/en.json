@@ -407,6 +407,7 @@
   "port": "Port",
   "price": "Price",
   "buyMarketplaceName": "Buy Marketplace Name",
+  "buyAtCurrentPrice": "Buy at Current Price",
   "buyNow": "Buy Now",
   "protocol": "Protocol",
   "receiveModalQRDisclaimer": "This QR code can be scanned by the person who is sending you HNS coins.",

@@ -1095,6 +1095,7 @@ class Exchange extends Component {
   renderAuctionRow = (auction) => {
     const {t} = this.context;
     const currentBid = this.state.currentBidsMap.get(auction.id);
+    const isFixedPrice = isFixedPriceAuction(auction);
     if (currentBid === undefined) {
       this.getCurrentBidForAuction(auction);
     }
@@ -1131,7 +1132,7 @@ class Exchange extends Component {
                     });
                   }}
                 >
-                  {t('buyNow')}
+                  {isFixedPrice ? t('buyNow') : t('buyAtCurrentPrice')}
                 </div>
                 <div
                   className="bid-action__link"
