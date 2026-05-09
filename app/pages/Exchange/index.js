@@ -896,6 +896,10 @@ class Exchange extends Component {
     const marketProgress = marketStatus && typeof marketStatus.progress === 'number'
       ? Math.min(100, marketStatus.progress * 100).toFixed(2)
       : null;
+    const marketStatusDetails = [
+      marketStatus?.height ? `${t('height')}: ${marketStatus.height}` : null,
+      marketStatus?.version ? `${t('version')}: ${marketStatus.version}` : null,
+    ].filter(Boolean).join(' · ');
     const marketIsSyncing = marketReachable
       && typeof marketStatus.progress === 'number'
       && marketStatus.progress < 0.99;
@@ -946,7 +950,10 @@ class Exchange extends Component {
         )}
         {marketStatusCheckedAt && (
           <div className="exchange-readiness__note">
-            {`${t('marketStatusChecked')} ${moment(marketStatusCheckedAt).format('HH:mm:ss')}`}
+            {[
+              `${t('marketStatusChecked')} ${moment(marketStatusCheckedAt).format('HH:mm:ss')}`,
+              marketStatusDetails,
+            ].filter(Boolean).join(' · ')}
           </div>
         )}
       </div>
