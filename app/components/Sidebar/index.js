@@ -141,12 +141,6 @@ class Sidebar extends Component {
         <div className="sidebar__section">{t('topLevelDomains')}</div>
         <div className="sidebar__actions">
           <NavLink
-            to="/domains"
-            className={isActive => `sidebar__action ${isActive ? "sidebar__action--selected" : ''}`}
-          >
-            {t('headingBrowseDomains')}
-          </NavLink>
-          <NavLink
             to="/bids"
             className={isActive => `sidebar__action ${isActive ? "sidebar__action--selected" : ''}`}
           >
@@ -158,11 +152,20 @@ class Sidebar extends Component {
           >
             {t('headingWatching')}
           </NavLink>
+        </div>
+        <div className="sidebar__section">{t('headingExchange')}</div>
+        <div className="sidebar__actions">
+          <NavLink
+            to="/domains"
+            className={isActive => `sidebar__action ${isActive ? "sidebar__action--selected" : ''}`}
+          >
+            {t('headingBrowseDomains')}
+          </NavLink>
           <NavLink
             to="/exchange"
             className={isActive => `sidebar__action ${isActive ? "sidebar__action--selected" : ''}`}
           >
-            {t('headingExchange')}
+            {t('headingShakedexMarketplace')}
           </NavLink>
         </div>
         { this.renderMisc() }
