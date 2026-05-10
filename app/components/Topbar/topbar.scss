@@ -189,3 +189,9 @@
     }
   }
 }
+
+body.bob-theme-dark {
+  .topbar__icon--settings.topbar__icon--settings--opened {
+    background-image: url('../../assets/images/settings-gray.svg');
+  }
+}

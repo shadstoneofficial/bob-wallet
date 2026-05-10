@@ -56,6 +56,25 @@ body.bob-theme-dark {
   background: #0d1117;
   color: #e6edf3;
 
+  *::-webkit-scrollbar {
+    height: 12px;
+    width: 12px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: #0d1117;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background-color: #30363d;
+    border: 3px solid #0d1117;
+    border-radius: 999px;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: #484f58;
+  }
+
   #root,
   .app,
   .app__main-wrapper,

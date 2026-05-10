@@ -518,3 +518,19 @@
     }
   }
 }
+
+body.bob-theme-dark {
+  .domains__watch__heart-icon {
+    background-image: url("../../assets/images/heart-red-outline.svg");
+    opacity: 0.95;
+
+    &:hover {
+      background-image: url("../../assets/images/heart-red.svg");
+      opacity: 1;
+    }
+
+    &--active {
+      background-image: url("../../assets/images/heart-red.svg");
+    }
+  }
+}

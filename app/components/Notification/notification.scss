@@ -50,3 +50,24 @@
   }
 
 }
+
+body.bob-theme-dark {
+  .notification {
+    background: rgba(21, 27, 35, 0.96);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+    color: #e6edf3;
+
+    &--success {
+      border-left: 4px solid $success-green;
+    }
+
+    &--error {
+      border-left: 4px solid $orange-red;
+    }
+
+    &__issue-wrapper__title {
+      color: #c9d1d9;
+    }
+  }
+}
