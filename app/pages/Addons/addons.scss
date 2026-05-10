@@ -34,6 +34,59 @@
     gap: 1rem;
   }
 
+  &__channel-card {
+    border: 1px solid rgba($azure-blue, .18);
+    border-radius: .5rem;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    background: rgba($azure-blue, .04);
+
+    h3 {
+      margin: 0 0 .35rem;
+      font-size: 1rem;
+      font-weight: 600;
+    }
+
+    p {
+      color: $manatee-gray;
+      font-size: .85rem;
+      line-height: 1.4;
+      margin: 0 0 .8rem;
+    }
+  }
+
+  &__channel-controls {
+    display: grid;
+    grid-template-columns: minmax(12rem, 1fr) auto auto;
+    gap: .5rem;
+
+    input {
+      border: 1px solid rgba($black, .1);
+      border-radius: .4rem;
+      font-size: .85rem;
+      padding: .6rem .7rem;
+      outline: none;
+
+      &:focus {
+        border-color: rgba($azure-blue, .55);
+      }
+    }
+
+    button {
+      @extend %btn-secondary;
+      width: auto;
+      padding: .55rem .75rem;
+      font-size: .75rem;
+    }
+  }
+
+  &__channel-error {
+    color: $orange-red;
+    font-size: .75rem;
+    font-weight: 600;
+    margin-top: .55rem;
+  }
+
   &__card {
     border: 1px solid $grey;
     border-radius: .5rem;

@@ -4,7 +4,14 @@ import {withRouter} from 'react-router-dom';
 import PropTypes from 'prop-types';
 import {I18nContext} from '../../utils/i18n';
 import DocsHelp from '../../components/DocsHelp';
+import {
+  DEFAULT_LIQUIDITY_SPOT_CHANNEL_HOST,
+  getLiquiditySpotChannelUrl,
+  normalizeLiquiditySpotHost,
+} from '../../constants/liquiditySpotChannels';
 import './addons.scss';
+
+const LIQUIDITY_SPOT_CHANNEL_STORAGE_KEY = 'bob:liquiditySpotChannelHost';
 
 const ADDONS = [
   {
@@ -56,7 +63,21 @@ class Addons extends Component {
 
   state = {
     pendingExternalAddon: null,
+    liquiditySpotHost: DEFAULT_LIQUIDITY_SPOT_CHANNEL_HOST,
+    liquiditySpotDraftHost: DEFAULT_LIQUIDITY_SPOT_CHANNEL_HOST,
+    liquiditySpotChannelError: '',
   };
+
+  componentDidMount() {
+    const storedHost = normalizeLiquiditySpotHost(
+      window.localStorage.getItem(LIQUIDITY_SPOT_CHANNEL_STORAGE_KEY),
+    ) || DEFAULT_LIQUIDITY_SPOT_CHANNEL_HOST;
+
+    this.setState({
+      liquiditySpotHost: storedHost,
+      liquiditySpotDraftHost: storedHost,
+    });
+  }
 
   openAddon(addon) {
     if (!addon.href)
@@ -70,8 +91,48 @@ class Addons extends Component {
     this.setState({pendingExternalAddon: addon});
   }
 
+  saveLiquiditySpotChannel() {
+    const host = normalizeLiquiditySpotHost(this.state.liquiditySpotDraftHost);
+    if (!host) {
+      this.setState({liquiditySpotChannelError: 'Enter a valid channel host.'});
+      return;
+    }
+
+    window.localStorage.setItem(LIQUIDITY_SPOT_CHANNEL_STORAGE_KEY, host);
+    this.setState({
+      liquiditySpotHost: host,
+      liquiditySpotDraftHost: host,
+      liquiditySpotChannelError: '',
+    });
+  }
+
+  resetLiquiditySpotChannel() {
+    window.localStorage.removeItem(LIQUIDITY_SPOT_CHANNEL_STORAGE_KEY);
+    this.setState({
+      liquiditySpotHost: DEFAULT_LIQUIDITY_SPOT_CHANNEL_HOST,
+      liquiditySpotDraftHost: DEFAULT_LIQUIDITY_SPOT_CHANNEL_HOST,
+      liquiditySpotChannelError: '',
+    });
+  }
+
   confirmExternalAddon() {
-    const {pendingExternalAddon} = this.state;
+    const {
+      pendingExternalAddon,
+      liquiditySpotHost,
+      liquiditySpotDraftHost,
+      liquiditySpotChannelError,
+    } = this.state;
+    const addons = ADDONS.map(addon => {
+      if (addon.name !== 'Liquidity Spot') {
+        return addon;
+      }
+
+      return {
+        ...addon,
+        href: getLiquiditySpotChannelUrl(liquiditySpotHost),
+        description: `Human P2P coordination from ${liquiditySpotHost}. Atomic-swap tooling is the next build track and will need Bitcoin wallet integration research.`,
+      };
+    });
 
     if (!pendingExternalAddon)
       return;
@@ -108,8 +169,37 @@ class Addons extends Component {
         >
           Add Ons are reviewed tools surfaced inside Bob. Native Add Ons stay in Bob; external Add Ons open outside Bob and never receive wallet secrets.
         </DocsHelp>
+        <div className="addons-page__channel-card">
+          <div>
+            <h3>Liquidity Spot Channel</h3>
+            <p>
+              Active channel: <strong>{liquiditySpotHost}</strong>. If liquidity.spot is unavailable, users can point Bob at another compatible Liquidity Spot channel.
+            </p>
+          </div>
+          <div className="addons-page__channel-controls">
+            <input
+              value={liquiditySpotDraftHost}
+              onChange={event => this.setState({
+                liquiditySpotDraftHost: event.target.value,
+                liquiditySpotChannelError: '',
+              })}
+              placeholder="liquidity.spot"
+            />
+            <button onClick={() => this.saveLiquiditySpotChannel()}>
+              Save Channel
+            </button>
+            <button onClick={() => this.resetLiquiditySpotChannel()}>
+              Reset
+            </button>
+          </div>
+          {liquiditySpotChannelError && (
+            <div className="addons-page__channel-error">
+              {liquiditySpotChannelError}
+            </div>
+          )}
+        </div>
         <div className="addons-page__grid">
-          {ADDONS.map(addon => (
+          {addons.map(addon => (
             <div className="addons-page__card" key={addon.name}>
               <div className="addons-page__card-header">
                 <h3>{addon.name}</h3>
