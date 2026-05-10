@@ -10,6 +10,10 @@ import {HeaderItem, HeaderRow, Table, TableItem, TableRow} from '../../component
 import Blocktime from '../../components/Blocktime';
 import DocsHelp from '../../components/DocsHelp';
 import {I18nContext} from '../../utils/i18n';
+import {
+  ACTIVE_SHAKEDEX_CHANNEL,
+  getShakedexChannelBaseUrl,
+} from '../../constants/shakedexChannels';
 import './expiring.scss';
 
 const AVERAGE_BLOCK_TIME = 10 * 60 * 1000;
@@ -29,8 +33,57 @@ class Expiring extends Component {
 
   static contextType = I18nContext;
 
+  state = {
+    channelExpiringNames: [],
+    channelExpiringError: '',
+    channelExpiringLoading: false,
+    channelExpiringScope: '',
+    channelExpiringCheckedAt: null,
+  };
+
   componentDidMount() {
     this.props.getMyNames();
+    this.fetchChannelExpiringNames();
+  }
+
+  componentWillUnmount() {
+    this.unmounted = true;
+  }
+
+  async fetchChannelExpiringNames() {
+    this.setState({
+      channelExpiringLoading: true,
+      channelExpiringError: '',
+    });
+
+    try {
+      const response = await fetch(`${getShakedexChannelBaseUrl()}/api/v2/expiring-names?limit=100`);
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Could not load channel expiring names.');
+      }
+
+      if (this.unmounted) {
+        return;
+      }
+
+      this.setState({
+        channelExpiringNames: data.names || [],
+        channelExpiringScope: data.scope || 'channel-observed',
+        channelExpiringCheckedAt: Date.now(),
+        channelExpiringLoading: false,
+      });
+    } catch (e) {
+      if (this.unmounted) {
+        return;
+      }
+
+      this.setState({
+        channelExpiringError: e.message || 'Could not load channel expiring names.',
+        channelExpiringLoading: false,
+      });
+    }
   }
 
   getExpirationHeight(name) {
@@ -128,6 +181,70 @@ class Expiring extends Component {
     });
   }
 
+  renderChannelRows() {
+    const {
+      channelExpiringNames,
+      channelExpiringLoading,
+      channelExpiringError,
+    } = this.state;
+
+    if (channelExpiringLoading) {
+      return (
+        <TableRow className="table__empty-row">
+          Loading channel-observed names...
+        </TableRow>
+      );
+    }
+
+    if (channelExpiringError) {
+      return (
+        <TableRow className="table__empty-row">
+          {channelExpiringError}
+        </TableRow>
+      );
+    }
+
+    const rows = channelExpiringNames
+      .filter(row => row.found && row.blocksUntilExpire !== null && row.blocksUntilExpire !== undefined)
+      .slice()
+      .sort((a, b) => {
+        const expirationCompare = a.blocksUntilExpire - b.blocksUntilExpire;
+        if (expirationCompare !== 0) {
+          return expirationCompare;
+        }
+        return a.name.localeCompare(b.name);
+      });
+
+    if (!rows.length) {
+      return (
+        <TableRow className="table__empty-row">
+          No channel-observed expiring names yet.
+        </TableRow>
+      );
+    }
+
+    return rows.map(row => {
+      const status = this.getStatus(row.blocksUntilExpire);
+      const estimatedDate = typeof row.daysUntilExpire === 'number'
+        ? moment().add(row.daysUntilExpire, 'days').format('YYYY-MM-DD')
+        : moment().add(row.blocksUntilExpire * AVERAGE_BLOCK_TIME).format('YYYY-MM-DD');
+
+      return (
+        <TableRow key={row.name}>
+          <TableItem>{formatName(row.name)}</TableItem>
+          <TableItem>{row.expirationHeight || '-'}</TableItem>
+          <TableItem>{estimatedDate}</TableItem>
+          <TableItem>{row.blocksUntilExpire}</TableItem>
+          <TableItem>
+            <span className={`expiring-page__status ${status.className}`}>
+              {status.label}
+            </span>
+          </TableItem>
+        </TableRow>
+      );
+    });
+  }
+
   render() {
     const rows = this.getExpirationRows();
     const {isFetching, spv} = this.props;
@@ -148,6 +265,12 @@ class Expiring extends Component {
         >
           This view focuses on names in your wallet. Global expiring discovery needs full-node or indexed Shakedex channel support.
         </DocsHelp>
+        <div className="expiring-page__section-header">
+          <div>
+            <h3>Your Wallet Names</h3>
+            <p>Names Bob sees in this wallet, using your local wallet and chain state.</p>
+          </div>
+        </div>
         <Table className="expiring-page__table">
           <HeaderRow>
             <HeaderItem>{t('domain')}</HeaderItem>
@@ -161,6 +284,36 @@ class Expiring extends Component {
               {t('loadingNDomains', rows.length)}
             </TableRow>
           ) : this.renderRows(rows)}
+        </Table>
+        <div className="expiring-page__section-header expiring-page__section-header--spaced">
+          <div>
+            <h3>Channel-Observed Names</h3>
+            <p>
+              Names observed by {ACTIVE_SHAKEDEX_CHANNEL.host}. This is not the full global expiry list yet.
+            </p>
+            {this.state.channelExpiringCheckedAt && (
+              <p className="expiring-page__checked-at">
+                Checked {moment(this.state.channelExpiringCheckedAt).format('HH:mm:ss')} · {this.state.channelExpiringScope}
+              </p>
+            )}
+          </div>
+          <button
+            className="expiring-page__refresh"
+            disabled={this.state.channelExpiringLoading}
+            onClick={() => this.fetchChannelExpiringNames()}
+          >
+            Refresh
+          </button>
+        </div>
+        <Table className="expiring-page__table">
+          <HeaderRow>
+            <HeaderItem>{t('domain')}</HeaderItem>
+            <HeaderItem>{t('expiresOn')}</HeaderItem>
+            <HeaderItem>{t('estimatedExpirationDate')}</HeaderItem>
+            <HeaderItem>{t('blocksRemaining')}</HeaderItem>
+            <HeaderItem>{t('expirationStatus')}</HeaderItem>
+          </HeaderRow>
+          {this.renderChannelRows()}
         </Table>
       </div>
     );

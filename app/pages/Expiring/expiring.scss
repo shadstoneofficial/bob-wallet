@@ -23,6 +23,44 @@
     margin-top: .75rem !important;
   }
 
+  &__section-header {
+    align-items: flex-start;
+    display: flex;
+    gap: 1rem;
+    justify-content: space-between;
+    margin: 1rem 0 .75rem;
+
+    h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin: 0 0 .25rem;
+    }
+
+    p {
+      color: $manatee-gray;
+      font-size: .75rem;
+      line-height: 1.2rem;
+      margin: 0;
+      max-width: 42rem;
+    }
+
+    &--spaced {
+      margin-top: 2rem;
+    }
+  }
+
+  &__checked-at {
+    margin-top: .35rem !important;
+  }
+
+  &__refresh {
+    @extend %btn-secondary;
+    flex: 0 0 auto;
+    width: auto;
+    padding: .55rem .8rem;
+    font-size: .75rem;
+  }
+
   &__status {
     border-radius: 999px;
     display: inline-block;
