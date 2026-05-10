@@ -1,4 +1,5 @@
 export const DEFAULT_LIQUIDITY_SPOT_CHANNEL_HOST = 'liquidity.spot';
+export const LIQUIDITY_SPOT_CHANNEL_STORAGE_KEY = 'bob:liquiditySpotChannelHost';
 
 export const LIQUIDITY_SPOT_CHANNELS = [
   {

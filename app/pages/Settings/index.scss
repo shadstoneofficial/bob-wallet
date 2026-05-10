@@ -207,6 +207,34 @@
       }
     }
 
+    &__input {
+      width: 100%;
+      padding: .625rem .75rem;
+      border: 1px solid $athens-gray;
+      border-radius: .25rem;
+      font-size: .875rem;
+    }
+
+    &__actions {
+      @extend %row-nowrap;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: .5rem;
+    }
+
+    &__status {
+      font-size: .8125rem;
+      line-height: 1.4;
+
+      &--ok {
+        color: $success-green;
+      }
+
+      &--error {
+        color: $orange-red;
+      }
+    }
+
     button {
       margin-top: .25rem;
     }
@@ -355,4 +383,3 @@
 .locale-dropdown {
   width: 12rem;
 }
-

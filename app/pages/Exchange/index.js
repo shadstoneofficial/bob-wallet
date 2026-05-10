@@ -44,15 +44,13 @@ import ConfirmFeeModal from './ConfirmFeeModal.js';
 import {I18nContext} from "../../utils/i18n";
 import { Auction } from 'shakedex/src/auction.js';
 import {
-  ACTIVE_SHAKEDEX_CHANNEL,
+  DEFAULT_SHAKEDEX_CHANNEL_HOST,
   getShakedexChannelBaseUrl,
 } from '../../constants/shakedexChannels.js';
 
 const analytics = aClientStub(() => require('electron').ipcRenderer);
 const shakedex = sClientStub(() => require('electron').ipcRenderer);
 const MARKET_STATUS_REFRESH_INTERVAL = 60000;
-const MARKET_API_HOST = ACTIVE_SHAKEDEX_CHANNEL.host;
-const MARKET_API_BASE_URL = getShakedexChannelBaseUrl();
 const ENABLE_SPV_SELLER_BETA = process.env.BOB_SHAKEDEX_SPV_SELLER_BETA === 'true';
 
 class Exchange extends Component {
@@ -90,6 +88,7 @@ class Exchange extends Component {
       marketStatus: null,
       marketStatusLoading: false,
       marketStatusCheckedAt: null,
+      marketChannelHost: DEFAULT_SHAKEDEX_CHANNEL_HOST,
       marketplaceQuery: '',
       marketplaceModeFilter: 'all',
       marketplaceSort: 'name',
@@ -103,6 +102,7 @@ class Exchange extends Component {
     this.props.getExchangeFullfillments();
     this.props.getExchangeListings();
     if (this.isMarketplaceVisible()) {
+      this.fetchChannelSettings();
       this.fetchShakedex();
       this.fetchMarketStatus();
       this.marketStatusTimer = setInterval(
@@ -132,6 +132,15 @@ class Exchange extends Component {
       this.setState({ isLoading: false });
     } catch (e) {
       this.setState({ isLoading: false });
+    }
+  }
+
+  async fetchChannelSettings() {
+    try {
+      const settings = await shakedex.getShakedexChannelSettings();
+      this.setState({marketChannelHost: settings.host});
+    } catch (e) {
+      this.setState({marketChannelHost: DEFAULT_SHAKEDEX_CHANNEL_HOST});
     }
   }
 
@@ -210,6 +219,7 @@ class Exchange extends Component {
 
   refreshMarketplace = async () => {
     await Promise.all([
+      this.fetchChannelSettings(),
       this.fetchShakedex(),
       this.fetchMarketStatus(),
     ]);
@@ -526,9 +536,8 @@ class Exchange extends Component {
 
     const isSpv = this.props.spv;
     const marketplaceAuctions = this.getVisibleMarketplaceAuctions();
-    const activeChannelText = ACTIVE_SHAKEDEX_CHANNEL.label === MARKET_API_HOST
-      ? MARKET_API_HOST
-      : `${ACTIVE_SHAKEDEX_CHANNEL.label} (${MARKET_API_HOST})`;
+    const activeChannelText = this.state.marketChannelHost;
+    const marketBaseUrl = getShakedexChannelBaseUrl({host: this.state.marketChannelHost});
 
     return (
       <div className="exchange">
@@ -644,13 +653,13 @@ class Exchange extends Component {
             </button>
             <button
               className="exchange-marketplace-header__button"
-              onClick={() => shell.openExternal(MARKET_API_BASE_URL)}
+              onClick={() => shell.openExternal(marketBaseUrl)}
             >
               {t('openLearnHnsMarket')}
             </button>
             <button
               className="exchange-marketplace-header__button"
-              onClick={() => shell.openExternal(`${MARKET_API_BASE_URL}/status`)}
+              onClick={() => shell.openExternal(`${marketBaseUrl}/status`)}
             >
               {t('openChannelStatus')}
             </button>
@@ -1110,6 +1119,7 @@ class Exchange extends Component {
     const isPending = isPendingAuction(auction);
     const currentBid = this.state.currentBidsMap.get(auction.id);
     const isFixedPrice = isFixedPriceAuction(auction);
+    const marketBaseUrl = getShakedexChannelBaseUrl({host: this.state.marketChannelHost});
     if (!isPending && currentBid === undefined) {
       this.getCurrentBidForAuction(auction);
     }
@@ -1122,7 +1132,7 @@ class Exchange extends Component {
       <TableRow
         key={auction.id}
         className="exchange__auction-listing__row"
-        onClick={() => shell.openExternal(`${MARKET_API_BASE_URL}${auction.url || `/listing/${auction.name}`}`)}
+        onClick={() => shell.openExternal(`${marketBaseUrl}${auction.url || `/listing/${auction.name}`}`)}
       >
         <TableItem>{formatName(auction.name)}</TableItem>
         <TableItem>{currentPriceText}</TableItem>
@@ -1166,7 +1176,7 @@ class Exchange extends Component {
                   className="bid-action__link"
                   onClick={(e) => {
                     e.stopPropagation();
-                    shell.openExternal(`${MARKET_API_BASE_URL}${auction.url || `/listing/${auction.name}`}`);
+                    shell.openExternal(`${marketBaseUrl}${auction.url || `/listing/${auction.name}`}`);
                   }}
                 >
                   {isPending ? t('viewPending') : t('viewListing')}

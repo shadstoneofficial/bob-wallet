@@ -40,7 +40,13 @@ import {ConnectionTypes} from "../../background/connections/service";
 import Dropdown from "../../components/Dropdown";
 import {I18nContext, langs, languageDropdownItems} from "../../utils/i18n";
 import {setLocale, setCustomLocale} from "../../ducks/app";
-import {ACTIVE_SHAKEDEX_CHANNEL} from "../../constants/shakedexChannels";
+import {DEFAULT_SHAKEDEX_CHANNEL_HOST} from "../../constants/shakedexChannels";
+import {
+  DEFAULT_LIQUIDITY_SPOT_CHANNEL_HOST,
+  LIQUIDITY_SPOT_CHANNEL_STORAGE_KEY,
+  getLiquiditySpotChannelUrl,
+  normalizeLiquiditySpotHost,
+} from "../../constants/liquiditySpotChannels";
 
 const analytics = aClientStub(() => require('electron').ipcRenderer);
 const shakedex = sClientStub(() => require('electron').ipcRenderer);
@@ -124,6 +130,16 @@ export default class Settings extends Component {
       receiveDepth: props.receiveDepth,
       isUpdatingDepth: false,
       customRPCStatus: '',
+      shakedexChannelHost: DEFAULT_SHAKEDEX_CHANNEL_HOST,
+      shakedexChannelDraftHost: DEFAULT_SHAKEDEX_CHANNEL_HOST,
+      shakedexChannelStatus: '',
+      shakedexChannelError: '',
+      isValidatingShakedexChannel: false,
+      isSavingShakedexChannel: false,
+      liquiditySpotHost: DEFAULT_LIQUIDITY_SPOT_CHANNEL_HOST,
+      liquiditySpotDraftHost: DEFAULT_LIQUIDITY_SPOT_CHANNEL_HOST,
+      liquiditySpotStatus: '',
+      liquiditySpotError: '',
     }
   }
 
@@ -136,6 +152,7 @@ export default class Settings extends Component {
       directory,
       userDir,
     });
+    this.loadChannelSettings();
   }
 
   onDownload = async () => {
@@ -237,6 +254,117 @@ export default class Settings extends Component {
     } catch (e) {
       this.props.showError(e.message);
     }
+  };
+
+  loadChannelSettings = async () => {
+    try {
+      const shakedexSettings = await shakedex.getShakedexChannelSettings();
+      const liquiditySpotHost = normalizeLiquiditySpotHost(
+        window.localStorage.getItem(LIQUIDITY_SPOT_CHANNEL_STORAGE_KEY),
+      ) || DEFAULT_LIQUIDITY_SPOT_CHANNEL_HOST;
+
+      this.setState({
+        shakedexChannelHost: shakedexSettings.host,
+        shakedexChannelDraftHost: shakedexSettings.host,
+        shakedexChannelStatus: '',
+        shakedexChannelError: '',
+        liquiditySpotHost,
+        liquiditySpotDraftHost: liquiditySpotHost,
+      });
+    } catch (e) {
+      this.setState({
+        shakedexChannelError: e.message,
+      });
+    }
+  };
+
+  validateShakedexChannel = async () => {
+    this.setState({
+      isValidatingShakedexChannel: true,
+      shakedexChannelStatus: '',
+      shakedexChannelError: '',
+    });
+
+    try {
+      const result = await shakedex.validateShakedexChannelHost(this.state.shakedexChannelDraftHost);
+      const status = result.status || {};
+      const progress = status.progress ? `${Math.min(100, Math.max(0, status.progress * 100)).toFixed(2)}%` : 'unknown sync';
+
+      this.setState({
+        shakedexChannelStatus: result.ok
+          ? `Reachable. HSD ${status.reachable === false ? 'offline' : 'online'}, ${progress}.`
+          : '',
+        shakedexChannelError: result.ok ? '' : (result.error || 'Channel validation failed.'),
+      });
+    } catch (e) {
+      this.setState({shakedexChannelError: e.message});
+    } finally {
+      this.setState({isValidatingShakedexChannel: false});
+    }
+  };
+
+  saveShakedexChannel = async () => {
+    this.setState({
+      isSavingShakedexChannel: true,
+      shakedexChannelStatus: '',
+      shakedexChannelError: '',
+    });
+
+    try {
+      const settings = await shakedex.setShakedexChannelHost(this.state.shakedexChannelDraftHost);
+      this.setState({
+        shakedexChannelHost: settings.host,
+        shakedexChannelDraftHost: settings.host,
+        shakedexChannelStatus: `Active channel set to ${settings.host}.`,
+      });
+    } catch (e) {
+      this.setState({shakedexChannelError: e.message});
+    } finally {
+      this.setState({isSavingShakedexChannel: false});
+    }
+  };
+
+  resetShakedexChannel = async () => {
+    try {
+      const settings = await shakedex.resetShakedexChannelHost();
+      this.setState({
+        shakedexChannelHost: settings.host,
+        shakedexChannelDraftHost: settings.host,
+        shakedexChannelStatus: 'Reset to the default Shakedex channel.',
+        shakedexChannelError: '',
+      });
+    } catch (e) {
+      this.setState({shakedexChannelError: e.message});
+    }
+  };
+
+  saveLiquiditySpotChannel = () => {
+    const host = normalizeLiquiditySpotHost(this.state.liquiditySpotDraftHost);
+    if (!host) {
+      this.setState({
+        liquiditySpotStatus: '',
+        liquiditySpotError: 'Enter a valid Liquidity Spot channel host.',
+      });
+      return;
+    }
+
+    window.localStorage.setItem(LIQUIDITY_SPOT_CHANNEL_STORAGE_KEY, host);
+    this.setState({
+      liquiditySpotHost: host,
+      liquiditySpotDraftHost: host,
+      liquiditySpotStatus: `Active Liquidity Spot channel set to ${host}.`,
+      liquiditySpotError: '',
+    });
+  };
+
+  resetLiquiditySpotChannel = () => {
+    window.localStorage.removeItem(LIQUIDITY_SPOT_CHANNEL_STORAGE_KEY);
+    this.setState({
+      liquiditySpotHost: DEFAULT_LIQUIDITY_SPOT_CHANNEL_HOST,
+      liquiditySpotDraftHost: DEFAULT_LIQUIDITY_SPOT_CHANNEL_HOST,
+      liquiditySpotStatus: 'Reset to the default Liquidity Spot channel.',
+      liquiditySpotError: '',
+    });
   };
 
   renderNav() {
@@ -413,6 +541,19 @@ export default class Settings extends Component {
   renderExchange() {
     const { history } = this.props;
     const {t} = this.context;
+    const {
+      shakedexChannelHost,
+      shakedexChannelDraftHost,
+      shakedexChannelStatus,
+      shakedexChannelError,
+      isValidatingShakedexChannel,
+      isSavingShakedexChannel,
+      liquiditySpotHost,
+      liquiditySpotDraftHost,
+      liquiditySpotStatus,
+      liquiditySpotError,
+    } = this.state;
+
     return (
       <>
         {this.renderSection(
@@ -423,24 +564,110 @@ export default class Settings extends Component {
           <div className="settings__channel-card">
             <div className="settings__channel-card__row">
               <span>{t('activeChannel')}</span>
-              <strong>{ACTIVE_SHAKEDEX_CHANNEL.host}</strong>
+              <strong>{shakedexChannelHost}</strong>
             </div>
             <div className="settings__channel-card__row">
               <span>{t('settingShakedexChannelApi')}</span>
-              <strong>{`https://${ACTIVE_SHAKEDEX_CHANNEL.host}/api/v2`}</strong>
+              <strong>{`https://${shakedexChannelHost}/api/v2`}</strong>
             </div>
+            <input
+              className="settings__channel-card__input"
+              value={shakedexChannelDraftHost}
+              onChange={event => this.setState({
+                shakedexChannelDraftHost: event.target.value,
+                shakedexChannelStatus: '',
+                shakedexChannelError: '',
+              })}
+              placeholder="market.learnhns.com"
+            />
+            <div className="settings__channel-card__actions">
+              <button
+                className="settings__content__section__cta"
+                onClick={this.validateShakedexChannel}
+                disabled={isValidatingShakedexChannel}
+              >
+                {isValidatingShakedexChannel ? 'Checking...' : 'Validate'}
+              </button>
+              <button
+                className="settings__content__section__cta"
+                onClick={this.saveShakedexChannel}
+                disabled={isSavingShakedexChannel}
+              >
+                {isSavingShakedexChannel ? 'Saving...' : 'Save Channel'}
+              </button>
+              <button
+                className="settings__content__section__cta"
+                onClick={this.resetShakedexChannel}
+              >
+                Reset Default
+              </button>
+            </div>
+            {shakedexChannelStatus && (
+              <div className="settings__channel-card__status settings__channel-card__status--ok">
+                {shakedexChannelStatus}
+              </div>
+            )}
+            {shakedexChannelError && (
+              <div className="settings__channel-card__status settings__channel-card__status--error">
+                {shakedexChannelError}
+              </div>
+            )}
             <button
               className="settings__content__section__cta"
               onClick={() => history.push('/exchange')}
             >
               {t('headingShakedexMarketplace')}
             </button>
-            <button
-              className="settings__content__section__cta"
-              disabled
-            >
-              {t('settingShakedexCustomChannelsSoon')}
-            </button>
+          </div>,
+        )}
+        {this.renderSection(
+          'Liquidity Spot Channel',
+          'Choose which Liquidity Spot channel opens from Bob Add Ons.',
+          '',
+          null,
+          <div className="settings__channel-card">
+            <div className="settings__channel-card__row">
+              <span>{t('activeChannel')}</span>
+              <strong>{liquiditySpotHost}</strong>
+            </div>
+            <div className="settings__channel-card__row">
+              <span>App URL</span>
+              <strong>{getLiquiditySpotChannelUrl(liquiditySpotHost)}</strong>
+            </div>
+            <input
+              className="settings__channel-card__input"
+              value={liquiditySpotDraftHost}
+              onChange={event => this.setState({
+                liquiditySpotDraftHost: event.target.value,
+                liquiditySpotStatus: '',
+                liquiditySpotError: '',
+              })}
+              placeholder="liquidity.spot"
+            />
+            <div className="settings__channel-card__actions">
+              <button
+                className="settings__content__section__cta"
+                onClick={this.saveLiquiditySpotChannel}
+              >
+                Save Channel
+              </button>
+              <button
+                className="settings__content__section__cta"
+                onClick={this.resetLiquiditySpotChannel}
+              >
+                Reset Default
+              </button>
+            </div>
+            {liquiditySpotStatus && (
+              <div className="settings__channel-card__status settings__channel-card__status--ok">
+                {liquiditySpotStatus}
+              </div>
+            )}
+            {liquiditySpotError && (
+              <div className="settings__channel-card__status settings__channel-card__status--error">
+                {liquiditySpotError}
+              </div>
+            )}
           </div>,
         )}
         {this.renderSection(

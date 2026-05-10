@@ -6,12 +6,11 @@ import {I18nContext} from '../../utils/i18n';
 import DocsHelp from '../../components/DocsHelp';
 import {
   DEFAULT_LIQUIDITY_SPOT_CHANNEL_HOST,
+  LIQUIDITY_SPOT_CHANNEL_STORAGE_KEY,
   getLiquiditySpotChannelUrl,
   normalizeLiquiditySpotHost,
 } from '../../constants/liquiditySpotChannels';
 import './addons.scss';
-
-const LIQUIDITY_SPOT_CHANNEL_STORAGE_KEY = 'bob:liquiditySpotChannelHost';
 
 const ADDONS = [
   {

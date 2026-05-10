@@ -30,18 +30,41 @@ import {
 import {Client} from "bcurl";
 import {
   ACTIVE_SHAKEDEX_CHANNEL,
+  DEFAULT_SHAKEDEX_CHANNEL_HOST,
   getShakedexChannelBaseUrl,
 } from '../../constants/shakedexChannels.js';
 
 let db;
 
-const MARKET_API_HOST = ACTIVE_SHAKEDEX_CHANNEL.host;
-const MARKET_API_BASE_URL = getShakedexChannelBaseUrl();
+const SHAKEDEX_CHANNEL_SETTINGS_KEY = 'exchange/settings/shakedexChannelHost';
 
-const client = new Client({
-  host: MARKET_API_HOST,
-  ssl: true,
-});
+function normalizeShakedexChannelHost(value) {
+  const raw = `${value || ''}`.trim();
+  if (!raw) {
+    return DEFAULT_SHAKEDEX_CHANNEL_HOST;
+  }
+
+  const url = raw.includes('://')
+    ? new URL(raw)
+    : new URL(`https://${raw}`);
+  return url.host.toLowerCase();
+}
+
+async function getMarketApiHost() {
+  const stored = await get(SHAKEDEX_CHANNEL_SETTINGS_KEY);
+  return normalizeShakedexChannelHost(stored || ACTIVE_SHAKEDEX_CHANNEL.host);
+}
+
+async function getMarketApiBaseUrl() {
+  return getShakedexChannelBaseUrl({ host: await getMarketApiHost() });
+}
+
+async function getMarketClient() {
+  return new Client({
+    host: await getMarketApiHost(),
+    ssl: true,
+  });
+}
 
 export async function openDB() {
   if (db) {
@@ -91,7 +114,8 @@ export async function iteratePrefix(prefix, cb) {
 }
 
 export async function getExchangeAuctions(currentPage = 1) {
-  const res = await client.get(`api/v2/auctions?page=${currentPage}&per_page=20`);
+  const marketClient = await getMarketClient();
+  const res = await marketClient.get(`api/v2/auctions?page=${currentPage}&per_page=20`);
   const auctions = res.auctions.map(auction => {
     auction.bids.sort((a,b) => b.price - a.price);
     return auction;
@@ -103,7 +127,7 @@ export async function getExchangeAuctions(currentPage = 1) {
 }
 
 export async function listAuction(auction) {
-  const resp = await fetch(`${MARKET_API_BASE_URL}/api/v2/auctions`, {
+  const resp = await fetch(`${await getMarketApiBaseUrl()}/api/v2/auctions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
@@ -117,7 +141,7 @@ export async function listAuction(auction) {
 
 async function getMarketListingCoin(auction) {
   const resp = await fetch(
-    `${MARKET_API_BASE_URL}/api/v2/listings/${encodeURIComponent(auction.name)}/coin`,
+    `${await getMarketApiBaseUrl()}/api/v2/listings/${encodeURIComponent(auction.name)}/coin`,
   );
   const data = await resp.json();
 
@@ -146,7 +170,7 @@ async function getMarketListingCoin(auction) {
 
 export async function getMarketHsdStatus() {
   try {
-    const resp = await fetch(`${MARKET_API_BASE_URL}/api/v2/hsd/status`);
+    const resp = await fetch(`${await getMarketApiBaseUrl()}/api/v2/hsd/status`);
     return await resp.json();
   } catch (e) {
     return {
@@ -156,14 +180,56 @@ export async function getMarketHsdStatus() {
   }
 }
 
-async function refreshMarketListingStatus(name, saleTxHash) {
+export async function getShakedexChannelSettings() {
+  const host = await getMarketApiHost();
+  return {
+    defaultHost: DEFAULT_SHAKEDEX_CHANNEL_HOST,
+    host,
+    apiBaseUrl: `${getShakedexChannelBaseUrl({ host })}/api/v2`,
+    isDefault: host === DEFAULT_SHAKEDEX_CHANNEL_HOST,
+  };
+}
+
+export async function validateShakedexChannelHost(host) {
+  const normalizedHost = normalizeShakedexChannelHost(host);
+  try {
+    const resp = await fetch(`${getShakedexChannelBaseUrl({ host: normalizedHost })}/api/v2/hsd/status`);
+    const data = await resp.json();
+    return {
+      ok: resp.ok,
+      host: normalizedHost,
+      status: data,
+      error: resp.ok ? null : (data.error || `HTTP ${resp.status}`),
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      host: normalizedHost,
+      status: null,
+      error: e.message,
+    };
+  }
+}
+
+export async function setShakedexChannelHost(host) {
+  const normalizedHost = normalizeShakedexChannelHost(host);
+  await put(SHAKEDEX_CHANNEL_SETTINGS_KEY, normalizedHost);
+  return getShakedexChannelSettings();
+}
+
+export async function resetShakedexChannelHost() {
+  await del(SHAKEDEX_CHANNEL_SETTINGS_KEY);
+  return getShakedexChannelSettings();
+}
+
+async function refreshMarketListingStatus(name, payload) {
   try {
     const resp = await fetch(
-      `${MARKET_API_BASE_URL}/api/v2/listings/${encodeURIComponent(name)}/refresh-status`,
+      `${await getMarketApiBaseUrl()}/api/v2/listings/${encodeURIComponent(name)}/refresh-status`,
       {
         method: 'POST',
         headers: {'content-type': 'application/json'},
-        body: JSON.stringify({saleTxHash}),
+        body: JSON.stringify(payload),
       },
     );
     return await resp.json();
@@ -173,6 +239,17 @@ async function refreshMarketListingStatus(name, saleTxHash) {
       error: e.message,
     };
   }
+}
+
+async function notifyMarketListingSold(name, saleTxHash) {
+  return refreshMarketListingStatus(name, { saleTxHash });
+}
+
+async function notifyMarketListingCancelled(name, cancelTxHash) {
+  return refreshMarketListingStatus(name, {
+    outcome: 'cancelled',
+    cancelTxHash,
+  });
 }
 
 async function attachMarketCoinFallback(context, auction) {
@@ -222,7 +299,7 @@ export async function fulfillSwap(auction, bid, passphrase) {
       fulfillment: fulfillmentJSON,
     },
   );
-  refreshMarketListingStatus(fulfillmentJSON.name, fulfillmentJSON.fulfillmentTxHash);
+  notifyMarketListingSold(fulfillmentJSON.name, fulfillmentJSON.fulfillmentTxHash);
   return fulfillmentJSON;
 }
 
@@ -320,6 +397,8 @@ export async function transferCancel(nameLock, password) {
     `${listingPrefix()}/${nameLock.name}/${nameLock.transferTxHash}`,
     out,
   );
+
+  notifyMarketListingCancelled(nameLock.name, cancelLockJSON.transferTxHash);
 
   return out;
 }
@@ -601,7 +680,7 @@ async function createFixedPriceAuction(options) {
 }
 
 export async function getFeeInfo() {
-  const resp = await fetch(`${MARKET_API_BASE_URL}/api/v2/fee_info`);
+  const resp = await fetch(`${await getMarketApiBaseUrl()}/api/v2/fee_info`);
   if (resp.status === 404) {
     return {
       rate: 0,
@@ -683,6 +762,10 @@ const methods = {
   getFeeInfo,
   getBestBid,
   getMarketHsdStatus,
+  getShakedexChannelSettings,
+  validateShakedexChannelHost,
+  setShakedexChannelHost,
+  resetShakedexChannelHost,
 };
 
 export async function start(server) {

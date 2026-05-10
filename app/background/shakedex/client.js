@@ -18,4 +18,8 @@ export const clientStub = ipcRendererInjector => makeClient(ipcRendererInjector,
   'getFeeInfo',
   'getBestBid',
   'getMarketHsdStatus',
+  'getShakedexChannelSettings',
+  'validateShakedexChannelHost',
+  'setShakedexChannelHost',
+  'resetShakedexChannelHost',
 ]);
