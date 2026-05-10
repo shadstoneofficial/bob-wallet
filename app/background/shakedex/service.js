@@ -156,6 +156,25 @@ export async function getMarketHsdStatus() {
   }
 }
 
+async function refreshMarketListingStatus(name, saleTxHash) {
+  try {
+    const resp = await fetch(
+      `${MARKET_API_BASE_URL}/api/v2/listings/${encodeURIComponent(name)}/refresh-status`,
+      {
+        method: 'POST',
+        headers: {'content-type': 'application/json'},
+        body: JSON.stringify({saleTxHash}),
+      },
+    );
+    return await resp.json();
+  } catch (e) {
+    return {
+      sold: false,
+      error: e.message,
+    };
+  }
+}
+
 async function attachMarketCoinFallback(context, auction) {
   if (!await nodeService.getSpvMode()) {
     return;
@@ -203,6 +222,7 @@ export async function fulfillSwap(auction, bid, passphrase) {
       fulfillment: fulfillmentJSON,
     },
   );
+  refreshMarketListingStatus(fulfillmentJSON.name, fulfillmentJSON.fulfillmentTxHash);
   return fulfillmentJSON;
 }
 
