@@ -6,8 +6,10 @@ import {I18nContext} from '../../utils/i18n';
 import DocsHelp from '../../components/DocsHelp';
 import {
   DEFAULT_LIQUIDITY_SPOT_CHANNEL_HOST,
+  LIQUIDITY_SPOT_CHANNEL_LIST_STORAGE_KEY,
   LIQUIDITY_SPOT_CHANNEL_STORAGE_KEY,
   getLiquiditySpotChannelUrl,
+  mergeLiquiditySpotChannels,
   normalizeLiquiditySpotHost,
 } from '../../constants/liquiditySpotChannels';
 import './addons.scss';
@@ -64,6 +66,7 @@ class Addons extends Component {
     pendingExternalAddon: null,
     liquiditySpotHost: DEFAULT_LIQUIDITY_SPOT_CHANNEL_HOST,
     liquiditySpotDraftHost: DEFAULT_LIQUIDITY_SPOT_CHANNEL_HOST,
+    liquiditySpotChannels: [],
     liquiditySpotChannelError: '',
   };
 
@@ -71,11 +74,25 @@ class Addons extends Component {
     const storedHost = normalizeLiquiditySpotHost(
       window.localStorage.getItem(LIQUIDITY_SPOT_CHANNEL_STORAGE_KEY),
     ) || DEFAULT_LIQUIDITY_SPOT_CHANNEL_HOST;
+    const storedChannels = this.getStoredLiquiditySpotChannels();
 
     this.setState({
       liquiditySpotHost: storedHost,
       liquiditySpotDraftHost: storedHost,
+      liquiditySpotChannels: mergeLiquiditySpotChannels(storedChannels),
     });
+  }
+
+  getStoredLiquiditySpotChannels() {
+    try {
+      return JSON.parse(window.localStorage.getItem(LIQUIDITY_SPOT_CHANNEL_LIST_STORAGE_KEY) || '[]');
+    } catch (e) {
+      return [];
+    }
+  }
+
+  persistLiquiditySpotChannels(channels) {
+    window.localStorage.setItem(LIQUIDITY_SPOT_CHANNEL_LIST_STORAGE_KEY, JSON.stringify(channels));
   }
 
   openAddon(addon) {
@@ -98,9 +115,15 @@ class Addons extends Component {
     }
 
     window.localStorage.setItem(LIQUIDITY_SPOT_CHANNEL_STORAGE_KEY, host);
+    const channels = mergeLiquiditySpotChannels([
+      ...this.state.liquiditySpotChannels,
+      {host, label: host},
+    ]);
+    this.persistLiquiditySpotChannels(channels);
     this.setState({
       liquiditySpotHost: host,
       liquiditySpotDraftHost: host,
+      liquiditySpotChannels: channels,
       liquiditySpotChannelError: '',
     });
   }
@@ -110,28 +133,13 @@ class Addons extends Component {
     this.setState({
       liquiditySpotHost: DEFAULT_LIQUIDITY_SPOT_CHANNEL_HOST,
       liquiditySpotDraftHost: DEFAULT_LIQUIDITY_SPOT_CHANNEL_HOST,
+      liquiditySpotChannels: mergeLiquiditySpotChannels(),
       liquiditySpotChannelError: '',
     });
   }
 
   confirmExternalAddon() {
-    const {
-      pendingExternalAddon,
-      liquiditySpotHost,
-      liquiditySpotDraftHost,
-      liquiditySpotChannelError,
-    } = this.state;
-    const addons = ADDONS.map(addon => {
-      if (addon.name !== 'Liquidity Spot') {
-        return addon;
-      }
-
-      return {
-        ...addon,
-        href: getLiquiditySpotChannelUrl(liquiditySpotHost),
-        description: `Human P2P coordination from ${liquiditySpotHost}. Atomic-swap tooling is the next build track and will need Bitcoin wallet integration research.`,
-      };
-    });
+    const {pendingExternalAddon} = this.state;
 
     if (!pendingExternalAddon)
       return;
@@ -172,10 +180,28 @@ class Addons extends Component {
           <div>
             <h3>Liquidity Spot Channel</h3>
             <p>
-              Active channel: <strong>{liquiditySpotHost}</strong>. If liquidity.spot is unavailable, users can point Bob at another compatible Liquidity Spot channel.
+              Active channel: <strong>{liquiditySpotHost}</strong>. Guest P2P should be available without GFAVIP; GFAVIP is optional for Gems and account benefits.
             </p>
           </div>
           <div className="addons-page__channel-controls">
+            <select
+              value={liquiditySpotHost}
+              onChange={event => {
+                const host = event.target.value;
+                window.localStorage.setItem(LIQUIDITY_SPOT_CHANNEL_STORAGE_KEY, host);
+                this.setState({
+                  liquiditySpotHost: host,
+                  liquiditySpotDraftHost: host,
+                  liquiditySpotChannelError: '',
+                });
+              }}
+            >
+              {liquiditySpotChannels.map(channel => (
+                <option key={channel.host} value={channel.host}>
+                  {channel.label}
+                </option>
+              ))}
+            </select>
             <input
               value={liquiditySpotDraftHost}
               onChange={event => this.setState({
@@ -185,7 +211,7 @@ class Addons extends Component {
               placeholder="liquidity.spot"
             />
             <button onClick={() => this.saveLiquiditySpotChannel()}>
-              Save Channel
+              Add/Save
             </button>
             <button onClick={() => this.resetLiquiditySpotChannel()}>
               Reset

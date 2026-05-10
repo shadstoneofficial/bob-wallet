@@ -57,9 +57,10 @@
 
   &__channel-controls {
     display: grid;
-    grid-template-columns: minmax(12rem, 1fr) auto auto;
+    grid-template-columns: minmax(10rem, 14rem) minmax(12rem, 1fr) auto auto;
     gap: .5rem;
 
+    select,
     input {
       border: 1px solid rgba($black, .1);
       border-radius: .4rem;

@@ -11,11 +11,13 @@ import Blocktime from '../../components/Blocktime';
 import DocsHelp from '../../components/DocsHelp';
 import {I18nContext} from '../../utils/i18n';
 import {
-  ACTIVE_SHAKEDEX_CHANNEL,
+  DEFAULT_SHAKEDEX_CHANNEL_HOST,
   getShakedexChannelBaseUrl,
 } from '../../constants/shakedexChannels';
+import {clientStub as sClientStub} from '../../background/shakedex/client';
 import './expiring.scss';
 
+const shakedex = sClientStub(() => require('electron').ipcRenderer);
 const AVERAGE_BLOCK_TIME = 10 * 60 * 1000;
 const SOON_BLOCKS = 30 * 24 * 6;
 
@@ -39,6 +41,7 @@ class Expiring extends Component {
     channelExpiringLoading: false,
     channelExpiringScope: '',
     channelExpiringCheckedAt: null,
+    channelHost: DEFAULT_SHAKEDEX_CHANNEL_HOST,
   };
 
   componentDidMount() {
@@ -57,7 +60,9 @@ class Expiring extends Component {
     });
 
     try {
-      const response = await fetch(`${getShakedexChannelBaseUrl()}/api/v2/expiring-names?limit=100`);
+      const settings = await shakedex.getShakedexChannelSettings();
+      const channelHost = settings.host || DEFAULT_SHAKEDEX_CHANNEL_HOST;
+      const response = await fetch(`${getShakedexChannelBaseUrl({host: channelHost})}/api/v2/expiring-names?limit=100`);
       const data = await response.json();
 
       if (!response.ok) {
@@ -69,6 +74,7 @@ class Expiring extends Component {
       }
 
       this.setState({
+        channelHost,
         channelExpiringNames: data.names || [],
         channelExpiringScope: data.scope || 'channel-observed',
         channelExpiringCheckedAt: Date.now(),
@@ -289,7 +295,7 @@ class Expiring extends Component {
           <div>
             <h3>Channel-Observed Names</h3>
             <p>
-              Names observed by {ACTIVE_SHAKEDEX_CHANNEL.host}. This is not the full global expiry list yet.
+              Names observed by {this.state.channelHost}. This is not the full global expiry list yet.
             </p>
             {this.state.channelExpiringCheckedAt && (
               <p className="expiring-page__checked-at">

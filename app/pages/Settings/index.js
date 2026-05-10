@@ -43,8 +43,10 @@ import {setLocale, setCustomLocale} from "../../ducks/app";
 import {DEFAULT_SHAKEDEX_CHANNEL_HOST} from "../../constants/shakedexChannels";
 import {
   DEFAULT_LIQUIDITY_SPOT_CHANNEL_HOST,
+  LIQUIDITY_SPOT_CHANNEL_LIST_STORAGE_KEY,
   LIQUIDITY_SPOT_CHANNEL_STORAGE_KEY,
   getLiquiditySpotChannelUrl,
+  mergeLiquiditySpotChannels,
   normalizeLiquiditySpotHost,
 } from "../../constants/liquiditySpotChannels";
 
@@ -138,6 +140,7 @@ export default class Settings extends Component {
       isSavingShakedexChannel: false,
       liquiditySpotHost: DEFAULT_LIQUIDITY_SPOT_CHANNEL_HOST,
       liquiditySpotDraftHost: DEFAULT_LIQUIDITY_SPOT_CHANNEL_HOST,
+      liquiditySpotChannels: mergeLiquiditySpotChannels(),
       liquiditySpotStatus: '',
       liquiditySpotError: '',
     }
@@ -262,6 +265,7 @@ export default class Settings extends Component {
       const liquiditySpotHost = normalizeLiquiditySpotHost(
         window.localStorage.getItem(LIQUIDITY_SPOT_CHANNEL_STORAGE_KEY),
       ) || DEFAULT_LIQUIDITY_SPOT_CHANNEL_HOST;
+      const liquiditySpotChannels = this.getStoredLiquiditySpotChannels();
 
       this.setState({
         shakedexChannelHost: shakedexSettings.host,
@@ -270,11 +274,86 @@ export default class Settings extends Component {
         shakedexChannelError: '',
         liquiditySpotHost,
         liquiditySpotDraftHost: liquiditySpotHost,
+        liquiditySpotChannels,
       });
     } catch (e) {
       this.setState({
         shakedexChannelError: e.message,
       });
+    }
+  };
+
+  getStoredLiquiditySpotChannels = () => {
+    try {
+      const channels = JSON.parse(window.localStorage.getItem(LIQUIDITY_SPOT_CHANNEL_LIST_STORAGE_KEY) || '[]');
+      return mergeLiquiditySpotChannels(channels);
+    } catch (e) {
+      return mergeLiquiditySpotChannels();
+    }
+  };
+
+  persistLiquiditySpotChannels = (channels) => {
+    window.localStorage.setItem(LIQUIDITY_SPOT_CHANNEL_LIST_STORAGE_KEY, JSON.stringify(channels));
+  };
+
+  exportChannelSettings = async () => {
+    try {
+      const shakedexSettings = await shakedex.getShakedexChannelSettings();
+      const liquiditySpotHost = normalizeLiquiditySpotHost(
+        window.localStorage.getItem(LIQUIDITY_SPOT_CHANNEL_STORAGE_KEY),
+      ) || DEFAULT_LIQUIDITY_SPOT_CHANNEL_HOST;
+      const payload = {
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        shakedex: {
+          activeHost: shakedexSettings.host,
+          defaultHost: shakedexSettings.defaultHost,
+        },
+        liquiditySpot: {
+          activeHost: liquiditySpotHost,
+          channels: this.getStoredLiquiditySpotChannels(),
+        },
+      };
+      const savePath = dialog.showSaveDialogSync({
+        defaultPath: 'bob-channel-settings.json',
+        filters: [{name: 'Bob channel settings', extensions: ['json']}],
+      });
+      if (!savePath) return;
+      await fs.promises.writeFile(savePath, JSON.stringify(payload, null, 2));
+      this.props.showSuccess(`Exported channel settings to ${savePath}`);
+    } catch (e) {
+      this.props.showError(e.message);
+    }
+  };
+
+  importChannelSettings = async () => {
+    try {
+      const {
+        filePaths: [filepath],
+      } = await dialog.showOpenDialog({
+        properties: ['openFile'],
+        filters: [{name: 'Bob channel settings', extensions: ['json']}],
+      });
+      if (!filepath) return;
+
+      const payload = JSON.parse(await fs.promises.readFile(filepath, 'utf-8'));
+      const shakedexHost = payload?.shakedex?.activeHost;
+      const liquiditySpotHost = normalizeLiquiditySpotHost(payload?.liquiditySpot?.activeHost);
+      const liquiditySpotChannels = mergeLiquiditySpotChannels(payload?.liquiditySpot?.channels || []);
+
+      if (shakedexHost) {
+        await shakedex.setShakedexChannelHost(shakedexHost);
+      }
+
+      if (liquiditySpotHost) {
+        window.localStorage.setItem(LIQUIDITY_SPOT_CHANNEL_STORAGE_KEY, liquiditySpotHost);
+      }
+
+      this.persistLiquiditySpotChannels(liquiditySpotChannels);
+      await this.loadChannelSettings();
+      this.props.showSuccess('Imported channel settings.');
+    } catch (e) {
+      this.props.showError(e.message);
     }
   };
 
@@ -349,9 +428,15 @@ export default class Settings extends Component {
     }
 
     window.localStorage.setItem(LIQUIDITY_SPOT_CHANNEL_STORAGE_KEY, host);
+    const liquiditySpotChannels = mergeLiquiditySpotChannels([
+      ...this.state.liquiditySpotChannels,
+      {host, label: host},
+    ]);
+    this.persistLiquiditySpotChannels(liquiditySpotChannels);
     this.setState({
       liquiditySpotHost: host,
       liquiditySpotDraftHost: host,
+      liquiditySpotChannels,
       liquiditySpotStatus: `Active Liquidity Spot channel set to ${host}.`,
       liquiditySpotError: '',
     });
@@ -362,6 +447,7 @@ export default class Settings extends Component {
     this.setState({
       liquiditySpotHost: DEFAULT_LIQUIDITY_SPOT_CHANNEL_HOST,
       liquiditySpotDraftHost: DEFAULT_LIQUIDITY_SPOT_CHANNEL_HOST,
+      liquiditySpotChannels: mergeLiquiditySpotChannels(),
       liquiditySpotStatus: 'Reset to the default Liquidity Spot channel.',
       liquiditySpotError: '',
     });
@@ -550,6 +636,7 @@ export default class Settings extends Component {
       isSavingShakedexChannel,
       liquiditySpotHost,
       liquiditySpotDraftHost,
+      liquiditySpotChannels,
       liquiditySpotStatus,
       liquiditySpotError,
     } = this.state;
@@ -618,6 +705,20 @@ export default class Settings extends Component {
             >
               {t('headingShakedexMarketplace')}
             </button>
+            <div className="settings__channel-card__actions">
+              <button
+                className="settings__content__section__cta"
+                onClick={this.exportChannelSettings}
+              >
+                Export Channels
+              </button>
+              <button
+                className="settings__content__section__cta"
+                onClick={this.importChannelSettings}
+              >
+                Import Channels
+              </button>
+            </div>
           </div>,
         )}
         {this.renderSection(
@@ -634,6 +735,26 @@ export default class Settings extends Component {
               <span>App URL</span>
               <strong>{getLiquiditySpotChannelUrl(liquiditySpotHost)}</strong>
             </div>
+            <select
+              className="settings__channel-card__input"
+              value={liquiditySpotHost}
+              onChange={event => {
+                const host = event.target.value;
+                window.localStorage.setItem(LIQUIDITY_SPOT_CHANNEL_STORAGE_KEY, host);
+                this.setState({
+                  liquiditySpotHost: host,
+                  liquiditySpotDraftHost: host,
+                  liquiditySpotStatus: `Active Liquidity Spot channel set to ${host}.`,
+                  liquiditySpotError: '',
+                });
+              }}
+            >
+              {liquiditySpotChannels.map(channel => (
+                <option key={channel.host} value={channel.host}>
+                  {channel.label}
+                </option>
+              ))}
+            </select>
             <input
               className="settings__channel-card__input"
               value={liquiditySpotDraftHost}
