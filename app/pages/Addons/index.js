@@ -16,10 +16,10 @@ const ADDONS = [
   },
   {
     name: 'Liquidity Spot',
-    status: 'Coming Soon',
-    description: 'P2P swap workflows for HNS and related assets, designed as the first trusted Bob addon.',
-    action: 'Preview',
-    href: 'https://liquidity.spot',
+    status: 'Public Preview',
+    description: 'P2P coordination for HNS/BTC-style liquidity trades. Opens externally with no wallet permissions.',
+    action: 'Open',
+    href: 'https://liquidity.spot/p2p',
   },
   {
     name: 'Resolver Directory',
