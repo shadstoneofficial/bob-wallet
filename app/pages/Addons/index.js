@@ -161,6 +161,17 @@ class Addons extends Component {
       liquiditySpotChannels,
       liquiditySpotChannelError,
     } = this.state;
+    const addons = ADDONS.map(addon => {
+      if (addon.name !== 'Liquidity Spot') {
+        return addon;
+      }
+
+      return {
+        ...addon,
+        href: getLiquiditySpotChannelUrl(liquiditySpotHost),
+        description: `Human P2P coordination from ${liquiditySpotHost}. Atomic-swap tooling is the next build track and will need Bitcoin wallet integration research.`,
+      };
+    });
 
     return (
       <div className="addons-page">
