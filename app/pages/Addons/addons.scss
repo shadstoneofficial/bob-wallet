@@ -41,7 +41,6 @@
     background: $white;
 
     p {
-      min-height: 4rem;
       margin: .75rem 0 1rem;
       color: $manatee-gray;
       line-height: 1.4;
@@ -49,6 +48,18 @@
 
     button {
       @extend %btn-secondary;
+    }
+  }
+
+  &__details {
+    margin: 0 0 1rem;
+    padding-left: 1.1rem;
+    color: $manatee-gray;
+    font-size: .85rem;
+    line-height: 1.45;
+
+    li + li {
+      margin-top: .35rem;
     }
   }
 

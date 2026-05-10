@@ -687,5 +687,7 @@
   "expirationStatusLater": "XXXXX",
   "expirationStatusSoon": "XXXXX",
   "expiringEmpty": "XXXXX",
-  "expiringIntro": "XXXXX"
+  "expiringIntro": "XXXXX",
+  "expiringFullNodeNote": "XXXXX",
+  "expiringSpvNote": "XXXXX"
 }

@@ -772,5 +772,7 @@
   "expirationStatusLater": "Later",
   "expirationStatusSoon": "Soon",
   "expiringEmpty": "No expiring domains found",
-  "expiringIntro": "Review owned names by expiration date so renewals do not sneak up on you."
+  "expiringIntro": "Review owned names by expiration date so renewals do not sneak up on you.",
+  "expiringFullNodeNote": "Full-node mode can support deeper global expiration discovery in the future. This page currently focuses on names owned by this wallet.",
+  "expiringSpvNote": "SPV mode can track names owned by this wallet. Global expired-name discovery needs a full/indexed node or Shakedex channel."
 }

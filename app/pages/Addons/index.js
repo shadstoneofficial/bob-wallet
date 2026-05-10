@@ -17,9 +17,15 @@ const ADDONS = [
   {
     name: 'Liquidity Spot',
     status: 'Public Preview',
-    description: 'P2P coordination for HNS/BTC-style liquidity trades. Opens externally with no wallet permissions.',
+    description: 'Human P2P coordination is available now. Atomic-swap tooling is the next build track and will need Bitcoin wallet integration research.',
     action: 'Open',
     href: 'https://liquidity.spot/p2p',
+    details: [
+      'Guest P2P: browse, create, accept, and coordinate trades.',
+      'GFAVIP optional: only needed for Gems and account benefits.',
+      'Atomic swaps: planned Bitcoin/Electrum compatibility work.',
+      'No Bob wallet permissions in this preview.',
+    ],
   },
   {
     name: 'Resolver Directory',
@@ -82,6 +88,13 @@ class Addons extends Component {
                 <span>{addon.status}</span>
               </div>
               <p>{addon.description}</p>
+              {addon.details && (
+                <ul className="addons-page__details">
+                  {addon.details.map(detail => (
+                    <li key={detail}>{detail}</li>
+                  ))}
+                </ul>
+              )}
               {addon.href && (
                 <button onClick={() => this.openAddon(addon)}>
                   {addon.action}

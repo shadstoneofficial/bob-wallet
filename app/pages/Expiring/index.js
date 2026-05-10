@@ -23,6 +23,7 @@ class Expiring extends Component {
     names: PropTypes.object.isRequired,
     namesList: PropTypes.array.isRequired,
     network: PropTypes.string.isRequired,
+    spv: PropTypes.bool.isRequired,
   };
 
   static contextType = I18nContext;
@@ -128,7 +129,7 @@ class Expiring extends Component {
 
   render() {
     const rows = this.getExpirationRows();
-    const {isFetching} = this.props;
+    const {isFetching, spv} = this.props;
     const {t} = this.context;
 
     return (
@@ -136,6 +137,9 @@ class Expiring extends Component {
         <div className="expiring-page__intro">
           <h2>{t('headingExpiring')}</h2>
           <p>{t('expiringIntro')}</p>
+          <p className="expiring-page__mode-note">
+            {spv ? t('expiringSpvNote') : t('expiringFullNodeNote')}
+          </p>
         </div>
         <Table className="expiring-page__table">
           <HeaderRow>
@@ -164,6 +168,7 @@ export default withRouter(
       namesList: Object.keys(state.myDomains.names),
       height: state.node.chain.height,
       network: state.wallet.network,
+      spv: state.node.spv,
     }),
     dispatch => ({
       getMyNames: () => dispatch(myDomainsActions.getMyNames()),
