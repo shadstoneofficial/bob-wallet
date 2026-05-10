@@ -175,7 +175,7 @@ const spinnerStyle = {
 const textStyles = {
   fontSize: '1rem',
   lineHeight: '1rem * 1.4',
-  color: '#3c3c3c',
+  color: '#9aa4af',
   textAlign: 'center',
   maxWidth: '400px',
 };

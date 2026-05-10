@@ -90,7 +90,10 @@ body.bob-theme-dark {
   .settings__content__section--disabled,
   .dropdown__current-item,
   .dropdown__option,
+  .dropdown__options,
   .setting-menu,
+  .modal__wrapper,
+  .sidemodal__wrapper,
   .app__login,
   .app__uninitialized,
   .app__component-wrapper {
@@ -112,6 +115,7 @@ body.bob-theme-dark {
   select,
   .dropdown__current-item,
   .dropdown__option,
+  .dropdown__options,
   .settings__channel-card__input {
     border-color: rgba(255, 255, 255, 0.12);
   }
@@ -121,6 +125,7 @@ body.bob-theme-dark {
   select,
   .dropdown__current-item,
   .dropdown__option,
+  .dropdown__options,
   .settings__channel-card__input,
   .bid-search-input,
   .bid-search-input__input,
@@ -146,6 +151,7 @@ body.bob-theme-dark {
 
   .settings__content__section__info__description,
   .settings__channel-card__row span,
+  .login_subheader_text,
   .sidebar__section,
   .sidebar__footer__title,
   .sidebar__footer__text,
@@ -163,6 +169,10 @@ body.bob-theme-dark {
   .addons-page__details,
   .expiring-page__intro p,
   .expiring-page__section-header p,
+  .receive__warning-subtitle,
+  .transactions__empty-list,
+  .transactions__go-to__text,
+  .transactions__go-to__total,
   small {
     color: #9aa4af;
   }
@@ -180,6 +190,7 @@ body.bob-theme-dark {
   .expiring__table,
   .settings__channel-card,
   .send__container,
+  .receive__container,
   .account__header {
     background-color: #151b23;
     border-color: rgba(255, 255, 255, 0.12);
@@ -267,6 +278,7 @@ body.bob-theme-dark {
 
   .dropdown__current-item,
   .dropdown__option,
+  .dropdown__options,
   select,
   .settings__channel-card__input {
     background-color: #0f141b;
@@ -274,8 +286,32 @@ body.bob-theme-dark {
     color: #e6edf3;
   }
 
+  .dropdown__current-item::after {
+    border-color: #9aa4af;
+  }
+
+  .dropdown__options {
+    border-top-color: rgba(255, 255, 255, 0.14);
+    box-shadow: 0 12px 22px rgba(0, 0, 0, 0.28);
+  }
+
   .dropdown__option:hover {
     background-color: rgba(47, 129, 247, 0.16);
+  }
+
+  .login {
+    color: #e6edf3;
+  }
+
+  .login_password_input {
+    background-color: #0f141b;
+    box-shadow: 0 0 0 1.25px rgba(255, 255, 255, 0.16);
+    color: #e6edf3;
+  }
+
+  .app__login {
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 20px 38px rgba(0, 0, 0, 0.32);
   }
 
   button,
@@ -344,6 +380,119 @@ body.bob-theme-dark {
 
   .send__progress-bar__dot--empty {
     background-color: #0d1117;
+  }
+
+  .receive__warning-title,
+  .receive__title {
+    color: #e6edf3;
+  }
+
+  .receive__warning-icon {
+    filter: invert(1);
+    opacity: .65;
+  }
+
+  .receive__address-display {
+    background-color: #0f141b;
+    border-color: rgba(255, 255, 255, 0.16);
+  }
+
+  .receive__address,
+  .receive__disclaimer {
+    color: #c9d1d9;
+  }
+
+  .transactions__header {
+    background-color: #111820;
+    border-color: rgba(255, 255, 255, 0.14);
+  }
+
+  .transactions__search,
+  .transactions__search input {
+    background-color: #0f141b !important;
+    color: #e6edf3;
+  }
+
+  .transaction {
+    background-color: #0d1117;
+    border-bottom-color: rgba(255, 255, 255, 0.16);
+  }
+
+  .transaction__title,
+  .transaction__subtitle,
+  .transaction__party,
+  .transaction__party__btn,
+  .transaction__tx-timestamp,
+  .transaction__number--neutral {
+    color: #c9d1d9;
+  }
+
+  .transaction__title--pending,
+  .transaction__number--pending {
+    color: #8b949e;
+  }
+
+  .transaction__tld-link {
+    color: #c9d1d9;
+  }
+
+  .sign-message__top-label,
+  .verify-message__top-label {
+    color: #e6edf3;
+  }
+
+  .sign-message__content__textarea,
+  .verify-message__content__textarea {
+    background-color: #0d1117;
+    border-color: rgba(255, 255, 255, 0.16);
+  }
+
+  .sign-message__content__textarea__title,
+  .verify-message__content__textarea__title {
+    background-color: #1f2630;
+    border-bottom-color: rgba(255, 255, 255, 0.16);
+    color: #e6edf3;
+  }
+
+  .sign-message__content__textarea textarea,
+  .verify-message__content__textarea textarea {
+    background-color: #0d1117;
+    color: #e6edf3;
+  }
+
+  .copy-btn {
+    background-color: rgba(47, 129, 247, 0.22);
+    color: #79c0ff;
+  }
+
+  .modal__wrapper,
+  .sidemodal__wrapper,
+  .mini-modal,
+  .idle-modal {
+    color: #e6edf3;
+  }
+
+  .idle-modal__time {
+    background-color: rgba(47, 129, 247, 0.12);
+    color: #e6edf3;
+  }
+
+  .alert--warning {
+    background-color: rgba(255, 224, 0, 0.08);
+    border-color: rgba(255, 224, 0, 0.32);
+    color: #f2cc60;
+  }
+
+  .alert--error {
+    background-color: rgba(255, 47, 31, 0.08);
+  }
+
+  .alert--success {
+    background-color: rgba(11, 202, 107, 0.08);
+  }
+
+  .alert--info {
+    background-color: rgba(47, 129, 247, 0.08);
   }
 
   .settings__content__section--with-footer {
