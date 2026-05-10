@@ -152,12 +152,6 @@ class Sidebar extends Component {
           >
             {t('headingWatching')}
           </NavLink>
-          <NavLink
-            to="/domains"
-            className={isActive => `sidebar__action ${isActive ? "sidebar__action--selected" : ''}`}
-          >
-            {t('headingBrowseDomains')}
-          </NavLink>
         </div>
         <div className="sidebar__section">{t('headingAddOns')}</div>
         <div className="sidebar__actions">
@@ -168,16 +162,16 @@ class Sidebar extends Component {
             {t('headingShakedexMarketplace')}
           </NavLink>
           <NavLink
-            to="/addons"
-            className={isActive => `sidebar__action ${isActive ? "sidebar__action--selected" : ''}`}
-          >
-            {t('headingMoreAddons')}
-          </NavLink>
-          <NavLink
             to="/messages"
             className={isActive => `sidebar__action ${isActive ? "sidebar__action--selected" : ''}`}
           >
             {t('headingMessages')}
+          </NavLink>
+          <NavLink
+            to="/addons"
+            className={isActive => `sidebar__action ${isActive ? "sidebar__action--selected" : ''}`}
+          >
+            {t('headingMoreAddons')}
           </NavLink>
         </div>
       </React.Fragment>
