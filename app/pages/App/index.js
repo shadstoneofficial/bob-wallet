@@ -38,6 +38,8 @@ import AppHeader from "../AppHeader";
 import Exchange from '../Exchange';
 import SignMessage from "../SignMessage";
 import VerifyMessage from "../VerifyMessage";
+import Addons from '../Addons';
+import Messages from '../Messages';
 import {fetchLocale, initHip2, checkForUpdates} from "../../ducks/app";
 import Multisig from "../Multisig";
 import {I18nContext} from "../../utils/i18n";
@@ -205,6 +207,12 @@ class App extends Component {
           <ProtectedRoute
             isLocked={isLocked}
             wallets={wallets}
+            path="/messages"
+            render={this.routeRenderer(t('headingMessages'), Messages)}
+          />
+          <ProtectedRoute
+            isLocked={isLocked}
+            wallets={wallets}
             path="/get_coins"
             render={this.routeRenderer(t('headingClaimAirdropName'), GetCoins)}
           />
@@ -255,6 +263,12 @@ class App extends Component {
             wallets={wallets}
             path="/exchange"
             render={this.routeRenderer(t('headingExchange'), Exchange, true)}
+          />
+          <ProtectedRoute
+            isLocked={isLocked}
+            wallets={wallets}
+            path="/addons"
+            render={this.routeRenderer(t('headingMoreAddons'), Addons)}
           />
           <ProtectedRoute
             isLocked={isLocked}

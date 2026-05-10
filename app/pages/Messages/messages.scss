@@ -1,0 +1,26 @@
+@import "../../variables.scss";
+
+.messages-page {
+  cursor: default;
+
+  &__tabs {
+    @extend %row-nowrap;
+    gap: .5rem;
+    margin-bottom: 1rem;
+  }
+
+  &__tab {
+    @extend %btn-secondary;
+    border-radius: .5rem;
+
+    &--active {
+      background: $azure-blue;
+      color: $white;
+      border-color: $azure-blue;
+    }
+  }
+
+  &__content {
+    min-width: 0;
+  }
+}

@@ -138,7 +138,7 @@ class Sidebar extends Component {
             {t('headingDomainManager')}
           </NavLink>
         </div>
-        <div className="sidebar__section">{t('topLevelDomains')}</div>
+        <div className="sidebar__section">{t('headingAuctions')}</div>
         <div className="sidebar__actions">
           <NavLink
             to="/bids"
@@ -152,53 +152,35 @@ class Sidebar extends Component {
           >
             {t('headingWatching')}
           </NavLink>
-        </div>
-        <div className="sidebar__section">{t('headingExchange')}</div>
-        <div className="sidebar__actions">
           <NavLink
             to="/domains"
             className={isActive => `sidebar__action ${isActive ? "sidebar__action--selected" : ''}`}
           >
             {t('headingBrowseDomains')}
           </NavLink>
+        </div>
+        <div className="sidebar__section">{t('headingAddOns')}</div>
+        <div className="sidebar__actions">
           <NavLink
             to="/exchange"
             className={isActive => `sidebar__action ${isActive ? "sidebar__action--selected" : ''}`}
           >
             {t('headingShakedexMarketplace')}
           </NavLink>
+          <NavLink
+            to="/addons"
+            className={isActive => `sidebar__action ${isActive ? "sidebar__action--selected" : ''}`}
+          >
+            {t('headingMoreAddons')}
+          </NavLink>
+          <NavLink
+            to="/messages"
+            className={isActive => `sidebar__action ${isActive ? "sidebar__action--selected" : ''}`}
+          >
+            {t('headingMessages')}
+          </NavLink>
         </div>
-        { this.renderMisc() }
       </React.Fragment>
-    );
-  }
-
-  renderMisc() {
-    const {t} = this.context;
-
-    return (
-      <>
-        <div
-          className="sidebar__section"
-        >
-
-          {t('miscellaneous')}
-        </div>
-        <div className="sidebar__actions">
-          <NavLink
-            to="/sign_message"
-            className={isActive => `sidebar__action ${isActive ? "sidebar__action--selected" : ''}`}
-          >
-            {t('headingSignMessage')}
-          </NavLink>
-          <NavLink
-            to="/verify_message"
-            className={isActive => `sidebar__action ${isActive ? "sidebar__action--selected" : ''}`}
-          >
-            {t('headingVerifyMessage')}
-          </NavLink>
-        </div>
-      </>
     );
   }
 

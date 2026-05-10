@@ -184,6 +184,33 @@
     @extend %btn-primary;
     padding: .5rem 1rem;
   }
+
+  &__channel-card {
+    @extend %col-nowrap;
+    align-items: flex-start;
+    gap: .5rem;
+    min-width: 18rem;
+
+    &__row {
+      @extend %row-nowrap;
+      justify-content: space-between;
+      gap: 1rem;
+      width: 100%;
+      font-size: .8125rem;
+
+      span {
+        color: $manatee-gray;
+      }
+
+      strong {
+        font-weight: 600;
+      }
+    }
+
+    button {
+      margin-top: .25rem;
+    }
+  }
 }
 
 .rpc-modal-warning {
@@ -328,5 +355,4 @@
 .locale-dropdown {
   width: 12rem;
 }
-
 

@@ -40,6 +40,7 @@ import {ConnectionTypes} from "../../background/connections/service";
 import Dropdown from "../../components/Dropdown";
 import {I18nContext, langs, languageDropdownItems} from "../../utils/i18n";
 import {setLocale, setCustomLocale} from "../../ducks/app";
+import {ACTIVE_SHAKEDEX_CHANNEL} from "../../constants/shakedexChannels";
 
 const analytics = aClientStub(() => require('electron').ipcRenderer);
 const shakedex = sClientStub(() => require('electron').ipcRenderer);
@@ -414,6 +415,34 @@ export default class Settings extends Component {
     const {t} = this.context;
     return (
       <>
+        {this.renderSection(
+          t('settingShakedexChannelTitle'),
+          t('settingShakedexChannelDesc'),
+          '',
+          null,
+          <div className="settings__channel-card">
+            <div className="settings__channel-card__row">
+              <span>{t('activeChannel')}</span>
+              <strong>{ACTIVE_SHAKEDEX_CHANNEL.host}</strong>
+            </div>
+            <div className="settings__channel-card__row">
+              <span>{t('settingShakedexChannelApi')}</span>
+              <strong>{`https://${ACTIVE_SHAKEDEX_CHANNEL.host}/api/v2`}</strong>
+            </div>
+            <button
+              className="settings__content__section__cta"
+              onClick={() => history.push('/exchange')}
+            >
+              {t('headingShakedexMarketplace')}
+            </button>
+            <button
+              className="settings__content__section__cta"
+              disabled
+            >
+              {t('settingShakedexCustomChannelsSoon')}
+            </button>
+          </div>,
+        )}
         {this.renderSection(
           t('settingBackupListingTitle'),
           t('settingBackupListingDesc'),

@@ -1,0 +1,76 @@
+@import "../../variables.scss";
+
+.addons-page {
+  cursor: default;
+
+  &__intro {
+    @extend %row-nowrap;
+    justify-content: space-between;
+    gap: 2rem;
+    margin-bottom: 1.5rem;
+
+    h2 {
+      font-size: 1.5rem;
+      margin: 0 0 .5rem;
+    }
+
+    p {
+      max-width: 46rem;
+      margin: 0;
+      color: $manatee-gray;
+      line-height: 1.45;
+    }
+  }
+
+  &__docs-button {
+    @extend %btn-secondary;
+    align-self: flex-start;
+    white-space: nowrap;
+  }
+
+  &__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+    gap: 1rem;
+  }
+
+  &__card {
+    border: 1px solid $grey;
+    border-radius: .5rem;
+    padding: 1rem;
+    background: $white;
+
+    p {
+      min-height: 4rem;
+      margin: .75rem 0 1rem;
+      color: $manatee-gray;
+      line-height: 1.4;
+    }
+
+    button {
+      @extend %btn-secondary;
+    }
+  }
+
+  &__card-header {
+    @extend %row-nowrap;
+    justify-content: space-between;
+    gap: 1rem;
+
+    h3 {
+      margin: 0;
+      font-size: 1rem;
+      font-weight: 600;
+    }
+
+    span {
+      flex: 0 0 auto;
+      border-radius: 999px;
+      background: rgba($azure-blue, .08);
+      color: $azure-blue;
+      font-size: .75rem;
+      font-weight: 600;
+      padding: .25rem .5rem;
+    }
+  }
+}
