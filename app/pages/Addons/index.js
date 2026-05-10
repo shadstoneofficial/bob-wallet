@@ -20,6 +20,8 @@ const ADDONS = [
     description: 'Human P2P coordination is available now. Atomic-swap tooling is the next build track and will need Bitcoin wallet integration research.',
     action: 'Open',
     href: 'https://liquidity.spot/p2p',
+    docsHref: 'https://bobwallet.org/docs/liquidity-spot',
+    externalNotice: 'Liquidity Spot opens outside Bob. Bob will not share your seed phrase, private keys, wallet password, or signing permissions with this Add On.',
     details: [
       'Guest P2P: browse, create, accept, and coordinate trades.',
       'GFAVIP optional: only needed for Gems and account benefits.',
@@ -51,6 +53,10 @@ class Addons extends Component {
 
   static contextType = I18nContext;
 
+  state = {
+    pendingExternalAddon: null,
+  };
+
   openAddon(addon) {
     if (!addon.href)
       return;
@@ -60,11 +66,26 @@ class Addons extends Component {
       return;
     }
 
-    shell.openExternal(addon.href);
+    this.setState({pendingExternalAddon: addon});
+  }
+
+  confirmExternalAddon() {
+    const {pendingExternalAddon} = this.state;
+
+    if (!pendingExternalAddon)
+      return;
+
+    shell.openExternal(pendingExternalAddon.href);
+    this.setState({pendingExternalAddon: null});
+  }
+
+  cancelExternalAddon() {
+    this.setState({pendingExternalAddon: null});
   }
 
   render() {
     const {t} = this.context;
+    const {pendingExternalAddon} = this.state;
 
     return (
       <div className="addons-page">
@@ -95,10 +116,31 @@ class Addons extends Component {
                   ))}
                 </ul>
               )}
-              {addon.href && (
-                <button onClick={() => this.openAddon(addon)}>
-                  {addon.action}
-                </button>
+              <div className="addons-page__actions">
+                {addon.href && (
+                  <button onClick={() => this.openAddon(addon)}>
+                    {addon.action}
+                  </button>
+                )}
+                {addon.docsHref && (
+                  <button onClick={() => shell.openExternal(addon.docsHref)}>
+                    {t('openDocs')}
+                  </button>
+                )}
+              </div>
+              {pendingExternalAddon === addon && (
+                <div className="addons-page__external-notice">
+                  <h4>Open External Add On?</h4>
+                  <p>{addon.externalNotice || 'This Add On opens outside Bob.'}</p>
+                  <div className="addons-page__notice-actions">
+                    <button onClick={() => this.confirmExternalAddon()}>
+                      Continue
+                    </button>
+                    <button onClick={() => this.cancelExternalAddon()}>
+                      Cancel
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
           ))}
