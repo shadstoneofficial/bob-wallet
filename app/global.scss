@@ -51,3 +51,124 @@ i.arrow {
     background-image: url('./assets/images/arrow-back-blue.svg');
   }
 }
+
+body.bob-theme-dark {
+  background: #101418;
+  color: #e6edf3;
+
+  #root,
+  .app,
+  .app__main-wrapper,
+  .app__content,
+  .content-area,
+  .settings,
+  .settings__content,
+  .topbar {
+    background: #101418;
+    color: #e6edf3;
+  }
+
+  .sidebar {
+    background: #151b23;
+    box-shadow: 1px 0 0 0 rgba(255, 255, 255, 0.08);
+  }
+
+  .sidebar__action {
+    color: #e6edf3;
+
+    &:hover {
+      color: #ffffff;
+      background-color: rgba(36, 128, 253, 0.18);
+    }
+
+    &--selected {
+      background-color: rgba(36, 128, 253, 0.28);
+    }
+  }
+
+  .sidebar__footer,
+  .settings__content__section--disabled,
+  .dropdown__current-item,
+  .dropdown__option,
+  .setting-menu,
+  .app__login,
+  .app__uninitialized,
+  .app__component-wrapper {
+    background-color: #151b23;
+    color: #e6edf3;
+  }
+
+  .topbar,
+  .settings__nav,
+  .settings__content__section,
+  .sidebar__footer,
+  table,
+  .table,
+  .content-area,
+  input,
+  textarea,
+  select,
+  .dropdown__current-item,
+  .dropdown__option,
+  .settings__channel-card__input {
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+
+  input,
+  textarea,
+  select,
+  .dropdown__current-item,
+  .dropdown__option,
+  .settings__channel-card__input,
+  .tld__input,
+  .search__input {
+    background-color: #0d1117;
+    color: #e6edf3;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: #7d8590;
+  }
+
+  .settings__content__section__info__description,
+  .settings__channel-card__row span,
+  .sidebar__section,
+  .sidebar__footer__title,
+  .sidebar__footer__text,
+  .topbar__synced,
+  small {
+    color: #9aa4af;
+  }
+
+  .exchange-readiness,
+  .exchange-seller-tools,
+  .exchange-docs-banner,
+  .addons__notice,
+  .addons__channel-card,
+  .addons__card,
+  .expiring__notice,
+  .expiring__table,
+  .settings__channel-card {
+    background-color: #151b23;
+    border-color: rgba(255, 255, 255, 0.12);
+    color: #e6edf3;
+  }
+
+  tr,
+  th,
+  td {
+    background-color: transparent;
+    border-color: rgba(255, 255, 255, 0.12);
+    color: #e6edf3;
+  }
+
+  th {
+    background-color: #1f2630;
+  }
+
+  .settings__nav__item:hover,
+  .setting-menu__items__item:hover {
+    background-color: rgba(36, 128, 253, 0.18);
+  }
+}

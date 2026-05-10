@@ -9,12 +9,14 @@ const SET_LOCALE = 'app/setLocale';
 const SET_CUSTOM_LOCALE = 'app/setCustomLocale';
 const SET_DEEPLINK_PARAMS = 'app/setDeeplinkParams';
 const SET_UPDATE_AVAILABLE = 'app/setUpdateAvailable';
+const SET_THEME = 'app/setTheme';
 
 const initialState = {
   deeplink: '',
   deeplinkParams: {},
   locale: '',
   customLocale: null,
+  theme: 'light',
   updateAvailable: null,
 };
 
@@ -53,6 +55,14 @@ export const fetchLocale = () => async dispatch => {
   dispatch(setLocale(locale));
 };
 
+export const fetchTheme = () => async dispatch => {
+  const theme = await settingsClient.getTheme();
+  dispatch({
+    type: SET_THEME,
+    payload: theme,
+  });
+};
+
 export const setLocale = locale => async (dispatch) => {
   await settingsClient.setLocale(locale);
   dispatch({
@@ -78,6 +88,14 @@ export const setCustomLocale = json => async (dispatch) => {
   dispatch({
     type: SET_CUSTOM_LOCALE,
     payload: json,
+  });
+};
+
+export const setTheme = theme => async dispatch => {
+  const nextTheme = await settingsClient.setTheme(theme);
+  dispatch({
+    type: SET_THEME,
+    payload: nextTheme,
   });
 };
 
@@ -122,6 +140,11 @@ export default function appReducer(state = initialState, action) {
       return {
         ...state,
         customLocale: action.payload,
+      };
+    case SET_THEME:
+      return {
+        ...state,
+        theme: action.payload,
       };
     case SET_UPDATE_AVAILABLE:
       return {

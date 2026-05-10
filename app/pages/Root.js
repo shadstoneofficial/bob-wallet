@@ -22,9 +22,24 @@ export default class Root extends Component {
   (state) => ({
     locale: state.app.locale,
     customLocale: state.app.customLocale,
+    theme: state.app.theme,
   }),
 )
 class Content extends Component {
+  componentDidMount() {
+    this.applyThemeClass();
+  }
+
+  componentDidUpdate(prevProps) {
+    if (prevProps.theme !== this.props.theme) {
+      this.applyThemeClass();
+    }
+  }
+
+  applyThemeClass() {
+    document.body.classList.toggle('bob-theme-dark', this.props.theme === 'dark');
+  }
+
   translate = (key, ...values) => {
     try {
       const locale = this.props.locale;

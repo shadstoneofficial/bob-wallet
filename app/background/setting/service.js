@@ -8,6 +8,8 @@ import {
 const EXPLORER = 'setting/explorer';
 const LOCALE = 'setting/locale';
 const CUSTOM_LOCALE = 'setting/customLocale';
+const THEME = 'setting/theme';
+const VALID_THEMES = new Set(['light', 'dark']);
 
 
 export async function getExplorer() {
@@ -39,6 +41,17 @@ export async function setLocale(locale) {
 export async function setCustomLocale(json) {
   await put(LOCALE, 'custom');
   return await put(CUSTOM_LOCALE, JSON.stringify(json));
+}
+
+export async function getTheme() {
+  const theme = await get(THEME);
+  return VALID_THEMES.has(theme) ? theme : 'light';
+}
+
+export async function setTheme(theme) {
+  const nextTheme = VALID_THEMES.has(theme) ? theme : 'light';
+  await put(THEME, nextTheme);
+  return nextTheme;
 }
 
 export async function getLatestRelease() {
@@ -96,6 +109,8 @@ const methods = {
   setLocale,
   getCustomLocale,
   setCustomLocale,
+  getTheme,
+  setTheme,
   getLatestRelease,
   validateLiquidityChannelHost,
 };

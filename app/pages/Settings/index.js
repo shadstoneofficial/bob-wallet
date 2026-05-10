@@ -39,7 +39,7 @@ import {clientStub as cClientStub} from "../../background/connections/client";
 import {ConnectionTypes} from "../../background/connections/service";
 import Dropdown from "../../components/Dropdown";
 import {I18nContext, langs, languageDropdownItems} from "../../utils/i18n";
-import {setLocale, setCustomLocale} from "../../ducks/app";
+import {setLocale, setCustomLocale, setTheme} from "../../ducks/app";
 import {clientStub as settingClientStub} from "../../background/setting/client";
 import {DEFAULT_SHAKEDEX_CHANNEL_HOST} from "../../constants/shakedexChannels";
 import {
@@ -61,6 +61,7 @@ const settingClient = settingClientStub(() => require('electron').ipcRenderer);
 @connect(
   (state) => ({
     locale: state.app.locale,
+    theme: state.app.theme,
     network: state.wallet.network,
     apiKey: state.node.apiKey,
     spv: state.node.spv,
@@ -92,6 +93,7 @@ const settingClient = settingClientStub(() => require('electron').ipcRenderer);
     fetchWallet: () => dispatch(walletActions.fetchWallet()),
     setLocale: (locale) => dispatch(setLocale(locale)),
     setCustomLocale: (locale) => dispatch(setCustomLocale(locale)),
+    setTheme: (theme) => dispatch(setTheme(theme)),
   }),
 )
 export default class Settings extends Component {
@@ -99,6 +101,7 @@ export default class Settings extends Component {
     network: PropTypes.string.isRequired,
     apiKey: PropTypes.string,
     locale: PropTypes.string.isRequired,
+    theme: PropTypes.string.isRequired,
     rsPort: PropTypes.number.isRequired,
     nsPort: PropTypes.number.isRequired,
     noDns: PropTypes.bool.isRequired,
@@ -120,6 +123,7 @@ export default class Settings extends Component {
     showSuccess: PropTypes.func.isRequired,
     setLocale: PropTypes.func.isRequired,
     setCustomLocale: PropTypes.func.isRequired,
+    setTheme: PropTypes.func.isRequired,
     setCustomRPCStatus: PropTypes.func.isRequired,
     transactions: PropTypes.object.isRequired,
     fetchWallet: PropTypes.func.isRequired,
@@ -990,6 +994,7 @@ export default class Settings extends Component {
       isTestingCustomRPC,
       isCustomRPCConnected,
       locale,
+      theme,
     } = this.props;
     const {t} = this.context;
 
@@ -1032,6 +1037,14 @@ export default class Settings extends Component {
                   currentIndex={languageDropdownItems.findIndex(item => item.value === locale)}
                 />,
                 false,
+              )}
+              {this.renderSection(
+                'Appearance',
+                theme === 'dark'
+                  ? 'Dark mode is enabled.'
+                  : 'Use a darker interface for lower-light environments.',
+                theme === 'dark' ? 'Use Light Mode' : 'Use Dark Mode',
+                () => this.props.setTheme(theme === 'dark' ? 'light' : 'dark'),
               )}
             </>
           </Route>

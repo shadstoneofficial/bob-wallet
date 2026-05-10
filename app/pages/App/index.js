@@ -41,7 +41,7 @@ import SignMessage from "../SignMessage";
 import VerifyMessage from "../VerifyMessage";
 import Addons from '../Addons';
 import Messages from '../Messages';
-import {fetchLocale, initHip2, checkForUpdates} from "../../ducks/app";
+import {fetchLocale, fetchTheme, initHip2, checkForUpdates} from "../../ducks/app";
 import Multisig from "../Multisig";
 import {I18nContext} from "../../utils/i18n";
 import {EXPLORERS} from "../../constants/explorers";
@@ -58,6 +58,7 @@ const settingClient = sClientStub(() => require('electron').ipcRenderer);
     setExplorer: (explorer) => dispatch(nodeActions.setExplorer(explorer)),
     checkForUpdates: () => dispatch(checkForUpdates()),
     fetchLocale: () => dispatch(fetchLocale()),
+    fetchTheme: () => dispatch(fetchTheme()),
   }),
 )
 class App extends Component {
@@ -71,6 +72,7 @@ class App extends Component {
     initHip2: PropTypes.func.isRequired,
     setExplorer: PropTypes.func.isRequired,
     fetchLocale: PropTypes.func.isRequired,
+    fetchTheme: PropTypes.func.isRequired,
     isChangingNetworks: PropTypes.bool.isRequired,
   };
 
@@ -85,6 +87,7 @@ class App extends Component {
   async componentDidMount() {
     this.setState({isLoading: true});
     this.props.fetchLocale();
+    this.props.fetchTheme();
     this.props.checkForUpdates();
     await this.props.startNode();
     await this.props.initHip2();
