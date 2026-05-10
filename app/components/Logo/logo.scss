@@ -24,3 +24,17 @@
     }
   }
 }
+
+body.bob-theme-dark {
+  .logo {
+    background-color: transparent;
+    background-image: url('../../assets/images/bob-logo-dark.png');
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: cover;
+
+    &__bob {
+      background-image: none;
+    }
+  }
+}
