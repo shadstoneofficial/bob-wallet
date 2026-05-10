@@ -250,8 +250,9 @@ class Exchange extends Component {
       const matchesQuery = !query || auction.name.toLowerCase().includes(query);
       const isFixed = isFixedPriceAuction(auction);
       const matchesMode = mode === 'all'
+        || (isPendingAuction(auction) && mode === 'fixed' && auction.listingMode === 'fixed-price')
         || (mode === 'fixed' && isFixed)
-        || (mode === 'reverse' && !isFixed);
+        || (mode === 'reverse' && !isFixed && !isPendingAuction(auction));
 
       return matchesQuery && matchesMode;
     });
@@ -1094,19 +1095,22 @@ class Exchange extends Component {
 
   renderAuctionRow = (auction) => {
     const {t} = this.context;
+    const isPending = isPendingAuction(auction);
     const currentBid = this.state.currentBidsMap.get(auction.id);
     const isFixedPrice = isFixedPriceAuction(auction);
-    if (currentBid === undefined) {
+    if (!isPending && currentBid === undefined) {
       this.getCurrentBidForAuction(auction);
     }
 
-    const currentPriceText = currentBid === null ? t('sold') : displayBalance(currentBid?.price, true);
+    const currentPriceText = isPending
+      ? (auction.expectedPrice ? displayBalance(auction.expectedPrice, true) : t('priceComingSoon'))
+      : (currentBid === null ? t('sold') : displayBalance(currentBid?.price, true));
 
     return (
       <TableRow
         key={auction.id}
         className="exchange__auction-listing__row"
-        onClick={() => shell.openExternal(`${MARKET_API_BASE_URL}/listing/${auction.name}`)}
+        onClick={() => shell.openExternal(`${MARKET_API_BASE_URL}${auction.url || `/listing/${auction.name}`}`)}
       >
         <TableItem>{formatName(auction.name)}</TableItem>
         <TableItem>{currentPriceText}</TableItem>
@@ -1117,10 +1121,11 @@ class Exchange extends Component {
               <div className="exchange__auction-row-buttons">
                 <div
                   className={classNames('bid-action__link', {
-                    'bid-action__link--disabled': !this.canUseMarketplaceActions(),
+                    'bid-action__link--disabled': isPending || !this.canUseMarketplaceActions(),
                   })}
                   onClick={(e) => {
                     e.stopPropagation();
+                    if (isPending) return;
                     if (!this.canUseMarketplaceActions()) {
                       this.showMarketplaceNotReady();
                       return;
@@ -1132,25 +1137,27 @@ class Exchange extends Component {
                     });
                   }}
                 >
-                  {isFixedPrice ? t('buyNow') : t('buyAtCurrentPrice')}
+                  {isPending ? t('comingSoon') : (isFixedPrice ? t('buyNow') : t('buyAtCurrentPrice'))}
                 </div>
+                {!isPending && (
+                  <div
+                    className="bid-action__link"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      this.onClickDownload(auction);
+                    }}
+                  >
+                    {t('downloadProofs')}
+                  </div>
+                )}
                 <div
                   className="bid-action__link"
                   onClick={(e) => {
                     e.stopPropagation();
-                    this.onClickDownload(auction);
+                    shell.openExternal(`${MARKET_API_BASE_URL}${auction.url || `/listing/${auction.name}`}`);
                   }}
                 >
-                  {t('downloadProofs')}
-                </div>
-                <div
-                  className="bid-action__link"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    shell.openExternal(`${MARKET_API_BASE_URL}/listing/${auction.name}`);
-                  }}
-                >
-                  {t('viewListing')}
+                  {isPending ? t('viewPending') : t('viewListing')}
                 </div>
               </div>
             )
@@ -1198,6 +1205,14 @@ class Exchange extends Component {
   }
 
   renderMarketplaceMode(auction) {
+    if (isPendingAuction(auction)) {
+      if (auction.blocksUntilFinalize > 0) {
+        return `${this.context.t('pending')} (${auction.blocksUntilFinalize} ${this.context.t('blocks')})`;
+      }
+
+      return this.context.t('pending');
+    }
+
     if (isFixedPriceAuction(auction)) {
       return this.context.t('buyNow');
     }
@@ -1226,7 +1241,15 @@ function isFixedPriceAuction(auction) {
   return Array.isArray(auction?.bids) && auction.bids.length === 1;
 }
 
+function isPendingAuction(auction) {
+  return auction?.pending || auction?.buyable === false || auction?.status === 'pending';
+}
+
 function getKnownCurrentPrice(auction, currentBidsMap) {
+  if (isPendingAuction(auction)) {
+    return auction.expectedPrice || null;
+  }
+
   const currentBid = currentBidsMap.get(auction.id);
 
   if (currentBid === undefined || currentBid === null) {
