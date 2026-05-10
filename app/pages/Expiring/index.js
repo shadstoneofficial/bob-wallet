@@ -8,6 +8,7 @@ import * as myDomainsActions from '../../ducks/myDomains';
 import {formatName} from '../../utils/nameHelpers';
 import {HeaderItem, HeaderRow, Table, TableItem, TableRow} from '../../components/Table';
 import Blocktime from '../../components/Blocktime';
+import DocsHelp from '../../components/DocsHelp';
 import {I18nContext} from '../../utils/i18n';
 import './expiring.scss';
 
@@ -141,6 +142,12 @@ class Expiring extends Component {
             {spv ? t('expiringSpvNote') : t('expiringFullNodeNote')}
           </p>
         </div>
+        <DocsHelp
+          title="Expiring Names"
+          href="https://bobwallet.org/docs/expiring-names"
+        >
+          This view focuses on names in your wallet. Global expiring discovery needs full-node or indexed Shakedex channel support.
+        </DocsHelp>
         <Table className="expiring-page__table">
           <HeaderRow>
             <HeaderItem>{t('domain')}</HeaderItem>

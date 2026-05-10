@@ -3,6 +3,7 @@ import {shell} from 'electron';
 import {withRouter} from 'react-router-dom';
 import PropTypes from 'prop-types';
 import {I18nContext} from '../../utils/i18n';
+import DocsHelp from '../../components/DocsHelp';
 import './addons.scss';
 
 const ADDONS = [
@@ -101,6 +102,12 @@ class Addons extends Component {
             {t('openDocs')}
           </button>
         </div>
+        <DocsHelp
+          title="Add Ons"
+          href="https://bobwallet.org/docs/add-ons"
+        >
+          Add Ons are reviewed tools surfaced inside Bob. Native Add Ons stay in Bob; external Add Ons open outside Bob and never receive wallet secrets.
+        </DocsHelp>
         <div className="addons-page__grid">
           {ADDONS.map(addon => (
             <div className="addons-page__card" key={addon.name}>

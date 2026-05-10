@@ -1,0 +1,33 @@
+@import '../../variables';
+
+.docs-help {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin: .75rem 0 1rem;
+  padding: .8rem .9rem;
+  border: 1px solid rgba($azure-blue, .18);
+  border-radius: 8px;
+  background: rgba($azure-blue, .04);
+  color: $dark-grey;
+}
+
+.docs-help__title {
+  font-size: .7rem;
+  font-weight: 700;
+  margin-bottom: .2rem;
+}
+
+.docs-help__body {
+  color: $manatee-gray;
+  font-size: .7rem;
+  line-height: 1.1rem;
+}
+
+.docs-help__button {
+  @extend %btn-secondary;
+  flex: 0 0 auto;
+  width: auto;
+  padding: .5rem .7rem;
+  font-size: .7rem;
+}

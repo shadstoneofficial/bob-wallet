@@ -37,6 +37,7 @@ import {Link} from "react-router-dom";
 import GenerateListingModal from "./GenerateListingModal";
 import {getPageIndices} from "../../utils/pageable";
 import Dropdown from "../../components/Dropdown";
+import DocsHelp from '../../components/DocsHelp';
 import ShakedexDeprecated from '../../components/ShakedexDeprecated/index.js';
 import SpinnerSVG from '../../assets/images/brick-loader.svg';
 import ConfirmFeeModal from './ConfirmFeeModal.js';
@@ -532,6 +533,14 @@ class Exchange extends Component {
     return (
       <div className="exchange">
         {this.isMarketplaceVisible() && this.renderReadinessPanel()}
+        {this.isMarketplaceVisible() && (
+          <DocsHelp
+            title="Shakedex Marketplace"
+            href="https://bobwallet.org/docs/shakedex-safety"
+          >
+            SPV wallets can browse and buy after Bob and the active Shakedex channel are ready. Selling still uses the Shakedex lock flow and needs extra care.
+          </DocsHelp>
+        )}
         {this.isMarketplaceVisible() && this.renderSellerToolsPanel()}
         {!isSpv && (
           <>
