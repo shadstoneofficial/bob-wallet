@@ -525,6 +525,9 @@ class Exchange extends Component {
 
     const isSpv = this.props.spv;
     const marketplaceAuctions = this.getVisibleMarketplaceAuctions();
+    const activeChannelText = ACTIVE_SHAKEDEX_CHANNEL.label === MARKET_API_HOST
+      ? MARKET_API_HOST
+      : `${ACTIVE_SHAKEDEX_CHANNEL.label} (${MARKET_API_HOST})`;
 
     return (
       <div className="exchange">
@@ -619,7 +622,7 @@ class Exchange extends Component {
           <div>
             <h2>{t('learnHnsMarketplace')}</h2>
             <div className="exchange-marketplace-header__channel">
-              {`${t('activeChannel')}: ${ACTIVE_SHAKEDEX_CHANNEL.label} (${MARKET_API_HOST})`}
+              {`${t('activeChannel')}: ${activeChannelText}`}
             </div>
           </div>
           <div className="exchange-marketplace-header__actions">
