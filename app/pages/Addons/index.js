@@ -6,6 +6,7 @@ import {I18nContext} from '../../utils/i18n';
 import DocsHelp from '../../components/DocsHelp';
 import {
   DEFAULT_LIQUIDITY_SPOT_CHANNEL_HOST,
+  LIQUIDITY_ADDON_NAME,
   LIQUIDITY_SPOT_CHANNEL_LIST_STORAGE_KEY,
   LIQUIDITY_SPOT_CHANNEL_STORAGE_KEY,
   getLiquiditySpotChannelUrl,
@@ -24,13 +25,13 @@ const ADDONS = [
     internal: true,
   },
   {
-    name: 'Liquidity Spot',
+    name: LIQUIDITY_ADDON_NAME,
     status: 'Public Preview',
     description: 'Human P2P coordination is available now. Atomic-swap tooling is the next build track and will need Bitcoin wallet integration research.',
     action: 'Open',
     href: 'https://liquidity.spot/p2p',
     docsHref: 'https://bobwallet.org/docs/liquidity-spot',
-    externalNotice: 'Liquidity Spot opens outside Bob. Bob will not share your seed phrase, private keys, wallet password, or signing permissions with this Add On.',
+    externalNotice: 'Liquidity opens outside Bob. Bob will not share your seed phrase, private keys, wallet password, or signing permissions with this Add On.',
     details: [
       'Guest P2P: browse, create, accept, and coordinate trades.',
       'GFAVIP optional: only needed for Gems and account benefits.',
@@ -162,7 +163,7 @@ class Addons extends Component {
       liquiditySpotChannelError,
     } = this.state;
     const addons = ADDONS.map(addon => {
-      if (addon.name !== 'Liquidity Spot') {
+      if (addon.name !== LIQUIDITY_ADDON_NAME) {
         return addon;
       }
 
@@ -195,7 +196,7 @@ class Addons extends Component {
         </DocsHelp>
         <div className="addons-page__channel-card">
           <div>
-            <h3>Liquidity Spot Channel</h3>
+            <h3>Liquidity Channel</h3>
             <p>
               Active channel: <strong>{liquiditySpotHost}</strong>. Guest P2P should be available without GFAVIP; GFAVIP is optional for Gems and account benefits.
             </p>

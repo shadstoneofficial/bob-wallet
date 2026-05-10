@@ -1,11 +1,12 @@
 export const DEFAULT_LIQUIDITY_SPOT_CHANNEL_HOST = 'liquidity.spot';
+export const LIQUIDITY_ADDON_NAME = 'Liquidity';
 export const LIQUIDITY_SPOT_CHANNEL_STORAGE_KEY = 'bob:liquiditySpotChannelHost';
 export const LIQUIDITY_SPOT_CHANNEL_LIST_STORAGE_KEY = 'bob:liquiditySpotChannels';
 
 export const LIQUIDITY_SPOT_CHANNELS = [
   {
     id: 'liquidity-spot',
-    label: 'Liquidity Spot',
+    label: 'Liquidity',
     host: DEFAULT_LIQUIDITY_SPOT_CHANNEL_HOST,
     path: '/p2p',
   },

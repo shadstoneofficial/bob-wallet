@@ -79,10 +79,11 @@
         }
       }
 
-      &__footer {
-        padding: 1rem 1.5rem;
-        flex: 0 0 auto;
-      }
+    &__footer {
+      padding: 1rem 1.5rem;
+      flex: 1 1 auto;
+      min-width: 0;
+    }
 
       &__cta {
         @extend %btn-secondary;
@@ -189,7 +190,9 @@
     @extend %col-nowrap;
     align-items: flex-start;
     gap: .5rem;
-    min-width: 18rem;
+    max-width: 44rem;
+    min-width: min(18rem, 100%);
+    width: 100%;
 
     &__row {
       @extend %row-nowrap;
@@ -204,6 +207,8 @@
 
       strong {
         font-weight: 600;
+        overflow-wrap: anywhere;
+        text-align: right;
       }
     }
 
@@ -225,6 +230,9 @@
     &__status {
       font-size: .8125rem;
       line-height: 1.4;
+      max-width: 100%;
+      overflow-wrap: anywhere;
+      padding: .25rem 0;
 
       &--ok {
         color: $success-green;

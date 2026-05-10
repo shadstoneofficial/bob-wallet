@@ -40,6 +40,7 @@ import {ConnectionTypes} from "../../background/connections/service";
 import Dropdown from "../../components/Dropdown";
 import {I18nContext, langs, languageDropdownItems} from "../../utils/i18n";
 import {setLocale, setCustomLocale} from "../../ducks/app";
+import {clientStub as settingClientStub} from "../../background/setting/client";
 import {DEFAULT_SHAKEDEX_CHANNEL_HOST} from "../../constants/shakedexChannels";
 import {
   DEFAULT_LIQUIDITY_SPOT_CHANNEL_HOST,
@@ -54,6 +55,7 @@ const analytics = aClientStub(() => require('electron').ipcRenderer);
 const shakedex = sClientStub(() => require('electron').ipcRenderer);
 const nodeClient = clientStub(() => require('electron').ipcRenderer);
 const connClient = cClientStub(() => require('electron').ipcRenderer);
+const settingClient = settingClientStub(() => require('electron').ipcRenderer);
 
 @withRouter
 @connect(
@@ -143,6 +145,7 @@ export default class Settings extends Component {
       liquiditySpotChannels: mergeLiquiditySpotChannels(),
       liquiditySpotStatus: '',
       liquiditySpotError: '',
+      isValidatingLiquidityChannel: false,
     }
   }
 
@@ -422,7 +425,7 @@ export default class Settings extends Component {
     if (!host) {
       this.setState({
         liquiditySpotStatus: '',
-        liquiditySpotError: 'Enter a valid Liquidity Spot channel host.',
+        liquiditySpotError: 'Enter a valid Liquidity channel host.',
       });
       return;
     }
@@ -437,9 +440,29 @@ export default class Settings extends Component {
       liquiditySpotHost: host,
       liquiditySpotDraftHost: host,
       liquiditySpotChannels,
-      liquiditySpotStatus: `Active Liquidity Spot channel set to ${host}.`,
+      liquiditySpotStatus: `Active Liquidity channel set to ${host}.`,
       liquiditySpotError: '',
     });
+  };
+
+  validateLiquiditySpotChannel = async () => {
+    this.setState({
+      isValidatingLiquidityChannel: true,
+      liquiditySpotStatus: '',
+      liquiditySpotError: '',
+    });
+
+    try {
+      const result = await settingClient.validateLiquidityChannelHost(this.state.liquiditySpotDraftHost);
+      this.setState({
+        liquiditySpotStatus: result.ok ? `Reachable at ${result.url}.` : '',
+        liquiditySpotError: result.ok ? '' : (result.error || 'Liquidity channel validation failed.'),
+      });
+    } catch (e) {
+      this.setState({liquiditySpotError: e.message});
+    } finally {
+      this.setState({isValidatingLiquidityChannel: false});
+    }
   };
 
   resetLiquiditySpotChannel = () => {
@@ -448,7 +471,7 @@ export default class Settings extends Component {
       liquiditySpotHost: DEFAULT_LIQUIDITY_SPOT_CHANNEL_HOST,
       liquiditySpotDraftHost: DEFAULT_LIQUIDITY_SPOT_CHANNEL_HOST,
       liquiditySpotChannels: mergeLiquiditySpotChannels(),
-      liquiditySpotStatus: 'Reset to the default Liquidity Spot channel.',
+      liquiditySpotStatus: 'Reset to the default Liquidity channel.',
       liquiditySpotError: '',
     });
   };
@@ -490,6 +513,14 @@ export default class Settings extends Component {
           onClick={() => history.push("/settings/exchange")}
         >
           {t('settingExchange')}
+        </div>
+        <div
+          className={c("settings__nav__item", {
+            'settings__nav__item--selected': location.pathname === '/settings/addons',
+          })}
+          onClick={() => history.push("/settings/addons")}
+        >
+          Add Ons
         </div>
       </div>
     );
@@ -634,11 +665,6 @@ export default class Settings extends Component {
       shakedexChannelError,
       isValidatingShakedexChannel,
       isSavingShakedexChannel,
-      liquiditySpotHost,
-      liquiditySpotDraftHost,
-      liquiditySpotChannels,
-      liquiditySpotStatus,
-      liquiditySpotError,
     } = this.state;
 
     return (
@@ -722,13 +748,41 @@ export default class Settings extends Component {
           </div>,
         )}
         {this.renderSection(
-          'Liquidity Spot Channel',
-          'Choose which Liquidity Spot channel opens from Bob Add Ons.',
+          t('settingBackupListingTitle'),
+          t('settingBackupListingDesc'),
+          t('download'),
+          () => history.push('/settings/exchange/backup'),
+        )}
+        {this.renderSection(
+          t('settingRestoreListingTitle'),
+          t('settingRestoreListingDesc'),
+          t('settingRestoreListingCTA'),
+          this.onRestoreExchangeListing,
+        )}
+      </>
+    )
+  }
+
+  renderAddons() {
+    const {
+      liquiditySpotHost,
+      liquiditySpotDraftHost,
+      liquiditySpotChannels,
+      liquiditySpotStatus,
+      liquiditySpotError,
+      isValidatingLiquidityChannel,
+    } = this.state;
+
+    return (
+      <>
+        {this.renderSection(
+          'Liquidity Channel',
+          'Choose which Liquidity channel opens from Bob Add Ons.',
           '',
           null,
           <div className="settings__channel-card">
             <div className="settings__channel-card__row">
-              <span>{t('activeChannel')}</span>
+              <span>{this.context.t('activeChannel')}</span>
               <strong>{liquiditySpotHost}</strong>
             </div>
             <div className="settings__channel-card__row">
@@ -744,7 +798,7 @@ export default class Settings extends Component {
                 this.setState({
                   liquiditySpotHost: host,
                   liquiditySpotDraftHost: host,
-                  liquiditySpotStatus: `Active Liquidity Spot channel set to ${host}.`,
+                  liquiditySpotStatus: `Active Liquidity channel set to ${host}.`,
                   liquiditySpotError: '',
                 });
               }}
@@ -766,6 +820,13 @@ export default class Settings extends Component {
               placeholder="liquidity.spot"
             />
             <div className="settings__channel-card__actions">
+              <button
+                className="settings__content__section__cta"
+                onClick={this.validateLiquiditySpotChannel}
+                disabled={isValidatingLiquidityChannel}
+              >
+                {isValidatingLiquidityChannel ? 'Checking...' : 'Validate'}
+              </button>
               <button
                 className="settings__content__section__cta"
                 onClick={this.saveLiquiditySpotChannel}
@@ -792,19 +853,27 @@ export default class Settings extends Component {
           </div>,
         )}
         {this.renderSection(
-          t('settingBackupListingTitle'),
-          t('settingBackupListingDesc'),
-          t('download'),
-          () => history.push('/settings/exchange/backup'),
-        )}
-        {this.renderSection(
-          t('settingRestoreListingTitle'),
-          t('settingRestoreListingDesc'),
-          t('settingRestoreListingCTA'),
-          this.onRestoreExchangeListing,
+          'Channel Import / Export',
+          'Save or restore Shakedex and Add On channel settings as a JSON file.',
+          '',
+          null,
+          <div className="settings__channel-card__actions">
+            <button
+              className="settings__content__section__cta"
+              onClick={this.exportChannelSettings}
+            >
+              Export Channels
+            </button>
+            <button
+              className="settings__content__section__cta"
+              onClick={this.importChannelSettings}
+            >
+              Import Channels
+            </button>
+          </div>,
         )}
       </>
-    )
+    );
   }
 
   startNode = async () => {
@@ -957,6 +1026,9 @@ export default class Settings extends Component {
           </Route>
           <Route path="/settings/exchange">
             {this.renderExchange()}
+          </Route>
+          <Route path="/settings/addons">
+            {this.renderAddons()}
           </Route>
           <Route>
             <Redirect to="/settings/general" />

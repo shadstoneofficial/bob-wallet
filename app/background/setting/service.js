@@ -1,5 +1,9 @@
 import { del, get, put } from '../db/service';
 import { app } from "electron";
+import {
+  getLiquiditySpotChannelUrl,
+  normalizeLiquiditySpotHost,
+} from '../../constants/liquiditySpotChannels';
 
 const EXPLORER = 'setting/explorer';
 const LOCALE = 'setting/locale';
@@ -52,6 +56,38 @@ export async function getLatestRelease() {
   }
 }
 
+export async function validateLiquidityChannelHost(host) {
+  const normalizedHost = normalizeLiquiditySpotHost(host);
+  if (!normalizedHost) {
+    return {
+      ok: false,
+      host: '',
+      url: '',
+      error: 'Enter a valid Liquidity channel host.',
+    };
+  }
+
+  const url = getLiquiditySpotChannelUrl(normalizedHost);
+
+  try {
+    const resp = await fetch(url, {method: 'GET'});
+    return {
+      ok: resp.ok,
+      host: normalizedHost,
+      url,
+      status: resp.status,
+      error: resp.ok ? null : `HTTP ${resp.status}`,
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      host: normalizedHost,
+      url,
+      error: e.message,
+    };
+  }
+}
+
 const sName = 'Setting';
 const methods = {
   getExplorer,
@@ -61,6 +97,7 @@ const methods = {
   getCustomLocale,
   setCustomLocale,
   getLatestRelease,
+  validateLiquidityChannelHost,
 };
 
 export async function start(server) {
