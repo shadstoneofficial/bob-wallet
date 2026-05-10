@@ -180,6 +180,34 @@ export async function getMarketHsdStatus() {
   }
 }
 
+export async function getChannelExpiringNames(limit = 100) {
+  const host = await getMarketApiHost();
+  const safeLimit = Math.max(1, Math.min(500, Number(limit) || 100));
+
+  try {
+    const resp = await fetch(
+      `${getShakedexChannelBaseUrl({host})}/api/v2/expiring-names?limit=${safeLimit}`,
+    );
+    const data = await resp.json();
+
+    if (!resp.ok) {
+      throw new Error(data.error || `HTTP ${resp.status}`);
+    }
+
+    return {
+      ...data,
+      host,
+    };
+  } catch (e) {
+    return {
+      host,
+      names: [],
+      scope: 'channel-observed',
+      error: e.message || 'This Shakedex channel does not have expiring-name data available yet.',
+    };
+  }
+}
+
 export async function getShakedexChannelSettings() {
   const host = await getMarketApiHost();
   return {
@@ -762,6 +790,7 @@ const methods = {
   getFeeInfo,
   getBestBid,
   getMarketHsdStatus,
+  getChannelExpiringNames,
   getShakedexChannelSettings,
   validateShakedexChannelHost,
   setShakedexChannelHost,

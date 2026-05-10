@@ -61,6 +61,14 @@
     font-size: .75rem;
   }
 
+  &__empty {
+    color: $manatee-gray;
+    font-size: .8rem;
+    font-style: italic;
+    padding-bottom: .75rem;
+    padding-top: .75rem;
+  }
+
   &__status {
     border-radius: 999px;
     display: inline-block;

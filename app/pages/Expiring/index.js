@@ -10,10 +10,7 @@ import {HeaderItem, HeaderRow, Table, TableItem, TableRow} from '../../component
 import Blocktime from '../../components/Blocktime';
 import DocsHelp from '../../components/DocsHelp';
 import {I18nContext} from '../../utils/i18n';
-import {
-  DEFAULT_SHAKEDEX_CHANNEL_HOST,
-  getShakedexChannelBaseUrl,
-} from '../../constants/shakedexChannels';
+import {DEFAULT_SHAKEDEX_CHANNEL_HOST} from '../../constants/shakedexChannels';
 import {clientStub as sClientStub} from '../../background/shakedex/client';
 import './expiring.scss';
 
@@ -60,25 +57,19 @@ class Expiring extends Component {
     });
 
     try {
-      const settings = await shakedex.getShakedexChannelSettings();
-      const channelHost = settings.host || DEFAULT_SHAKEDEX_CHANNEL_HOST;
-      const response = await fetch(`${getShakedexChannelBaseUrl({host: channelHost})}/api/v2/expiring-names?limit=100`);
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Could not load channel expiring names.');
-      }
+      const data = await shakedex.getChannelExpiringNames(100);
 
       if (this.unmounted) {
         return;
       }
 
       this.setState({
-        channelHost,
+        channelHost: data.host || DEFAULT_SHAKEDEX_CHANNEL_HOST,
         channelExpiringNames: data.names || [],
         channelExpiringScope: data.scope || 'channel-observed',
         channelExpiringCheckedAt: Date.now(),
         channelExpiringLoading: false,
+        channelExpiringError: data.error || '',
       });
     } catch (e) {
       if (this.unmounted) {
@@ -90,6 +81,16 @@ class Expiring extends Component {
         channelExpiringLoading: false,
       });
     }
+  }
+
+  renderEmptyRow(message) {
+    return (
+      <TableRow className="table__empty-row">
+        <TableItem className="expiring-page__empty" grow={1}>
+          {message}
+        </TableItem>
+      </TableRow>
+    );
   }
 
   getExpirationHeight(name) {
@@ -153,11 +154,7 @@ class Expiring extends Component {
     const {t} = this.context;
 
     if (!rows.length) {
-      return (
-        <TableRow className="table__empty-row">
-          {t('expiringEmpty')}
-        </TableRow>
-      );
+      return this.renderEmptyRow(t('expiringEmpty'));
     }
 
     return rows.map(({name, expirationHeight, blocksRemaining}) => {
@@ -195,19 +192,11 @@ class Expiring extends Component {
     } = this.state;
 
     if (channelExpiringLoading) {
-      return (
-        <TableRow className="table__empty-row">
-          Loading channel-observed names...
-        </TableRow>
-      );
+      return this.renderEmptyRow('Loading channel-observed names...');
     }
 
     if (channelExpiringError) {
-      return (
-        <TableRow className="table__empty-row">
-          {channelExpiringError}
-        </TableRow>
-      );
+      return this.renderEmptyRow(channelExpiringError);
     }
 
     const rows = channelExpiringNames
@@ -222,11 +211,7 @@ class Expiring extends Component {
       });
 
     if (!rows.length) {
-      return (
-        <TableRow className="table__empty-row">
-          No channel-observed expiring names yet.
-        </TableRow>
-      );
+      return this.renderEmptyRow('No channel-observed expiring names yet.');
     }
 
     return rows.map(row => {
@@ -286,9 +271,7 @@ class Expiring extends Component {
             <HeaderItem>{t('expirationStatus')}</HeaderItem>
           </HeaderRow>
           {isFetching ? (
-            <TableRow className="table__empty-row">
-              {t('loadingNDomains', rows.length)}
-            </TableRow>
+            this.renderEmptyRow(t('loadingNDomains', rows.length))
           ) : this.renderRows(rows)}
         </Table>
         <div className="expiring-page__section-header expiring-page__section-header--spaced">
