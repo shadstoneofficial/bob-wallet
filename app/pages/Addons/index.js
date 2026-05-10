@@ -154,7 +154,13 @@ class Addons extends Component {
 
   render() {
     const {t} = this.context;
-    const {pendingExternalAddon} = this.state;
+    const {
+      pendingExternalAddon,
+      liquiditySpotHost,
+      liquiditySpotDraftHost,
+      liquiditySpotChannels,
+      liquiditySpotChannelError,
+    } = this.state;
 
     return (
       <div className="addons-page">
