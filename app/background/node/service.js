@@ -13,7 +13,7 @@ import FullNode from 'hsd/lib/node/fullnode';
 import SPVNode from 'hsd/lib/node/spvnode';
 import plugin from 'hsd/lib/wallet/plugin';
 import { prefixHash } from '../../db/names';
-import { get, put } from '../db/service';
+import { del, get, put } from '../db/service';
 import {dispatchToMainWindow} from "../../mainWindow";
 import {
   SET_NODE_API,
@@ -37,8 +37,20 @@ const WALLET_API_KEY = 'walletApiKey';
 const NODE_API_KEY = 'nodeApiKey';
 const NODE_NO_DNS = 'nodeNoDns1';
 const SPV_MODE = 'nodeSpvMode';
-const HANDSHAKE_API_BASE_URL = 'https://api.handshakeapi.com/hsd';
+const SPV_HELPER_API_BASE_URL = 'nodeSpvHelperApiBaseUrl';
+const DEFAULT_SPV_HELPER_API_BASE_URL = 'https://api.handshakeapi.com/hsd';
 const LEARNHNS_TEST_PORT_OFFSET = 1000;
+
+function normalizeSpvHelperApiBaseUrl(value) {
+  const raw = String(value || '').trim();
+  if (!raw) {
+    return DEFAULT_SPV_HELPER_API_BASE_URL;
+  }
+
+  const withProtocol = raw.includes('://') ? raw : `https://${raw}`;
+  const url = new URL(withProtocol);
+  return url.href.replace(/\/+$/, '');
+}
 
 export class NodeService extends EventEmitter {
   constructor() {
@@ -82,6 +94,67 @@ export class NodeService extends EventEmitter {
     }
 
     return true;
+  }
+
+  async getSpvHelperApiBaseUrl() {
+    const baseUrl = await get(SPV_HELPER_API_BASE_URL);
+    if (!baseUrl) {
+      return DEFAULT_SPV_HELPER_API_BASE_URL;
+    }
+
+    return normalizeSpvHelperApiBaseUrl(baseUrl);
+  }
+
+  async getSpvHelperApiSettings() {
+    const baseUrl = await this.getSpvHelperApiBaseUrl();
+    return {
+      baseUrl,
+      defaultBaseUrl: DEFAULT_SPV_HELPER_API_BASE_URL,
+      isDefault: baseUrl === DEFAULT_SPV_HELPER_API_BASE_URL,
+    };
+  }
+
+  async setSpvHelperApiBaseUrl(baseUrl) {
+    const normalizedBaseUrl = normalizeSpvHelperApiBaseUrl(baseUrl);
+    await put(SPV_HELPER_API_BASE_URL, normalizedBaseUrl);
+    return this.getSpvHelperApiSettings();
+  }
+
+  async resetSpvHelperApiBaseUrl() {
+    await del(SPV_HELPER_API_BASE_URL);
+    return this.getSpvHelperApiSettings();
+  }
+
+  async validateSpvHelperApiBaseUrl(baseUrl) {
+    const normalizedBaseUrl = normalizeSpvHelperApiBaseUrl(baseUrl);
+
+    try {
+      const res = await fetch(normalizedBaseUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          method: 'getblockchaininfo',
+          params: [],
+        }),
+      });
+      const json = await res.json();
+
+      return {
+        ok: res.status === 200 && !json.error,
+        baseUrl: normalizedBaseUrl,
+        status: res.status,
+        height: json.result?.blocks || json.result?.chain?.height || json.result?.height || null,
+        error: json.error?.message || null,
+      };
+    } catch (e) {
+      return {
+        ok: false,
+        baseUrl: normalizedBaseUrl,
+        error: e.message,
+      };
+    }
   }
 
   async getDir() {
@@ -471,7 +544,7 @@ export class NodeService extends EventEmitter {
 
   async getBlock(height) {
     if (await this.getSpvMode()) {
-      return hapiGet(`/block/${block}`);
+      return hapiGet(`/block/${height}`);
     }
     return this.client.getBlock(height);
   }
@@ -643,6 +716,10 @@ const methods = {
   getAPIKey: () => service.getAPIKey(),
   getNoDns: () => service.getNoDns(),
   getSpvMode: () => service.getSpvMode(),
+  getSpvHelperApiSettings: () => service.getSpvHelperApiSettings(),
+  setSpvHelperApiBaseUrl: (baseUrl) => service.setSpvHelperApiBaseUrl(baseUrl),
+  resetSpvHelperApiBaseUrl: () => service.resetSpvHelperApiBaseUrl(),
+  validateSpvHelperApiBaseUrl: (baseUrl) => service.validateSpvHelperApiBaseUrl(baseUrl),
   getInfo: () => service.getInfo(),
   getNameInfo: (name) => service.getNameInfo(name),
   getNameByHash: (hash) => service.getNameByHash(hash),
@@ -675,7 +752,8 @@ export async function start(server) {
 }
 
 async function hapiGet(path = '') {
-  const res = await fetch(HANDSHAKE_API_BASE_URL + path, {
+  const baseUrl = await service.getSpvHelperApiBaseUrl();
+  const res = await fetch(baseUrl + path, {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json',
@@ -701,7 +779,8 @@ async function hapiGet(path = '') {
 }
 
 async function hapiPost(path = '', body) {
-  const res = await fetch(HANDSHAKE_API_BASE_URL + path, {
+  const baseUrl = await service.getSpvHelperApiBaseUrl();
+  const res = await fetch(baseUrl + path, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

@@ -140,6 +140,13 @@ export default class Settings extends Component {
       shakedexChannelError: '',
       isValidatingShakedexChannel: false,
       isSavingShakedexChannel: false,
+      spvHelperApiBaseUrl: '',
+      spvHelperApiDraftBaseUrl: '',
+      spvHelperApiDefaultBaseUrl: '',
+      spvHelperApiStatus: '',
+      spvHelperApiError: '',
+      isValidatingSpvHelperApi: false,
+      isSavingSpvHelperApi: false,
       liquiditySpotHost: DEFAULT_LIQUIDITY_SPOT_CHANNEL_HOST,
       liquiditySpotDraftHost: DEFAULT_LIQUIDITY_SPOT_CHANNEL_HOST,
       liquiditySpotChannels: mergeLiquiditySpotChannels(),
@@ -159,6 +166,7 @@ export default class Settings extends Component {
       userDir,
     });
     this.loadChannelSettings();
+    this.loadSpvHelperApiSettings();
   }
 
   onDownload = async () => {
@@ -286,6 +294,23 @@ export default class Settings extends Component {
     }
   };
 
+  loadSpvHelperApiSettings = async () => {
+    try {
+      const settings = await nodeClient.getSpvHelperApiSettings();
+      this.setState({
+        spvHelperApiBaseUrl: settings.baseUrl,
+        spvHelperApiDraftBaseUrl: settings.baseUrl,
+        spvHelperApiDefaultBaseUrl: settings.defaultBaseUrl,
+        spvHelperApiStatus: '',
+        spvHelperApiError: '',
+      });
+    } catch (e) {
+      this.setState({
+        spvHelperApiError: e.message,
+      });
+    }
+  };
+
   getStoredLiquiditySpotChannels = () => {
     try {
       const channels = JSON.parse(window.localStorage.getItem(LIQUIDITY_SPOT_CHANNEL_LIST_STORAGE_KEY) || '[]');
@@ -311,6 +336,10 @@ export default class Settings extends Component {
         shakedex: {
           activeHost: shakedexSettings.host,
           defaultHost: shakedexSettings.defaultHost,
+        },
+        spvHelper: {
+          activeBaseUrl: spvHelperSettings.baseUrl,
+          defaultBaseUrl: spvHelperSettings.defaultBaseUrl,
         },
         liquiditySpot: {
           activeHost: liquiditySpotHost,
@@ -341,11 +370,16 @@ export default class Settings extends Component {
 
       const payload = JSON.parse(await fs.promises.readFile(filepath, 'utf-8'));
       const shakedexHost = payload?.shakedex?.activeHost;
+      const spvHelperBaseUrl = payload?.spvHelper?.activeBaseUrl;
       const liquiditySpotHost = normalizeLiquiditySpotHost(payload?.liquiditySpot?.activeHost);
       const liquiditySpotChannels = mergeLiquiditySpotChannels(payload?.liquiditySpot?.channels || []);
 
       if (shakedexHost) {
         await shakedex.setShakedexChannelHost(shakedexHost);
+      }
+
+      if (spvHelperBaseUrl) {
+        await nodeClient.setSpvHelperApiBaseUrl(spvHelperBaseUrl);
       }
 
       if (liquiditySpotHost) {
@@ -354,6 +388,7 @@ export default class Settings extends Component {
 
       this.persistLiquiditySpotChannels(liquiditySpotChannels);
       await this.loadChannelSettings();
+      await this.loadSpvHelperApiSettings();
       this.props.showSuccess('Imported channel settings.');
     } catch (e) {
       this.props.showError(e.message);
@@ -417,6 +452,65 @@ export default class Settings extends Component {
       });
     } catch (e) {
       this.setState({shakedexChannelError: e.message});
+    }
+  };
+
+  validateSpvHelperApi = async () => {
+    this.setState({
+      isValidatingSpvHelperApi: true,
+      spvHelperApiStatus: '',
+      spvHelperApiError: '',
+    });
+
+    try {
+      const result = await nodeClient.validateSpvHelperApiBaseUrl(this.state.spvHelperApiDraftBaseUrl);
+      this.setState({
+        spvHelperApiStatus: result.ok
+          ? `Reachable${result.height ? ` at height ${result.height}` : ''}.`
+          : '',
+        spvHelperApiError: result.ok ? '' : (result.error || 'SPV helper validation failed.'),
+      });
+    } catch (e) {
+      this.setState({spvHelperApiError: e.message});
+    } finally {
+      this.setState({isValidatingSpvHelperApi: false});
+    }
+  };
+
+  saveSpvHelperApi = async () => {
+    this.setState({
+      isSavingSpvHelperApi: true,
+      spvHelperApiStatus: '',
+      spvHelperApiError: '',
+    });
+
+    try {
+      const settings = await nodeClient.setSpvHelperApiBaseUrl(this.state.spvHelperApiDraftBaseUrl);
+      this.setState({
+        spvHelperApiBaseUrl: settings.baseUrl,
+        spvHelperApiDraftBaseUrl: settings.baseUrl,
+        spvHelperApiDefaultBaseUrl: settings.defaultBaseUrl,
+        spvHelperApiStatus: `Active SPV helper set to ${settings.baseUrl}. Restart Bob to make every SPV lookup use it.`,
+      });
+    } catch (e) {
+      this.setState({spvHelperApiError: e.message});
+    } finally {
+      this.setState({isSavingSpvHelperApi: false});
+    }
+  };
+
+  resetSpvHelperApi = async () => {
+    try {
+      const settings = await nodeClient.resetSpvHelperApiBaseUrl();
+      this.setState({
+        spvHelperApiBaseUrl: settings.baseUrl,
+        spvHelperApiDraftBaseUrl: settings.baseUrl,
+        spvHelperApiDefaultBaseUrl: settings.defaultBaseUrl,
+        spvHelperApiStatus: 'Reset to the default SPV helper API.',
+        spvHelperApiError: '',
+      });
+    } catch (e) {
+      this.setState({spvHelperApiError: e.message});
     }
   };
 
@@ -971,6 +1065,61 @@ export default class Settings extends Component {
                 null,
                 isChangingNodeStatus || isTestingCustomRPC,
                 true
+              )}
+              {this.renderSection(
+                'SPV Helper API',
+                'Hosted helper used by SPV mode for transaction, coin, block, and read-only RPC lookups. This is separate from Shakedex marketplace channels.',
+                null,
+                null,
+                <div className="settings__channel-card">
+                  <div className="settings__channel-card__row">
+                    <span>Active Helper</span>
+                    <strong>{this.state.spvHelperApiBaseUrl}</strong>
+                  </div>
+                  <div className="settings__channel-card__row">
+                    <span>Default</span>
+                    <strong>{this.state.spvHelperApiDefaultBaseUrl}</strong>
+                  </div>
+                  <input
+                    className="settings__channel-card__input"
+                    value={this.state.spvHelperApiDraftBaseUrl}
+                    onChange={event => this.setState({
+                      spvHelperApiDraftBaseUrl: event.target.value,
+                      spvHelperApiStatus: '',
+                      spvHelperApiError: '',
+                    })}
+                    placeholder="https://api.handshakeapi.com/hsd"
+                  />
+                  <div className="settings__channel-card__actions">
+                    <button
+                      onClick={this.validateSpvHelperApi}
+                      disabled={this.state.isValidatingSpvHelperApi}
+                    >
+                      {this.state.isValidatingSpvHelperApi ? 'Checking...' : 'Validate'}
+                    </button>
+                    <button
+                      onClick={this.saveSpvHelperApi}
+                      disabled={this.state.isSavingSpvHelperApi}
+                    >
+                      {this.state.isSavingSpvHelperApi ? 'Saving...' : 'Save Helper'}
+                    </button>
+                    <button onClick={this.resetSpvHelperApi}>
+                      Reset Default
+                    </button>
+                  </div>
+                  {this.state.spvHelperApiStatus && (
+                    <div className="settings__channel-card__status settings__channel-card__status--ok">
+                      {this.state.spvHelperApiStatus}
+                    </div>
+                  )}
+                  {this.state.spvHelperApiError && (
+                    <div className="settings__channel-card__status settings__channel-card__status--error">
+                      {this.state.spvHelperApiError}
+                    </div>
+                  )}
+                </div>,
+                isChangingNodeStatus || isTestingCustomRPC,
+                true,
               )}
               {this.renderSection(
                 t('settingRemoteTitle'),
