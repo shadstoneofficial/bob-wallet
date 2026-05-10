@@ -168,13 +168,13 @@ class Expiring extends Component {
           key={name}
           onClick={() => history.push(`/domain_manager/${name}`)}
         >
-          <TableItem>{formatName(name)}</TableItem>
-          <TableItem>
+          <TableItem className="expiring-page__domain-cell" width="16rem" grow={0} shrink={0}>{formatName(name)}</TableItem>
+          <TableItem className="expiring-page__date-cell" width="10rem" grow={0} shrink={0}>
             <Blocktime height={expirationHeight} format="ll" fromNow />
           </TableItem>
-          <TableItem>{estimatedDate}</TableItem>
-          <TableItem>{blocksRemaining}</TableItem>
-          <TableItem>
+          <TableItem className="expiring-page__date-cell" width="12rem" grow={0} shrink={0}>{estimatedDate}</TableItem>
+          <TableItem className="expiring-page__blocks-cell" width="11rem" grow={0} shrink={0}>{blocksRemaining}</TableItem>
+          <TableItem className="expiring-page__status-cell" width="8rem" grow={0} shrink={0}>
             <span className={`expiring-page__status ${status.className}`}>
               {status.label}
             </span>
@@ -222,11 +222,11 @@ class Expiring extends Component {
 
       return (
         <TableRow key={row.name}>
-          <TableItem>{formatName(row.name)}</TableItem>
-          <TableItem>{row.expirationHeight || '-'}</TableItem>
-          <TableItem>{estimatedDate}</TableItem>
-          <TableItem>{row.blocksUntilExpire}</TableItem>
-          <TableItem>
+          <TableItem className="expiring-page__domain-cell" width="16rem" grow={0} shrink={0}>{formatName(row.name)}</TableItem>
+          <TableItem className="expiring-page__date-cell" width="10rem" grow={0} shrink={0}>{row.expirationHeight || '-'}</TableItem>
+          <TableItem className="expiring-page__date-cell" width="12rem" grow={0} shrink={0}>{estimatedDate}</TableItem>
+          <TableItem className="expiring-page__blocks-cell" width="11rem" grow={0} shrink={0}>{row.blocksUntilExpire}</TableItem>
+          <TableItem className="expiring-page__status-cell" width="8rem" grow={0} shrink={0}>
             <span className={`expiring-page__status ${status.className}`}>
               {status.label}
             </span>
@@ -264,11 +264,11 @@ class Expiring extends Component {
         </div>
         <Table className="expiring-page__table">
           <HeaderRow>
-            <HeaderItem>{t('domain')}</HeaderItem>
-            <HeaderItem>{t('expiresOn')}</HeaderItem>
-            <HeaderItem>{t('estimatedExpirationDate')}</HeaderItem>
-            <HeaderItem>{t('blocksRemaining')}</HeaderItem>
-            <HeaderItem>{t('expirationStatus')}</HeaderItem>
+            <HeaderItem width="16rem" grow={0} shrink={0}>{t('domain')}</HeaderItem>
+            <HeaderItem width="10rem" grow={0} shrink={0}>{t('expiresOn')}</HeaderItem>
+            <HeaderItem width="12rem" grow={0} shrink={0}>{t('estimatedExpirationDate')}</HeaderItem>
+            <HeaderItem width="11rem" grow={0} shrink={0}>{t('blocksRemaining')}</HeaderItem>
+            <HeaderItem width="8rem" grow={0} shrink={0}>{t('expirationStatus')}</HeaderItem>
           </HeaderRow>
           {isFetching ? (
             this.renderEmptyRow(t('loadingNDomains', rows.length))
@@ -296,11 +296,11 @@ class Expiring extends Component {
         </div>
         <Table className="expiring-page__table">
           <HeaderRow>
-            <HeaderItem>{t('domain')}</HeaderItem>
-            <HeaderItem>{t('expiresOn')}</HeaderItem>
-            <HeaderItem>{t('estimatedExpirationDate')}</HeaderItem>
-            <HeaderItem>{t('blocksRemaining')}</HeaderItem>
-            <HeaderItem>{t('expirationStatus')}</HeaderItem>
+            <HeaderItem width="16rem" grow={0} shrink={0}>{t('domain')}</HeaderItem>
+            <HeaderItem width="10rem" grow={0} shrink={0}>{t('expiresOn')}</HeaderItem>
+            <HeaderItem width="12rem" grow={0} shrink={0}>{t('estimatedExpirationDate')}</HeaderItem>
+            <HeaderItem width="11rem" grow={0} shrink={0}>{t('blocksRemaining')}</HeaderItem>
+            <HeaderItem width="8rem" grow={0} shrink={0}>{t('expirationStatus')}</HeaderItem>
           </HeaderRow>
           {this.renderChannelRows()}
         </Table>

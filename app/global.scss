@@ -369,6 +369,24 @@ body.bob-theme-dark {
     color: #e6edf3;
   }
 
+  .account__transactions__loading {
+    color: #9aa4af;
+  }
+
+  .domains__bid-card__redeem-btn {
+    background-color: rgba(255, 224, 0, 0.12);
+    border: 1px solid rgba(255, 224, 0, 0.54);
+    color: #f2cc60;
+
+    div {
+      color: #f2cc60;
+    }
+  }
+
+  .domains__bid-card__redeem-btn:hover {
+    background-color: rgba(255, 224, 0, 0.18);
+  }
+
   .bid-status__text {
     color: #c9d1d9;
   }

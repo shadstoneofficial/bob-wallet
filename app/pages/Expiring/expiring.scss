@@ -69,6 +69,27 @@
     padding-top: .75rem;
   }
 
+  &__table {
+    overflow-x: auto;
+  }
+
+  &__domain-cell,
+  &__date-cell,
+  &__blocks-cell,
+  &__status-cell {
+    min-width: 0;
+    white-space: nowrap;
+  }
+
+  &__domain-cell {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__status-cell {
+    align-items: center;
+  }
+
   &__status {
     border-radius: 999px;
     display: inline-block;
