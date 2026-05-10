@@ -56,23 +56,32 @@ body.bob-theme-dark {
   background: #0d1117;
   color: #e6edf3;
 
+  &::-webkit-scrollbar,
   *::-webkit-scrollbar {
     height: 12px;
     width: 12px;
   }
 
+  &::-webkit-scrollbar-track,
   *::-webkit-scrollbar-track {
     background: #0d1117;
   }
 
+  &::-webkit-scrollbar-thumb,
   *::-webkit-scrollbar-thumb {
     background-color: #30363d;
     border: 3px solid #0d1117;
     border-radius: 999px;
   }
 
+  &::-webkit-scrollbar-thumb:hover,
   *::-webkit-scrollbar-thumb:hover {
     background-color: #484f58;
+  }
+
+  *::selection {
+    background: rgba(47, 129, 247, 0.42);
+    color: #ffffff;
   }
 
   #root,
@@ -115,7 +124,13 @@ body.bob-theme-dark {
   .sidemodal__wrapper,
   .app__login,
   .app__uninitialized,
-  .app__component-wrapper {
+  .app__component-wrapper,
+  .create-password,
+  .terms,
+  .existing-options,
+  .funding-options,
+  .swt,
+  .opt-in-analytics {
     background-color: #151b23;
     color: #e6edf3;
   }
@@ -140,6 +155,19 @@ body.bob-theme-dark {
     border-color: rgba(255, 255, 255, 0.12);
   }
 
+  .create-password__input,
+  .swt__input,
+  .import_password_input,
+  .import_enter_textarea,
+  .login_password_input,
+  .terms__html-box,
+  .existing-options__content__option {
+    background-color: #0d1117;
+    border-color: rgba(255, 255, 255, 0.16);
+    box-shadow: none;
+    color: #e6edf3;
+  }
+
   input,
   textarea,
   select,
@@ -158,7 +186,11 @@ body.bob-theme-dark {
   .send__input input,
   .send__amount-input input,
   .tld__input,
-  .search__input {
+  .search__input,
+  .create-password__input input,
+  .swt__input input,
+  .import_password_input input,
+  .login_password_input input {
     background-color: #0d1117;
     color: #e6edf3;
   }
@@ -168,8 +200,23 @@ body.bob-theme-dark {
   .addr-input__input input::placeholder,
   .send__input input::placeholder,
   .send__amount-input input::placeholder,
-  .bid-search-input__input::placeholder {
+  .bid-search-input__input::placeholder,
+  .create-password__input input::placeholder,
+  .swt__input input::placeholder,
+  .import_password_input input::placeholder,
+  .import_enter_textarea::placeholder,
+  .login_password_input input::placeholder {
     color: #7d8590;
+  }
+
+  .create-password__header_text,
+  .terms__header_text,
+  .import-header-text,
+  .existing-options__content__title,
+  .funding-options__content__title,
+  .swt__header-text,
+  .opt-in-analytics__header-text {
+    color: #e6edf3;
   }
 
   .settings__content__section__info__description,
@@ -196,8 +243,55 @@ body.bob-theme-dark {
   .transactions__empty-list,
   .transactions__go-to__text,
   .transactions__go-to__total,
+  .create-password__body-text,
+  .terms_subheader,
+  .import_checkbox_text,
+  .import_warning_text,
+  .import_enter_warning_text,
+  .swt__body-text,
+  .funding-options__content__body-text,
+  .existing-options__footer__tip,
+  .opt-in-analytics__body-text,
+  .opt-in-analytics__checkbox-description,
   small {
     color: #9aa4af;
+  }
+
+  .existing-options__header,
+  .existing-options__footer,
+  .terms__header {
+    background-color: #151b23;
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+
+  .existing-options__content__option {
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.24);
+
+    &:hover {
+      border-color: #58a6ff;
+      box-shadow: 0 0 0 1px rgba(47, 129, 247, 0.22);
+    }
+  }
+
+  .terms__button--accepted {
+    color: #e6edf3;
+  }
+
+  .terms__html-box {
+    background: #0f141b;
+
+    .page,
+    .section,
+    .layoutArea,
+    .column {
+      background-color: #0f141b !important;
+    }
+
+    span,
+    p,
+    li {
+      color: #e6edf3 !important;
+    }
   }
 
   .exchange-readiness,
