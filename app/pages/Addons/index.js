@@ -267,7 +267,7 @@ class Addons extends Component {
                   </button>
                 )}
               </div>
-              {pendingExternalAddon === addon && (
+              {pendingExternalAddon?.name === addon.name && (
                 <div className="addons-page__external-notice">
                   <h4>Open External Add On?</h4>
                   <p>{addon.externalNotice || 'This Add On opens outside Bob.'}</p>
