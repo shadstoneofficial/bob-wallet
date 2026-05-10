@@ -410,6 +410,82 @@ body.bob-theme-dark {
     background-color: #0d1117;
   }
 
+  .auction-panel {
+    background-color: #111820;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.34);
+  }
+
+  .auction-panel__title,
+  .auction-panel__header__row,
+  .domains__bid-now__form__row__label,
+  .domains__bid-now__own-highest-bid__title,
+  .domains__bid-now__title,
+  .domains__watch__text {
+    color: #e6edf3;
+  }
+
+  .auction-panel__title {
+    box-shadow: 0 1px 0 0 rgba(255, 255, 255, 0.08);
+  }
+
+  .auction-panel__footer,
+  .domains__bid-now__divider {
+    border-color: rgba(255, 255, 255, 0.08);
+    background-color: transparent;
+  }
+
+  .domains__bid-now__info__disclaimer,
+  .domains__bid-now__HNS-status,
+  .domains__bid-now__mask {
+    color: #9aa4af;
+  }
+
+  .domains__bid-now__form__row__input {
+    background-color: #0d1117;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow: 0 0 0 1.25px rgba(255, 255, 255, 0.06);
+    color: #e6edf3;
+  }
+
+  .domains__bid-now__form__row__input:focus-within {
+    border-color: #58a6ff;
+    box-shadow: 0 0 0 1.25px rgba(47, 129, 247, 0.75);
+  }
+
+  .domains__bid-now__form__row__input::before {
+    filter: brightness(0) invert(1);
+    opacity: 0.82;
+  }
+
+  .domains__bid-now__form__row__input input {
+    background-color: transparent;
+    color: #e6edf3;
+  }
+
+  .domains__bid-now__form__row__input input::placeholder {
+    color: #7d8590;
+  }
+
+  .auction-graph {
+    background-color: #1b242e;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .auction-graph__column__headline {
+    color: #e6edf3;
+  }
+
+  .auction-graph__column__text {
+    color: #c9d1d9;
+    opacity: 0.64;
+  }
+
+  .auction-graph__current-block {
+    background-color: rgba(47, 129, 247, 0.18);
+    color: #79c0ff;
+  }
+
   .receive__warning-title,
   .receive__title {
     color: #e6edf3;
