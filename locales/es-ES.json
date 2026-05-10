@@ -169,6 +169,7 @@
   "headingClaimAirdropName": "Reclama el Airdrop o el nombre",
   "headingDomainManager": "Administrador de dominio",
   "headingExchange": "Exchange",
+  "headingExpiring": "Expiring",
   "headingMultisig": "Multifirma",
   "headingMultisigSetup": "Configuración Multifirma",
   "headingPortfolio": "Portafolio",
@@ -678,5 +679,13 @@
   "zapCTA": "Suprime las transacciones no confirmadas",
   "zapNoPending": "No tienes ninguna operación pendiente.",
   "zapSuccess": "¡Todas las transacciones pendientes se han suprimido!",
-  "zapTitle": "Suprime las transacciones no confirmadas"
+  "zapTitle": "Suprime las transacciones no confirmadas",
+  "blocksRemaining": "Blocks Remaining",
+  "estimatedExpirationDate": "Estimated Date",
+  "expirationStatus": "Status",
+  "expirationStatusExpired": "Expired",
+  "expirationStatusLater": "Later",
+  "expirationStatusSoon": "Soon",
+  "expiringEmpty": "No expiring domains found",
+  "expiringIntro": "Review owned names by expiration date so renewals do not sneak up on you."
 }

@@ -152,6 +152,12 @@ class Sidebar extends Component {
           >
             {t('headingWatching')}
           </NavLink>
+          <NavLink
+            to="/expiring"
+            className={isActive => `sidebar__action ${isActive ? "sidebar__action--selected" : ''}`}
+          >
+            {t('headingExpiring')}
+          </NavLink>
         </div>
         <div className="sidebar__section">{t('headingAddOns')}</div>
         <div className="sidebar__actions">

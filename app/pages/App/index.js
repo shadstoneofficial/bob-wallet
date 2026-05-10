@@ -19,6 +19,7 @@ import DomainManager from '../DomainManager';
 import MyDomain from '../MyDomain';
 import YourBids from '../YourBids';
 import Watching from '../Watching';
+import Expiring from '../Expiring';
 import SearchTLD from '../SearchTLD';
 import * as nodeActions from "../../ducks/node";
 import * as walletActions from '../../ducks/walletActions';
@@ -239,6 +240,12 @@ class App extends Component {
             wallets={wallets}
             path="/watching"
             render={this.routeRenderer(t('headingWatching'), Watching)}
+          />
+          <ProtectedRoute
+            isLocked={isLocked}
+            wallets={wallets}
+            path="/expiring"
+            render={this.routeRenderer(t('headingExpiring'), Expiring)}
           />
           <ProtectedRoute
             isLocked={isLocked}

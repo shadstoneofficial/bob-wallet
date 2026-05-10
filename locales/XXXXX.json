@@ -169,6 +169,7 @@
   "headingClaimAirdropName": "XXXXX",
   "headingDomainManager": "XXXXX",
   "headingExchange": "XXXXX",
+  "headingExpiring": "XXXXX",
   "headingMultisig": "XXXXX",
   "headingMultisigSetup": "XXXXX",
   "headingPortfolio": "XXXXX",
@@ -678,5 +679,13 @@
   "zapCTA": "XXXXX",
   "zapNoPending": "XXXXX",
   "zapSuccess": "XXXXX",
-  "zapTitle": "XXXXX"
+  "zapTitle": "XXXXX",
+  "blocksRemaining": "XXXXX",
+  "estimatedExpirationDate": "XXXXX",
+  "expirationStatus": "XXXXX",
+  "expirationStatusExpired": "XXXXX",
+  "expirationStatusLater": "XXXXX",
+  "expirationStatusSoon": "XXXXX",
+  "expiringEmpty": "XXXXX",
+  "expiringIntro": "XXXXX"
 }

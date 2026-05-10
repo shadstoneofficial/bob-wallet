@@ -169,6 +169,7 @@
   "headingClaimAirdropName": "Reclama l'Airdrop o el nom",
   "headingDomainManager": "Gestor de dominis",
   "headingExchange": "Exchange",
+  "headingExpiring": "Expiring",
   "headingMultisig": "Multisignatura",
   "headingMultisigSetup": "Configuració Multisignatura",
   "headingPortfolio": "Portafolis",
@@ -678,5 +679,13 @@
   "zapCTA": "Suprimeix les transaccions no confirmades",
   "zapNoPending": "No tens cap operació pendent.",
   "zapSuccess": "Totes les transaccions pendents s'han suprimit!",
-  "zapTitle": "Suprimeix les transaccions no confirmades"
+  "zapTitle": "Suprimeix les transaccions no confirmades",
+  "blocksRemaining": "Blocks Remaining",
+  "estimatedExpirationDate": "Estimated Date",
+  "expirationStatus": "Status",
+  "expirationStatusExpired": "Expired",
+  "expirationStatusLater": "Later",
+  "expirationStatusSoon": "Soon",
+  "expiringEmpty": "No expiring domains found",
+  "expiringIntro": "Review owned names by expiration date so renewals do not sneak up on you."
 }

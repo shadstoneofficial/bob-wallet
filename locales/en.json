@@ -177,6 +177,7 @@
   "headingClaimAirdropName": "Claim Airdrop or Name",
   "headingDomainManager": "Domain Manager",
   "headingExchange": "Marketplace",
+  "headingExpiring": "Expiring",
   "headingMessages": "Messages",
   "headingMoreAddons": "More Addons",
   "headingMultisig": "Multisig",
@@ -763,5 +764,13 @@
   "zapCTA": "Delete Unconfirmed Transactions",
   "zapNoPending": "You do not have any pending transactions.",
   "zapSuccess": "All pending transactions have been deleted!",
-  "zapTitle": "Delete unconfirmed transactions"
+  "zapTitle": "Delete unconfirmed transactions",
+  "blocksRemaining": "Blocks Remaining",
+  "estimatedExpirationDate": "Estimated Date",
+  "expirationStatus": "Status",
+  "expirationStatusExpired": "Expired",
+  "expirationStatusLater": "Later",
+  "expirationStatusSoon": "Soon",
+  "expiringEmpty": "No expiring domains found",
+  "expiringIntro": "Review owned names by expiration date so renewals do not sneak up on you."
 }

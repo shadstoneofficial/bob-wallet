@@ -169,6 +169,7 @@
   "headingClaimAirdropName": "Récupérer l'airdrop ou le nom",
   "headingDomainManager": "Gestionnaire de domaine",
   "headingExchange": "Échange",
+  "headingExpiring": "Expiring",
   "headingMultisig": "Multisig",
   "headingMultisigSetup": "Configuration multisig",
   "headingPortfolio": "Portefeuille",
@@ -678,5 +679,13 @@
   "zapCTA": "Détruire les transactions non confirmées",
   "zapNoPending": "Aucune transaction non confirmée à détruire.",
   "zapSuccess": "Transactions non confirmées supprimées avec succès.",
-  "zapTitle": "Détruire les transactions non confirmées"
+  "zapTitle": "Détruire les transactions non confirmées",
+  "blocksRemaining": "Blocks Remaining",
+  "estimatedExpirationDate": "Estimated Date",
+  "expirationStatus": "Status",
+  "expirationStatusExpired": "Expired",
+  "expirationStatusLater": "Later",
+  "expirationStatusSoon": "Soon",
+  "expiringEmpty": "No expiring domains found",
+  "expiringIntro": "Review owned names by expiration date so renewals do not sneak up on you."
 }
