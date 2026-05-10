@@ -53,7 +53,7 @@ i.arrow {
 }
 
 body.bob-theme-dark {
-  background: #101418;
+  background: #0d1117;
   color: #e6edf3;
 
   #root,
@@ -64,7 +64,7 @@ body.bob-theme-dark {
   .settings,
   .settings__content,
   .topbar {
-    background: #101418;
+    background: #0d1117;
     color: #e6edf3;
   }
 
@@ -104,6 +104,8 @@ body.bob-theme-dark {
   .sidebar__footer,
   table,
   .table,
+  .table__header,
+  .table__row,
   .content-area,
   input,
   textarea,
@@ -120,6 +122,14 @@ body.bob-theme-dark {
   .dropdown__current-item,
   .dropdown__option,
   .settings__channel-card__input,
+  .bid-search-input,
+  .bid-search-input__input,
+  .send__input,
+  .send__amount-input,
+  .send__network-fee__select,
+  .send__network-fee__fee-amount,
+  .send__input input,
+  .send__amount-input input,
   .tld__input,
   .search__input {
     background-color: #0d1117;
@@ -127,7 +137,10 @@ body.bob-theme-dark {
   }
 
   input::placeholder,
-  textarea::placeholder {
+  textarea::placeholder,
+  .send__input input::placeholder,
+  .send__amount-input input::placeholder,
+  .bid-search-input__input::placeholder {
     color: #7d8590;
   }
 
@@ -137,6 +150,19 @@ body.bob-theme-dark {
   .sidebar__footer__title,
   .sidebar__footer__text,
   .topbar__synced,
+  .account__header__section > .label,
+  .account__header__section > .subtext,
+  .account__empty-list,
+  .send__label,
+  .send__input-disclaimer,
+  .send__amount-input__unit,
+  .send__network-fee__fee-amount,
+  .addons-page__intro p,
+  .addons-page__channel-card p,
+  .addons-page__card p,
+  .addons-page__details,
+  .expiring-page__intro p,
+  .expiring-page__section-header p,
   small {
     color: #9aa4af;
   }
@@ -144,15 +170,87 @@ body.bob-theme-dark {
   .exchange-readiness,
   .exchange-seller-tools,
   .exchange-docs-banner,
+  .addons-page__channel-card,
+  .addons-page__card,
+  .addons-page__external-notice,
   .addons__notice,
   .addons__channel-card,
   .addons__card,
   .expiring__notice,
   .expiring__table,
-  .settings__channel-card {
+  .settings__channel-card,
+  .send__container,
+  .account__header {
     background-color: #151b23;
     border-color: rgba(255, 255, 255, 0.12);
     color: #e6edf3;
+  }
+
+  .addons-page__card-header span,
+  .expiring-page__status--later {
+    background-color: rgba(47, 129, 247, 0.16);
+    color: #58a6ff;
+  }
+
+  .expiring-page__status--soon {
+    background-color: rgba(255, 224, 0, 0.16);
+    color: #f2cc60;
+  }
+
+  .expiring-page__status--expired {
+    background-color: rgba(255, 47, 31, 0.16);
+    color: #ff7b72;
+  }
+
+  .table__header {
+    background-color: #1f2630;
+    border-color: rgba(255, 255, 255, 0.14);
+  }
+
+  .table__header__item {
+    color: #c9d1d9;
+  }
+
+  .table__row {
+    background-color: #0f141b;
+    border-color: rgba(255, 255, 255, 0.14);
+    color: #e6edf3;
+
+    &:hover {
+      background-color: rgba(47, 129, 247, 0.08) !important;
+    }
+  }
+
+  .table__row__item,
+  .watching-table__empty-row,
+  .bids-table__empty-row,
+  .expiring-page__empty {
+    color: #c9d1d9;
+  }
+
+  .watching-table__create-row:hover,
+  .watching-table__create-row:active {
+    background-color: #0f141b !important;
+  }
+
+  .bids__filter {
+    color: #58a6ff;
+  }
+
+  .bids__filter--active {
+    color: #e6edf3;
+  }
+
+  .bid-status__text {
+    color: #c9d1d9;
+  }
+
+  .account__header {
+    border-color: rgba(255, 255, 255, 0.14);
+  }
+
+  .account__header__section:first-child {
+    border-right-color: rgba(255, 255, 255, 0.18);
   }
 
   tr,
@@ -165,6 +263,121 @@ body.bob-theme-dark {
 
   th {
     background-color: #1f2630;
+  }
+
+  .dropdown__current-item,
+  .dropdown__option,
+  select,
+  .settings__channel-card__input {
+    background-color: #0f141b;
+    border-color: rgba(255, 255, 255, 0.16);
+    color: #e6edf3;
+  }
+
+  .dropdown__option:hover {
+    background-color: rgba(47, 129, 247, 0.16);
+  }
+
+  button,
+  .settings__content__section__cta,
+  .settings__view-api-btn,
+  .settings__secondary-btn,
+  .addons-page__docs-button,
+  .addons-page__actions button,
+  .addons-page__notice-actions button,
+  .addons-page__channel-controls button,
+  .expiring-page__refresh,
+  .watching__download,
+  .watching__import,
+  .watching__reset,
+  .watching__cancel {
+    &:focus,
+    &:hover {
+      background-color: rgba(47, 129, 247, 0.16);
+      border-color: #58a6ff;
+      color: #79c0ff;
+    }
+
+    &:disabled {
+      background-color: rgba(139, 148, 158, 0.12);
+      border-color: rgba(139, 148, 158, 0.24);
+      color: #7d8590;
+    }
+  }
+
+  .send__title,
+  .send__confirm__label,
+  .send__confirm__address,
+  .send__confirm__time-text,
+  .send__confirm__summary-label,
+  .send__confirm__summary-amount,
+  .send__confirm__summary-fee,
+  .send__confirm__summary-total {
+    color: #e6edf3;
+  }
+
+  .send__container {
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
+  }
+
+  .send__input,
+  .send__amount-input,
+  .send__network-fee__select,
+  .send__network-fee__fee-amount,
+  .bid-search-input {
+    box-shadow: 0 0 0 1.25px rgba(255, 255, 255, 0.16);
+  }
+
+  .send__amount-input__max-btn {
+    background-color: rgba(47, 129, 247, 0.22);
+    color: #79c0ff;
+  }
+
+  .send__network-fee__select::after {
+    border-color: #9aa4af;
+  }
+
+  .send__confirm__summary {
+    background-color: rgba(47, 129, 247, 0.12);
+    border: 1px solid rgba(47, 129, 247, 0.22);
+  }
+
+  .send__progress-bar__dot--empty {
+    background-color: #0d1117;
+  }
+
+  .settings__content__section--with-footer {
+    align-items: flex-start;
+  }
+
+  .settings__content__section--with-footer .settings__content__section__info {
+    flex: 0 1 42%;
+    min-width: 18rem;
+  }
+
+  .settings__content__section--with-footer .settings__content__section__footer {
+    flex: 1 1 58%;
+    min-width: 24rem;
+  }
+
+  .settings__channel-card {
+    background-color: #111820;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: .5rem;
+    padding: .75rem;
+  }
+
+  .settings__channel-card__actions button {
+    border: 1px solid #2480fd;
+    border-radius: .5rem;
+    color: #58a6ff;
+    background: transparent;
+    font-size: .875rem;
+    padding: .45rem .7rem;
+  }
+
+  .settings__label {
+    color: #9aa4af;
   }
 
   .settings__nav__item:hover,

@@ -637,6 +637,7 @@ export default class Settings extends Component {
       <div
         className={c("settings__content__section", {
           'settings__content__section--disabled': disabled && !disableButtonOnly,
+          'settings__content__section--with-footer': children || cta,
         })}
       >
         <div className="settings__content__section__info">
