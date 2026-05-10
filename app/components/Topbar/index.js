@@ -160,10 +160,11 @@ class Topbar extends Component {
                   </div>
                   <div
                     className="setting-menu__items__item"
-                    onClick={e => {
+                    onClick={async e => {
                       e.stopPropagation();
-                      this.props.lockWallet();
                       this.setState({ isShowingSettingMenu: false });
+                      await this.props.lockWallet();
+                      this.props.history.push('/login');
                     }}
                   >
                     {t('logout')}

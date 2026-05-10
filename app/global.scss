@@ -113,6 +113,7 @@ body.bob-theme-dark {
   input,
   textarea,
   select,
+  .addr-input__input,
   .dropdown__current-item,
   .dropdown__option,
   .dropdown__options,
@@ -127,6 +128,8 @@ body.bob-theme-dark {
   .dropdown__option,
   .dropdown__options,
   .settings__channel-card__input,
+  .addr-input__input,
+  .addr-input__input input,
   .bid-search-input,
   .bid-search-input__input,
   .send__input,
@@ -143,6 +146,7 @@ body.bob-theme-dark {
 
   input::placeholder,
   textarea::placeholder,
+  .addr-input__input input::placeholder,
   .send__input input::placeholder,
   .send__amount-input input::placeholder,
   .bid-search-input__input::placeholder {
@@ -357,6 +361,7 @@ body.bob-theme-dark {
   }
 
   .send__input,
+  .addr-input__input,
   .send__amount-input,
   .send__network-fee__select,
   .send__network-fee__fee-amount,
@@ -367,6 +372,29 @@ body.bob-theme-dark {
   .send__amount-input__max-btn {
     background-color: rgba(47, 129, 247, 0.22);
     color: #79c0ff;
+  }
+
+  .addr-input__input {
+    border: 1px solid rgba(255, 255, 255, 0.14);
+  }
+
+  .addr-input__input:focus-within {
+    border-color: #58a6ff;
+    box-shadow: 0 0 0 1.25px rgba(47, 129, 247, 0.75);
+  }
+
+  .addr-input .alert {
+    background-color: transparent;
+    color: #9aa4af;
+  }
+
+  .addr-input .alert--error {
+    background-color: rgba(255, 47, 31, 0.12);
+    border: 1px solid rgba(255, 47, 31, 0.24) !important;
+    border-radius: 0.35rem;
+    color: #ff7b72;
+    margin: 0.4rem 0 0 0 !important;
+    padding: 0.55rem 0.75rem !important;
   }
 
   .send__network-fee__select::after {

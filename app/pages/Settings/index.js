@@ -682,7 +682,10 @@ export default class Settings extends Component {
           t('settingLockWalletTitle'),
           t('settingLockWalletDesc'),
           t('settingLockWalletCTA'),
-          lockWallet,
+          async () => {
+            await lockWallet();
+            history.push('/login');
+          },
         )}
         {this.renderSection(
           t('settingRescanTitle'),
