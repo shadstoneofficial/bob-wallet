@@ -186,7 +186,7 @@ export async function getChannelExpiringNames(limit = 100) {
 
   try {
     const resp = await fetch(
-      `${getShakedexChannelBaseUrl({host})}/api/v2/expiring-names?limit=${safeLimit}`,
+      `${getShakedexChannelBaseUrl({host})}/api/v2/expiring-names?limit=${safeLimit}&refresh=1`,
     );
     const data = await resp.json();
 

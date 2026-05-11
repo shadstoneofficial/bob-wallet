@@ -328,7 +328,7 @@ class Exchange extends Component {
       return existing;
     }
 
-    const currentBid = await getCurrentBid(auction);
+    const currentBid = getBuyableBid(auction, await getCurrentBid(auction));
     const currentBidsMap = this.state.currentBidsMap;
     currentBidsMap.set(auction.id, currentBid);
     this.setState({currentBidsMap});
@@ -349,7 +349,7 @@ class Exchange extends Component {
     try {
       this.props.clearDeeplinkParams();
       const auction = fromAuctionJSON(JSON.parse(presignJSONString));
-      const currentBid = await getCurrentBid(auction);
+      const currentBid = getBuyableBid(auction, await getCurrentBid(auction));
 
       if (!currentBid) {
         this.props.showError(
@@ -398,7 +398,7 @@ class Exchange extends Component {
 
       const auctionJSON = JSON.parse(content);
       const auction = fromAuctionJSON(auctionJSON);
-      const currentBid = await getCurrentBid(auction);
+      const currentBid = getBuyableBid(auction, await getCurrentBid(auction));
 
       if (currentBid === null) {
         throw new Error('No bids available right now.');
@@ -1163,6 +1163,7 @@ class Exchange extends Component {
     const {t} = this.context;
     const isPending = isPendingAuction(auction);
     const currentBid = this.state.currentBidsMap.get(auction.id);
+    const buyableBid = getBuyableBid(auction, currentBid);
     const isFixedPrice = isFixedPriceAuction(auction);
     const isExpired = !isPending && isAuctionExpired(auction);
     const marketBaseUrl = getShakedexChannelBaseUrl({host: this.state.marketChannelHost});
@@ -1172,7 +1173,9 @@ class Exchange extends Component {
 
     const currentPriceText = isPending
       ? (auction.expectedPrice ? displayBalance(auction.expectedPrice, true) : t('priceComingSoon'))
-      : (currentBid === null ? (isExpired ? t('expired') : t('sold')) : displayBalance(currentBid?.price, true));
+      : (isExpired
+        ? t('expired')
+        : (buyableBid ? displayBalance(buyableBid.price, true) : t('shakedexListingUnavailable')));
 
     return (
       <TableRow
@@ -1198,10 +1201,13 @@ class Exchange extends Component {
                       this.showMarketplaceNotReady();
                       return;
                     }
-                    if (!currentBid) return;
+                    if (!buyableBid) {
+                      this.props.showError(t('shakedexListingUnavailable'));
+                      return;
+                    }
                     this.setState({
                       placingAuction: auction,
-                      placingCurrentBid: currentBid,
+                      placingCurrentBid: buyableBid,
                     });
                   }}
                 >
@@ -1251,6 +1257,10 @@ class Exchange extends Component {
     if (currentBid === undefined) {
       this.getCurrentBidForAuction(auction);
       return 'Loading...'
+    }
+
+    if (isFixedPriceAuction(auction)) {
+      return isAuctionExpired(auction) ? t('expired') : t('buyNow');
     }
 
     if (!currentBid) {
@@ -1309,6 +1319,19 @@ function isFixedPriceAuction(auction) {
   return Array.isArray(auction?.bids) && auction.bids.length === 1;
 }
 
+function getFixedPriceBid(auction) {
+  if (!isFixedPriceAuction(auction)) {
+    return null;
+  }
+
+  const [bid] = auction.bids;
+  return bid && typeof bid.price === 'number' ? bid : null;
+}
+
+function getBuyableBid(auction, currentBid) {
+  return currentBid || getFixedPriceBid(auction);
+}
+
 function isPendingAuction(auction) {
   return auction?.pending || auction?.buyable === false || auction?.status === 'pending';
 }
@@ -1320,11 +1343,13 @@ function getKnownCurrentPrice(auction, currentBidsMap) {
 
   const currentBid = currentBidsMap.get(auction.id);
 
-  if (currentBid === undefined || currentBid === null) {
+  const buyableBid = getBuyableBid(auction, currentBid);
+
+  if (!buyableBid) {
     return null;
   }
 
-  return currentBid.price;
+  return buyableBid.price;
 }
 
 export default connect(
