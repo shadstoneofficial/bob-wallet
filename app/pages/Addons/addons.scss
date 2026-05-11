@@ -88,6 +88,22 @@
     margin-top: .55rem;
   }
 
+  &__swap-intent {
+    border-color: rgba($success-green, .3);
+    background: rgba($success-green, .05);
+
+    code {
+      display: block;
+      max-width: 100%;
+      overflow-wrap: anywhere;
+      border-radius: .35rem;
+      padding: .55rem .65rem;
+      background: rgba($black, .04);
+      color: $black;
+      font-size: .75rem;
+    }
+  }
+
   &__card {
     border: 1px solid $grey;
     border-radius: .5rem;

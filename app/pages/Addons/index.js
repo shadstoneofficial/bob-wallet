@@ -1,6 +1,7 @@
 import React, {Component} from 'react';
 import {shell} from 'electron';
 import {withRouter} from 'react-router-dom';
+import {connect} from 'react-redux';
 import PropTypes from 'prop-types';
 import {I18nContext} from '../../utils/i18n';
 import DocsHelp from '../../components/DocsHelp';
@@ -59,6 +60,7 @@ const ADDONS = [
 class Addons extends Component {
   static propTypes = {
     history: PropTypes.object.isRequired,
+    deeplinkParams: PropTypes.object,
   };
 
   static contextType = I18nContext;
@@ -153,8 +155,37 @@ class Addons extends Component {
     this.setState({pendingExternalAddon: null});
   }
 
+  openLiquiditySwapIntent() {
+    const {deeplinkParams} = this.props;
+    const intentUrl = deeplinkParams?.liquiditySwapIntentUrl;
+
+    if (intentUrl) {
+      shell.openExternal(intentUrl);
+    }
+  }
+
+  openLiquiditySwapRoom() {
+    const {deeplinkParams} = this.props;
+    const intentUrl = deeplinkParams?.liquiditySwapIntentUrl;
+
+    if (!intentUrl)
+      return;
+
+    try {
+      const url = new URL(intentUrl);
+      const match = url.pathname.match(/^\/api\/swaps\/(\d+)\/wallet-intents$/);
+      if (match) {
+        shell.openExternal(`${url.origin}/swaps/${match[1]}`);
+        return;
+      }
+    } catch (e) {}
+
+    shell.openExternal(intentUrl);
+  }
+
   render() {
     const {t} = this.context;
+    const {deeplinkParams} = this.props;
     const {
       pendingExternalAddon,
       liquiditySpotHost,
@@ -162,6 +193,7 @@ class Addons extends Component {
       liquiditySpotChannels,
       liquiditySpotChannelError,
     } = this.state;
+    const liquiditySwapIntentUrl = deeplinkParams?.liquiditySwapIntentUrl;
     const addons = ADDONS.map(addon => {
       if (addon.name !== LIQUIDITY_ADDON_NAME) {
         return addon;
@@ -241,6 +273,25 @@ class Addons extends Component {
             </div>
           )}
         </div>
+        {liquiditySwapIntentUrl && (
+          <div className="addons-page__channel-card addons-page__swap-intent">
+            <div>
+              <h3>Liquidity Swap Intent Ready</h3>
+              <p>
+                Liquidity.spot sent Bob a swap intent. Bob can inspect the HNS-side terms here first; signing/broadcasting still stays inside your local wallet.
+              </p>
+              <code>{liquiditySwapIntentUrl}</code>
+            </div>
+            <div className="addons-page__channel-controls">
+              <button onClick={() => this.openLiquiditySwapIntent()}>
+                Open Intent JSON
+              </button>
+              <button onClick={() => this.openLiquiditySwapRoom()}>
+                Open Swap Room
+              </button>
+            </div>
+          </div>
+        )}
         <div className="addons-page__grid">
           {addons.map(addon => (
             <div className="addons-page__card" key={addon.name}>
@@ -290,4 +341,8 @@ class Addons extends Component {
   }
 }
 
-export default withRouter(Addons);
+export default withRouter(connect(
+  state => ({
+    deeplinkParams: state.app.deeplinkParams,
+  }),
+)(Addons));
