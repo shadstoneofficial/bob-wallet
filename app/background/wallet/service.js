@@ -662,9 +662,15 @@ class WalletService {
     ),
   );
 
-  sendRegister = (name) => this._walletProxy(
-    () => this._executeRPC('createupdate', [name, {records: []}]),
-  );
+  sendRegister = (name) => {
+    if (this.nodeService.spv) {
+      throw new Error('Registering won names currently requires full-node mode. Redeem works in SPV mode, but REGISTER transactions need full name-state validation before broadcast.');
+    }
+
+    return this._walletProxy(
+      () => this._executeRPC('createupdate', [name, {records: []}]),
+    );
+  };
 
   sendUpdate = (name, json) => this._walletProxy(
     () => this._executeRPC('createupdate', [name, json]),
@@ -679,6 +685,10 @@ class WalletService {
   );
 
   sendRegisterAll = async () => {
+    if (this.nodeService.spv) {
+      throw new Error('Registering won names currently requires full-node mode. Redeem works in SPV mode, but REGISTER transactions need full name-state validation before broadcast.');
+    }
+
     const {wdb} = this.node;
     const wallet = await wdb.get(this.name);
 
