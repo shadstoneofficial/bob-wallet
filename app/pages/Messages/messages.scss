@@ -3,6 +3,34 @@
 .messages-page {
   cursor: default;
 
+  &__help {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .75rem;
+    margin: 0 0 1rem;
+
+    > div {
+      border: 1px solid rgba($manatee-gray, .25);
+      border-radius: 8px;
+      padding: .75rem .85rem;
+      background: rgba($manatee-gray, .05);
+    }
+
+    p {
+      margin: .25rem 0 0;
+      color: $manatee-gray;
+      font-size: .72rem;
+      line-height: 1.15rem;
+    }
+  }
+
+  &__help-title {
+    color: $dark-grey;
+    font-size: .72rem;
+    font-weight: 700;
+    margin-bottom: .35rem;
+  }
+
   &__tabs {
     @extend %row-nowrap;
     gap: .5rem;
@@ -22,5 +50,22 @@
 
   &__content {
     min-width: 0;
+  }
+}
+
+.bob-theme-dark {
+  .messages-page__help {
+    > div {
+      border-color: rgba($white, .14);
+      background: rgba($white, .03);
+    }
+
+    p {
+      color: rgba($white, .66);
+    }
+  }
+
+  .messages-page__help-title {
+    color: rgba($white, .9);
   }
 }

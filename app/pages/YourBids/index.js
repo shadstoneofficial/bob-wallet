@@ -42,7 +42,6 @@ class YourBids extends Component {
     sendRevealAll: PropTypes.func.isRequired,
     showError: PropTypes.func.isRequired,
     showSuccess: PropTypes.func.isRequired,
-    spv: PropTypes.bool.isRequired,
   };
 
   static contextType = I18nContext;
@@ -76,13 +75,7 @@ class YourBids extends Component {
       showError,
       showSuccess,
       sendRegisterAll,
-      spv,
     } = this.props;
-
-    if (spv) {
-      showError('Registering won names currently requires full-node mode. Redeem works in SPV mode.');
-      return;
-    }
 
     try {
       const res = await sendRegisterAll();
@@ -165,8 +158,6 @@ class YourBids extends Component {
             <button
               className="bids__top__btn"
               onClick={this.onRegisterAll}
-              disabled={this.props.spv}
-              title={this.props.spv ? 'Registering won names currently requires full-node mode.' : undefined}
             >
               {t('registerAll')}
             </button>
@@ -339,7 +330,6 @@ export default withRouter(
       order: state.bids.order,
       map: state.bids.map,
       filter: state.bids.filter,
-      spv: state.node.spv,
     }),
     dispatch => ({
       getYourBids: () => dispatch(bidsActions.getYourBids()),

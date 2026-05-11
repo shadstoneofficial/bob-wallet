@@ -33,7 +33,6 @@ const analytics = aClientStub(() => require("electron").ipcRenderer);
     hnsPrice: state.node.hnsPrice,
     walletInitialized: state.wallet.initialized,
     walletType: state.wallet.type,
-    spv: state.node.spv,
   }),
   (dispatch) => ({
     fetchWallet: () => dispatch(walletActions.fetchWallet()),
@@ -67,7 +66,6 @@ export default class Account extends Component {
     history: PropTypes.object.isRequired,
     walletInitialized: PropTypes.bool.isRequired,
     walletType: PropTypes.string.isRequired,
-    spv: PropTypes.bool.isRequired,
   };
 
   static contextType = I18nContext;
@@ -319,7 +317,6 @@ export default class Account extends Component {
     }
 
     const network = this.props.network;
-    const {spv} = this.props;
     const {
       revealable,
       redeemable,
@@ -406,13 +403,10 @@ export default class Account extends Component {
             }
             subtext={
               <Fragment>
-                {spv
-                  ? 'Registering won names currently requires full-node mode. Redeem works in SPV.'
-                  : t('registerCardWarning', Math.round(registerable.HNS / 1e6))}
+                {t('registerCardWarning', Math.round(registerable.HNS / 1e6))}
               </Fragment>
             }
-            disabled={spv}
-            buttonAction={spv ? undefined : () => this.onCardButtonClick("register")}
+            buttonAction={() => this.onCardButtonClick("register")}
           />
         ) : (
           ""
@@ -469,18 +463,15 @@ class ActionCard extends Component {
     text: PropTypes.object.isRequired,
     subtext: PropTypes.object.isRequired,
     buttonAction: PropTypes.func,
-    disabled: PropTypes.bool,
   };
 
   render() {
-    const { color, text, subtext, buttonAction, disabled } = this.props;
+    const { color, text, subtext, buttonAction } = this.props;
 
     return (
       <div
-        className={c("cards__card", `cards__card--${color}`, {
-          "cards__card--disabled": disabled,
-        })}
-        onClick={!disabled && buttonAction ? buttonAction : undefined}
+        className={c("cards__card", `cards__card--${color}`)}
+        onClick={buttonAction ? buttonAction : undefined}
       >
         <p className="title">{text}</p>
         <p className="subtitle">{subtext}</p>
