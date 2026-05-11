@@ -53,6 +53,30 @@ const shakedex = sClientStub(() => require('electron').ipcRenderer);
 const MARKET_STATUS_REFRESH_INTERVAL = 60000;
 const ENABLE_SPV_SELLER_BETA = process.env.BOB_SHAKEDEX_SPV_SELLER_BETA === 'true';
 
+function getAuctionExpiryTime(auction) {
+  if (auction.expiresAt) {
+    const expiresAt = Date.parse(auction.expiresAt);
+    if (!Number.isNaN(expiresAt)) {
+      return expiresAt;
+    }
+  }
+
+  const lockTimes = (auction.bids || [])
+    .map((bid) => Number(bid.lockTime))
+    .filter((lockTime) => Number.isFinite(lockTime) && lockTime > 0);
+
+  if (!lockTimes.length) {
+    return null;
+  }
+
+  return Math.max(...lockTimes) * 1000;
+}
+
+function isAuctionExpired(auction) {
+  const expiryTime = getAuctionExpiryTime(auction);
+  return Boolean(expiryTime && expiryTime <= Date.now());
+}
+
 class Exchange extends Component {
   static propTypes = {
     spv: PropTypes.bool.isRequired,
@@ -92,6 +116,7 @@ class Exchange extends Component {
       marketplaceQuery: '',
       marketplaceModeFilter: 'all',
       marketplaceSort: 'name',
+      isHandlingFulfillAuctionDeeplink: false,
     };
 
     this.marketStatusTimer = null;
@@ -105,6 +130,7 @@ class Exchange extends Component {
       this.fetchChannelSettings();
       this.fetchShakedex();
       this.fetchMarketStatus();
+      this.handleFulfillAuctionDeeplink();
       this.marketStatusTimer = setInterval(
         () => this.fetchMarketStatus({ silent: true }),
         MARKET_STATUS_REFRESH_INTERVAL,
@@ -122,6 +148,10 @@ class Exchange extends Component {
     if (this.props.height !== prevProps.height) {
       this.props.getExchangeFullfillments();
       this.props.getExchangeListings();
+    }
+
+    if (this.props.deeplinkParams !== prevProps.deeplinkParams) {
+      this.handleFulfillAuctionDeeplink();
     }
   }
 
@@ -304,29 +334,44 @@ class Exchange extends Component {
     this.setState({currentBidsMap});
   }
 
-  static async getDerivedStateFromProps(props, state) {
-    try {
-      const { presignJSONString } = props.deeplinkParams;
-      let auction, currentBid;
+  handleFulfillAuctionDeeplink = async () => {
+    if (this.state.isHandlingFulfillAuctionDeeplink) {
+      return;
+    }
 
-      if (presignJSONString) {
-        props.clearDeeplinkParams();
-        auction = fromAuctionJSON(JSON.parse(presignJSONString));
-        currentBid = await getCurrentBid(auction);
-        return {
-          ...state,
-          placingAuction: auction,
-          placingCurrentBid: currentBid,
-          isUploadingFile: false,
-        };
+    const { presignJSONString } = this.props.deeplinkParams || {};
+    if (!presignJSONString) {
+      return;
+    }
+
+    this.setState({ isHandlingFulfillAuctionDeeplink: true });
+
+    try {
+      this.props.clearDeeplinkParams();
+      const auction = fromAuctionJSON(JSON.parse(presignJSONString));
+      const currentBid = await getCurrentBid(auction);
+
+      if (!currentBid) {
+        this.props.showError(
+          isAuctionExpired(auction)
+            ? this.context.t('shakedexListingExpired')
+            : this.context.t('shakedexListingUnavailable'),
+        );
+        return;
       }
 
-      return state;
+      this.setState({
+        placingAuction: auction,
+        placingCurrentBid: currentBid,
+        isUploadingFile: false,
+      });
     } catch (e) {
-      props.clearDeeplinkParams();
-      return state;
+      this.props.clearDeeplinkParams();
+      this.props.showError(e.message);
+    } finally {
+      this.setState({ isHandlingFulfillAuctionDeeplink: false });
     }
-  }
+  };
 
   onUploadPresigns = async () => {
     this.setState({
@@ -1119,6 +1164,7 @@ class Exchange extends Component {
     const isPending = isPendingAuction(auction);
     const currentBid = this.state.currentBidsMap.get(auction.id);
     const isFixedPrice = isFixedPriceAuction(auction);
+    const isExpired = !isPending && isAuctionExpired(auction);
     const marketBaseUrl = getShakedexChannelBaseUrl({host: this.state.marketChannelHost});
     if (!isPending && currentBid === undefined) {
       this.getCurrentBidForAuction(auction);
@@ -1126,7 +1172,7 @@ class Exchange extends Component {
 
     const currentPriceText = isPending
       ? (auction.expectedPrice ? displayBalance(auction.expectedPrice, true) : t('priceComingSoon'))
-      : (currentBid === null ? t('sold') : displayBalance(currentBid?.price, true));
+      : (currentBid === null ? (isExpired ? t('expired') : t('sold')) : displayBalance(currentBid?.price, true));
 
     return (
       <TableRow
@@ -1143,11 +1189,11 @@ class Exchange extends Component {
               <div className="exchange__auction-row-buttons">
                 <div
                   className={classNames('bid-action__link', {
-                    'bid-action__link--disabled': isPending || !this.canUseMarketplaceActions(),
+                    'bid-action__link--disabled': isPending || isExpired || !this.canUseMarketplaceActions(),
                   })}
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (isPending) return;
+                    if (isPending || isExpired) return;
                     if (!this.canUseMarketplaceActions()) {
                       this.showMarketplaceNotReady();
                       return;
@@ -1159,7 +1205,7 @@ class Exchange extends Component {
                     });
                   }}
                 >
-                  {isPending ? t('comingSoon') : (isFixedPrice ? t('buyNow') : t('buyAtCurrentPrice'))}
+                  {isPending ? t('comingSoon') : (isExpired ? t('expired') : (isFixedPrice ? t('buyNow') : t('buyAtCurrentPrice')))}
                 </div>
                 {!isPending && (
                   <div
@@ -1208,7 +1254,7 @@ class Exchange extends Component {
     }
 
     if (!currentBid) {
-      return t('sold');
+      return isAuctionExpired(auction) ? t('expired') : t('sold');
     }
 
     const currentBidIdx = auction.bids.findIndex((bid) => bid.price === currentBid.price);
