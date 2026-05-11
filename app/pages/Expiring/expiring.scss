@@ -70,7 +70,13 @@
   }
 
   &__table {
+    max-width: 100%;
     overflow-x: auto;
+
+    .table__header,
+    .table__row {
+      min-width: 57rem;
+    }
   }
 
   &__domain-cell,
