@@ -1,6 +1,7 @@
 import { Context } from 'shakedex/src/context.js';
 import { SwapProof } from 'shakedex/src/swapProof.js';
 const secp256k1 = require('bcrypto/lib/secp256k1.js');
+const { NodeClient, WalletClient } = require('hsd/lib/client');
 import { service as nodeService } from '../node/service';
 import { service as walletService } from '../wallet/service';
 import {
@@ -760,15 +761,32 @@ function getContext(passphrase = null) {
     networkName,
     client,
   } = nodeService;
+  const host = client.host;
 
-  return new Context(
+  const context = new Context(
     networkName,
     walletId,
     walletApiKey,
     () => Promise.resolve(passphrase),
-    client.host,
+    host,
     nodeApiKey,
   );
+
+  // Bob LearnHNS test builds run HSD on offset ports so they can coexist with
+  // production Bob. Shakedex's Context defaults to network ports, so wire the
+  // active Bob node/wallet ports explicitly before any fulfillment call.
+  context.nodeClient = new NodeClient({
+    port: nodeService.getRpcPort(),
+    host,
+    apiKey: nodeApiKey,
+  });
+  context.walletClient = new WalletClient({
+    port: nodeService.getWalletPort(),
+    host,
+    apiKey: walletApiKey,
+  });
+  context.wallet = context.walletClient.wallet(walletId);
+  return context;
 }
 
 const sName = 'Shakedex';
