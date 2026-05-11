@@ -42,6 +42,11 @@ const common = require('hsd/lib/wallet/common');
 const {Rules} = require('hsd/lib/covenants');
 const {hashName, types} = Rules;
 const ipc = require('electron').ipcMain;
+const {
+  buildHnsHtlcSpend,
+  coinFromJSON,
+  createHnsHtlcOutput,
+} = require('./liquidityHtlc');
 
 const randomAddrs = {
   [NETWORKS.TESTNET]: 'ts1qfcljt5ylsa9rcyvppvl8k8gjnpeh079drfrmzq',
@@ -815,6 +820,146 @@ class WalletService {
       return this._executeRPC('createsendtoaddress', [to, Number(amount), '', '', false, 'default']);
     },
   );
+
+  createLiquidityHnsSwapKey = async () => {
+    await this._ensureClient();
+    const wallet = await this.node.wdb.get(this.name);
+    const created = await this.client.createAddress(this.name, 'default');
+    const address = created.address || created;
+    const key = await wallet.getKey(Address.fromString(address, this.network));
+
+    assert(key, 'Could not derive key for generated address.');
+
+    return {
+      address,
+      publicKey: key.publicKey.toString('hex'),
+    };
+  };
+
+  createLiquidityHnsLock = async (options = {}) => {
+    const wallet = await this.node.wdb.get(this.name);
+    const lockOptions = this._normalizeLiquidityHnsOptions(options);
+    const refundKey = lockOptions.refundPublicKey
+      ? null
+      : await this.createLiquidityHnsSwapKey();
+    const htlc = createHnsHtlcOutput({
+      amountDollary: lockOptions.amountDollary,
+      amountHns: lockOptions.amountHns,
+      secretHash: lockOptions.secretHash,
+      claimPublicKey: lockOptions.claimPublicKey,
+      refundPublicKey: lockOptions.refundPublicKey || refundKey.publicKey,
+      refundLocktime: lockOptions.refundLocktime,
+    }, this.network);
+
+    const mtx = new MTX();
+    mtx.outputs.push(htlc.output);
+
+    const changeAddress = await wallet.changeAddress();
+    const rate = options.rate || await this.node.wdb.estimateFee();
+    const coins = await wallet.getSmartCoins();
+    await mtx.fund(coins, {changeAddress, rate});
+    await wallet.template(mtx);
+
+    const signed = await this._walletProxy(
+      () => mtx,
+      {broadcast: options.broadcast !== false},
+    );
+
+    assert(signed, 'Could not sign HNS HTLC lock transaction.');
+
+    return {
+      txid: signed.txid(),
+      txHex: signed.toHex(),
+      htlcAddress: htlc.addressString,
+      htlcScript: htlc.scriptHex,
+      refundPublicKey: lockOptions.refundPublicKey || refundKey.publicKey,
+      refundAddress: refundKey?.address || null,
+      value: htlc.value,
+    };
+  };
+
+  createLiquidityHnsClaim = async (options = {}) => {
+    return this._createLiquidityHnsSpend({
+      ...options,
+      path: 'claim',
+    });
+  };
+
+  createLiquidityHnsRefund = async (options = {}) => {
+    return this._createLiquidityHnsSpend({
+      ...options,
+      path: 'refund',
+    });
+  };
+
+  _createLiquidityHnsSpend = async (options) => {
+    const spendOptions = this._normalizeLiquidityHnsOptions(options);
+    const wallet = await this.node.wdb.get(this.name);
+    const signerAddress = options.signerAddress;
+    assert(signerAddress, 'signerAddress is required.');
+
+    const signerKey = await wallet.getKey(Address.fromString(signerAddress, this.network));
+    assert(signerKey && signerKey.privateKey, 'The signerAddress is not available for local hot-wallet signing.');
+
+    let coin;
+    if (options.coin) {
+      coin = coinFromJSON(options.coin, this.networkName);
+    } else {
+      assert(options.txid, 'txid is required when coin is not supplied.');
+      assert(Number.isSafeInteger(options.index), 'index is required when coin is not supplied.');
+      const coinData = await this.nodeService.getCoin(options.txid, options.index);
+      assert(coinData, 'Could not find the HNS HTLC coin.');
+      coin = coinFromJSON(coinData, this.networkName);
+    }
+
+    const destinationAddress = options.destinationAddress
+      || (await wallet.receiveAddress()).toString(this.network);
+    const spend = buildHnsHtlcSpend({
+      coin,
+      destinationAddress,
+      network: this.network,
+      privateKey: signerKey.privateKey,
+      feeDollary: options.feeDollary || 0,
+      path: options.path,
+      secretHash: spendOptions.secretHash,
+      secret: spendOptions.secret,
+      claimPublicKey: spendOptions.claimPublicKey,
+      refundPublicKey: spendOptions.refundPublicKey,
+      refundLocktime: spendOptions.refundLocktime,
+    });
+
+    if (options.broadcast !== false)
+      await this.nodeService.broadcastRawTx(spend.txHex);
+
+    return {
+      txid: spend.txid,
+      txHex: spend.txHex,
+      htlcScript: spend.scriptHex,
+      destinationAddress,
+    };
+  };
+
+  _normalizeLiquidityHnsOptions = (options = {}) => {
+    const timelockBlocks =
+      options.timelockBlocksEstimate
+      || options.timelock_blocks_estimate
+      || options.timelockBlocks
+      || options.timelock_blocks;
+    const refundLocktime =
+      options.refundLocktime
+      || options.refund_locktime
+      || (timelockBlocks ? this.lastKnownChainHeight + Number(timelockBlocks) : null);
+
+    return {
+      amountDollary: options.amountDollary || options.amount_dollary,
+      amountHns: options.amountHns || options.amount_hns,
+      secretHash: options.secretHash || options.secret_hash_sha256,
+      secret: options.secret || options.revealed_secret,
+      claimPublicKey: options.claimPublicKey || options.claim_public_key || options.bob_hns_claim_public_key,
+      refundPublicKey: options.refundPublicKey || options.refund_public_key || options.alice_hns_refund_public_key,
+      refundLocktime,
+    };
+  };
 
   signMessageWithName = (name, message) => this._ledgerDisabled(
     'method is not supported on ledger yet',
@@ -2182,6 +2327,10 @@ const methods = {
   signMessageWithName: service.signMessageWithName,
   revokeName: service.revokeName,
   send: service.send,
+  createLiquidityHnsSwapKey: service.createLiquidityHnsSwapKey,
+  createLiquidityHnsLock: service.createLiquidityHnsLock,
+  createLiquidityHnsClaim: service.createLiquidityHnsClaim,
+  createLiquidityHnsRefund: service.createLiquidityHnsRefund,
   lock: service.lock,
   unlock: service.unlock,
   isLocked: service.isLocked,
