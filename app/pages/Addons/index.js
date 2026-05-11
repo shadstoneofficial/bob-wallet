@@ -71,6 +71,10 @@ class Addons extends Component {
     liquiditySpotDraftHost: DEFAULT_LIQUIDITY_SPOT_CHANNEL_HOST,
     liquiditySpotChannels: [],
     liquiditySpotChannelError: '',
+    liquiditySwapIntent: null,
+    liquiditySwapIntentLoading: false,
+    liquiditySwapIntentError: '',
+    liquiditySwapActionNotice: '',
   };
 
   componentDidMount() {
@@ -84,6 +88,16 @@ class Addons extends Component {
       liquiditySpotDraftHost: storedHost,
       liquiditySpotChannels: mergeLiquiditySpotChannels(storedChannels),
     });
+    this.loadLiquiditySwapIntent(this.props.deeplinkParams?.liquiditySwapIntentUrl);
+  }
+
+  componentDidUpdate(prevProps) {
+    const previousIntentUrl = prevProps.deeplinkParams?.liquiditySwapIntentUrl;
+    const currentIntentUrl = this.props.deeplinkParams?.liquiditySwapIntentUrl;
+
+    if (previousIntentUrl !== currentIntentUrl) {
+      this.loadLiquiditySwapIntent(currentIntentUrl);
+    }
   }
 
   getStoredLiquiditySpotChannels() {
@@ -183,6 +197,122 @@ class Addons extends Component {
     shell.openExternal(intentUrl);
   }
 
+  async loadLiquiditySwapIntent(intentUrl) {
+    if (!intentUrl) {
+      this.setState({
+        liquiditySwapIntent: null,
+        liquiditySwapIntentLoading: false,
+        liquiditySwapIntentError: '',
+        liquiditySwapActionNotice: '',
+      });
+      return;
+    }
+
+    this.setState({
+      liquiditySwapIntent: null,
+      liquiditySwapIntentLoading: true,
+      liquiditySwapIntentError: '',
+      liquiditySwapActionNotice: '',
+    });
+
+    try {
+      const response = await fetch(intentUrl);
+
+      if (!response.ok)
+        throw new Error(`Liquidity.spot returned ${response.status}`);
+
+      const intent = await response.json();
+
+      this.setState({
+        liquiditySwapIntent: intent,
+        liquiditySwapIntentLoading: false,
+      });
+    } catch (e) {
+      this.setState({
+        liquiditySwapIntentLoading: false,
+        liquiditySwapIntentError: e.message || 'Unable to load the Liquidity.spot swap intent.',
+      });
+    }
+  }
+
+  prepareLiquiditySwapAction(action) {
+    this.setState({
+      liquiditySwapActionNotice: `${action} is ready for the next Bob wallet-service step. This screen is intentionally preview-only until Bob has a regtest-proven HNS HTLC builder, local signing prompt, and broadcast callback.`,
+    });
+  }
+
+  renderLiquiditySwapIntentDetails(intent) {
+    if (!intent)
+      return null;
+
+    const hnsLock = intent.hns_lock || {};
+    const btcLock = intent.btc_lock || {};
+    const bobClaim = intent.claims?.bob_hns_claim || {};
+    const amounts = intent.amounts || {};
+    const participants = intent.participants || {};
+
+    return (
+      <>
+        <dl className="addons-page__swap-intent-details">
+          <div>
+            <dt>Swap</dt>
+            <dd>#{intent.swap_id || 'Pending'}</dd>
+          </div>
+          <div>
+            <dt>Status</dt>
+            <dd>{intent.status || 'Unknown'}</dd>
+          </div>
+          <div>
+            <dt>HNS Amount</dt>
+            <dd>{amounts.hns || hnsLock.amount_hns || '-'}</dd>
+          </div>
+          <div>
+            <dt>BTC Amount</dt>
+            <dd>{amounts.btc || btcLock.amount_btc || '-'}</dd>
+          </div>
+          <div>
+            <dt>Alice</dt>
+            <dd>{participants.alice_user_id || '-'}</dd>
+          </div>
+          <div>
+            <dt>Bob</dt>
+            <dd>{participants.bob_user_id || '-'}</dd>
+          </div>
+        </dl>
+        <div className="addons-page__swap-intent-section">
+          <h4>HNS Lock Terms</h4>
+          <dl className="addons-page__swap-intent-details">
+            <div>
+              <dt>Secret Hash</dt>
+              <dd>{intent.secret_hash_sha256 || hnsLock.secret_hash_sha256 || '-'}</dd>
+            </div>
+            <div>
+              <dt>Timelock</dt>
+              <dd>{hnsLock.timelock_blocks ? `${hnsLock.timelock_blocks} blocks` : '-'}</dd>
+            </div>
+            <div>
+              <dt>Callback</dt>
+              <dd>{hnsLock.callback_url || '-'}</dd>
+            </div>
+          </dl>
+        </div>
+        <div className="addons-page__swap-intent-section">
+          <h4>Claim Terms</h4>
+          <dl className="addons-page__swap-intent-details">
+            <div>
+              <dt>Revealed Secret</dt>
+              <dd>{bobClaim.revealed_secret || 'Not revealed yet'}</dd>
+            </div>
+            <div>
+              <dt>Callback</dt>
+              <dd>{bobClaim.callback_url || '-'}</dd>
+            </div>
+          </dl>
+        </div>
+      </>
+    );
+  }
+
   render() {
     const {t} = this.context;
     const {deeplinkParams} = this.props;
@@ -192,6 +322,10 @@ class Addons extends Component {
       liquiditySpotDraftHost,
       liquiditySpotChannels,
       liquiditySpotChannelError,
+      liquiditySwapIntent,
+      liquiditySwapIntentLoading,
+      liquiditySwapIntentError,
+      liquiditySwapActionNotice,
     } = this.state;
     const liquiditySwapIntentUrl = deeplinkParams?.liquiditySwapIntentUrl;
     const addons = ADDONS.map(addon => {
@@ -278,11 +412,39 @@ class Addons extends Component {
             <div>
               <h3>Liquidity Swap Intent Ready</h3>
               <p>
-                Liquidity.spot sent Bob a swap intent. Bob can inspect the HNS-side terms here first; signing/broadcasting still stays inside your local wallet.
+                Liquidity.spot sent Bob a swap intent. Bob can inspect the HNS-side terms here first; signing and broadcasting will stay inside your local wallet.
               </p>
               <code>{liquiditySwapIntentUrl}</code>
             </div>
-            <div className="addons-page__channel-controls">
+            {liquiditySwapIntentLoading && (
+              <div className="addons-page__swap-intent-message">
+                Loading swap terms...
+              </div>
+            )}
+            {liquiditySwapIntentError && (
+              <div className="addons-page__channel-error">
+                {liquiditySwapIntentError}
+              </div>
+            )}
+            {this.renderLiquiditySwapIntentDetails(liquiditySwapIntent)}
+            {liquiditySwapActionNotice && (
+              <div className="addons-page__swap-intent-message">
+                {liquiditySwapActionNotice}
+              </div>
+            )}
+            <div className="addons-page__swap-intent-actions">
+              <button
+                disabled={!liquiditySwapIntent?.hns_lock}
+                onClick={() => this.prepareLiquiditySwapAction('HNS lock')}
+              >
+                Prepare HNS Lock
+              </button>
+              <button
+                disabled={!liquiditySwapIntent?.claims?.bob_hns_claim?.revealed_secret}
+                onClick={() => this.prepareLiquiditySwapAction('HNS claim')}
+              >
+                Prepare HNS Claim
+              </button>
               <button onClick={() => this.openLiquiditySwapIntent()}>
                 Open Intent JSON
               </button>

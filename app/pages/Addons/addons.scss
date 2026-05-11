@@ -104,6 +104,72 @@
     }
   }
 
+  &__swap-intent-details {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+    gap: .65rem;
+    margin: .85rem 0 0;
+
+    div {
+      min-width: 0;
+    }
+
+    dt {
+      color: $manatee-gray;
+      font-size: .7rem;
+      font-weight: 600;
+      margin-bottom: .2rem;
+      text-transform: uppercase;
+    }
+
+    dd {
+      margin: 0;
+      overflow-wrap: anywhere;
+      color: $black;
+      font-size: .82rem;
+      line-height: 1.35;
+    }
+  }
+
+  &__swap-intent-section {
+    margin-top: .95rem;
+    border-top: 1px solid rgba($success-green, .16);
+    padding-top: .85rem;
+
+    h4 {
+      margin: 0;
+      font-size: .9rem;
+      font-weight: 600;
+    }
+  }
+
+  &__swap-intent-actions {
+    @extend %row-nowrap;
+    flex-wrap: wrap;
+    gap: .5rem;
+    margin-top: 1rem;
+
+    button {
+      @extend %btn-secondary;
+
+      &:disabled {
+        cursor: not-allowed;
+        opacity: .45;
+      }
+    }
+  }
+
+  &__swap-intent-message {
+    margin-top: .85rem;
+    border: 1px solid rgba($azure-blue, .18);
+    border-radius: .4rem;
+    padding: .65rem .75rem;
+    background: rgba($azure-blue, .05);
+    color: $manatee-gray;
+    font-size: .8rem;
+    line-height: 1.4;
+  }
+
   &__card {
     border: 1px solid $grey;
     border-radius: .5rem;
