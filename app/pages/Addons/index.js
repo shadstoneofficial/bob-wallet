@@ -5,6 +5,7 @@ import {connect} from 'react-redux';
 import PropTypes from 'prop-types';
 import {I18nContext} from '../../utils/i18n';
 import DocsHelp from '../../components/DocsHelp';
+import walletClient from '../../utils/walletClient';
 import {
   DEFAULT_LIQUIDITY_SPOT_CHANNEL_HOST,
   LIQUIDITY_ADDON_NAME,
@@ -75,6 +76,8 @@ class Addons extends Component {
     liquiditySwapIntentLoading: false,
     liquiditySwapIntentError: '',
     liquiditySwapActionNotice: '',
+    liquiditySwapLocalKeys: {},
+    liquiditySwapActionLoading: false,
   };
 
   componentDidMount() {
@@ -225,6 +228,7 @@ class Addons extends Component {
 
       this.setState({
         liquiditySwapIntent: intent,
+        liquiditySwapLocalKeys: this.getStoredLiquiditySwapKeys(intent.swap_id),
         liquiditySwapIntentLoading: false,
       });
     } catch (e) {
@@ -241,6 +245,180 @@ class Addons extends Component {
     });
   }
 
+  getLiquiditySwapKeyStorageKey(swapId) {
+    return `liquiditySwap/${swapId}/hnsKeys`;
+  }
+
+  getStoredLiquiditySwapKeys(swapId) {
+    if (!swapId)
+      return {};
+
+    try {
+      return JSON.parse(window.localStorage.getItem(this.getLiquiditySwapKeyStorageKey(swapId)) || '{}');
+    } catch (e) {
+      return {};
+    }
+  }
+
+  storeLiquiditySwapKeys(swapId, keys) {
+    if (!swapId)
+      return;
+
+    window.localStorage.setItem(this.getLiquiditySwapKeyStorageKey(swapId), JSON.stringify(keys));
+    this.setState({liquiditySwapLocalKeys: keys});
+  }
+
+  async postLiquiditySwapMetadata(payload) {
+    const {liquiditySwapIntent} = this.state;
+    const metadataUrl = liquiditySwapIntent?.hns_lock?.metadata_callback?.url
+      || liquiditySwapIntent?.claims?.bob_hns_claim?.metadata_callback?.url;
+
+    if (!metadataUrl)
+      throw new Error('This intent does not include an HNS metadata callback.');
+
+    const response = await fetch(metadataUrl, {
+      method: 'POST',
+      headers: {'content-type': 'application/json'},
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json();
+
+    if (!response.ok)
+      throw new Error(data.error || `Liquidity.spot returned ${response.status}`);
+
+    await this.loadLiquiditySwapIntent(this.props.deeplinkParams?.liquiditySwapIntentUrl);
+    return data;
+  }
+
+  async postLiquiditySwapTxid(callback, payload) {
+    if (!callback?.url)
+      throw new Error('This intent does not include a TXID callback.');
+
+    const response = await fetch(callback.url, {
+      method: 'POST',
+      headers: {'content-type': 'application/json'},
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json();
+
+    if (!response.ok)
+      throw new Error(data.error || `Liquidity.spot returned ${response.status}`);
+
+    await this.loadLiquiditySwapIntent(this.props.deeplinkParams?.liquiditySwapIntentUrl);
+    return data;
+  }
+
+  async generateLiquidityHnsKey(kind) {
+    const {liquiditySwapIntent, liquiditySwapLocalKeys} = this.state;
+
+    if (!liquiditySwapIntent)
+      return;
+
+    this.setState({liquiditySwapActionLoading: true, liquiditySwapActionNotice: ''});
+
+    try {
+      const key = await walletClient.createLiquidityHnsSwapKey();
+      const nextKeys = {
+        ...liquiditySwapLocalKeys,
+        [kind]: key,
+      };
+      this.storeLiquiditySwapKeys(liquiditySwapIntent.swap_id, nextKeys);
+
+      const payload = kind === 'claim'
+        ? {hns_claim_public_key: key.publicKey}
+        : {hns_refund_public_key: key.publicKey};
+      await this.postLiquiditySwapMetadata(payload);
+      this.setState({
+        liquiditySwapActionNotice: `${kind === 'claim' ? 'Bob claim' : 'Alice refund'} HNS key saved to this wallet and sent to Liquidity.spot.`,
+      });
+    } catch (e) {
+      this.setState({liquiditySwapActionNotice: e.message || 'Could not generate HNS swap key.'});
+    } finally {
+      this.setState({liquiditySwapActionLoading: false});
+    }
+  }
+
+  async lockLiquidityHns() {
+    const {liquiditySwapIntent, liquiditySwapLocalKeys} = this.state;
+    const hnsLock = liquiditySwapIntent?.hns_lock || {};
+    const refundKey = liquiditySwapLocalKeys.refund;
+
+    this.setState({liquiditySwapActionLoading: true, liquiditySwapActionNotice: ''});
+
+    try {
+      if (!refundKey?.publicKey)
+        throw new Error('Generate the Alice refund key in this wallet before locking HNS.');
+      if (!hnsLock.claim_public_key)
+        throw new Error('Waiting for Bob claim public key before locking HNS.');
+
+      const lock = await walletClient.createLiquidityHnsLock({
+        amountDollary: hnsLock.amount_dollary,
+        secretHash: hnsLock.secret_hash_sha256,
+        claimPublicKey: hnsLock.claim_public_key,
+        refundPublicKey: refundKey.publicKey,
+        refundLocktime: hnsLock.refund_locktime,
+        timelockBlocksEstimate: hnsLock.timelock_blocks_estimate,
+      });
+
+      await this.postLiquiditySwapMetadata({
+        hns_refund_public_key: refundKey.publicKey,
+        hns_lock_address: lock.htlcAddress,
+        hns_lock_script: lock.htlcScript,
+        hns_lock_value: lock.value,
+        hns_lock_output_index: lock.htlcOutputIndex,
+        hns_refund_locktime: lock.refundLocktime,
+      });
+      await this.postLiquiditySwapTxid(hnsLock.callback, {
+        txid: lock.txid,
+        hns_lock_address: lock.htlcAddress,
+        hns_lock_script: lock.htlcScript,
+        hns_lock_value: lock.value,
+        hns_lock_output_index: lock.htlcOutputIndex,
+        hns_refund_locktime: lock.refundLocktime,
+      });
+      this.setState({liquiditySwapActionNotice: `HNS lock broadcast and submitted: ${lock.txid}`});
+    } catch (e) {
+      this.setState({liquiditySwapActionNotice: e.message || 'Could not lock HNS.'});
+    } finally {
+      this.setState({liquiditySwapActionLoading: false});
+    }
+  }
+
+  async claimLiquidityHns() {
+    const {liquiditySwapIntent, liquiditySwapLocalKeys} = this.state;
+    const bobClaim = liquiditySwapIntent?.claims?.bob_hns_claim || {};
+    const claimKey = liquiditySwapLocalKeys.claim;
+
+    this.setState({liquiditySwapActionLoading: true, liquiditySwapActionNotice: ''});
+
+    try {
+      if (!claimKey?.address)
+        throw new Error('Generate the Bob claim key in this wallet before claiming HNS.');
+      if (!bobClaim.revealed_secret)
+        throw new Error('Waiting for Alice to reveal the secret on the BTC claim.');
+      if (!bobClaim.alice_lock_txid || bobClaim.alice_lock_output_index == null)
+        throw new Error('Waiting for Alice HNS lock TXID and output index.');
+
+      const claim = await walletClient.createLiquidityHnsClaim({
+        txid: bobClaim.alice_lock_txid,
+        index: bobClaim.alice_lock_output_index,
+        signerAddress: claimKey.address,
+        secret: bobClaim.revealed_secret,
+        secretHash: bobClaim.secret_hash_sha256,
+        claimPublicKey: claimKey.publicKey,
+        refundPublicKey: bobClaim.refund_public_key,
+        refundLocktime: bobClaim.refund_locktime,
+      });
+
+      await this.postLiquiditySwapTxid(bobClaim.callback, {txid: claim.txid});
+      this.setState({liquiditySwapActionNotice: `HNS claim broadcast and submitted: ${claim.txid}`});
+    } catch (e) {
+      this.setState({liquiditySwapActionNotice: e.message || 'Could not claim HNS.'});
+    } finally {
+      this.setState({liquiditySwapActionLoading: false});
+    }
+  }
+
   renderLiquiditySwapIntentDetails(intent) {
     if (!intent)
       return null;
@@ -248,6 +426,7 @@ class Addons extends Component {
     const hnsLock = intent.hns_lock || {};
     const btcLock = intent.btc_lock || {};
     const bobClaim = intent.claims?.bob_hns_claim || {};
+    const hnsHtlc = intent.hns_htlc || {};
     const amounts = intent.amounts || {};
     const participants = intent.participants || {};
 
@@ -291,8 +470,20 @@ class Addons extends Component {
               <dd>{hnsLock.timelock_blocks ? `${hnsLock.timelock_blocks} blocks` : '-'}</dd>
             </div>
             <div>
+              <dt>Bob Claim Key</dt>
+              <dd>{hnsLock.claim_public_key || hnsHtlc.claim_public_key || 'Waiting for Bob'}</dd>
+            </div>
+            <div>
+              <dt>Alice Refund Key</dt>
+              <dd>{hnsLock.refund_public_key || hnsHtlc.refund_public_key || 'Waiting for Alice'}</dd>
+            </div>
+            <div>
+              <dt>HTLC Address</dt>
+              <dd>{hnsLock.htlc_address || hnsHtlc.lock_address || '-'}</dd>
+            </div>
+            <div>
               <dt>Callback</dt>
-              <dd>{hnsLock.callback_url || '-'}</dd>
+              <dd>{hnsLock.callback?.url || '-'}</dd>
             </div>
           </dl>
         </div>
@@ -304,8 +495,12 @@ class Addons extends Component {
               <dd>{bobClaim.revealed_secret || 'Not revealed yet'}</dd>
             </div>
             <div>
+              <dt>Lock Output</dt>
+              <dd>{bobClaim.alice_lock_output_index ?? hnsHtlc.lock_output_index ?? 'Waiting for Alice lock'}</dd>
+            </div>
+            <div>
               <dt>Callback</dt>
-              <dd>{bobClaim.callback_url || '-'}</dd>
+              <dd>{bobClaim.callback?.url || '-'}</dd>
             </div>
           </dl>
         </div>
@@ -326,6 +521,8 @@ class Addons extends Component {
       liquiditySwapIntentLoading,
       liquiditySwapIntentError,
       liquiditySwapActionNotice,
+      liquiditySwapLocalKeys,
+      liquiditySwapActionLoading,
     } = this.state;
     const liquiditySwapIntentUrl = deeplinkParams?.liquiditySwapIntentUrl;
     const addons = ADDONS.map(addon => {
@@ -434,16 +631,36 @@ class Addons extends Component {
             )}
             <div className="addons-page__swap-intent-actions">
               <button
-                disabled={!liquiditySwapIntent?.hns_lock}
-                onClick={() => this.prepareLiquiditySwapAction('HNS lock')}
+                disabled={liquiditySwapActionLoading || !liquiditySwapIntent?.hns_lock}
+                onClick={() => this.generateLiquidityHnsKey('claim')}
               >
-                Prepare HNS Lock
+                Generate Bob Claim Key
               </button>
               <button
-                disabled={!liquiditySwapIntent?.claims?.bob_hns_claim?.revealed_secret}
-                onClick={() => this.prepareLiquiditySwapAction('HNS claim')}
+                disabled={liquiditySwapActionLoading || !liquiditySwapIntent?.hns_lock}
+                onClick={() => this.generateLiquidityHnsKey('refund')}
               >
-                Prepare HNS Claim
+                Generate Alice Refund Key
+              </button>
+              <button
+                disabled={
+                  liquiditySwapActionLoading
+                  || !liquiditySwapIntent?.hns_lock?.claim_public_key
+                  || !liquiditySwapLocalKeys.refund?.publicKey
+                }
+                onClick={() => this.lockLiquidityHns()}
+              >
+                Lock HNS
+              </button>
+              <button
+                disabled={
+                  liquiditySwapActionLoading
+                  || !liquiditySwapIntent?.claims?.bob_hns_claim?.revealed_secret
+                  || !liquiditySwapLocalKeys.claim?.address
+                }
+                onClick={() => this.claimLiquidityHns()}
+              >
+                Claim HNS
               </button>
               <button onClick={() => this.openLiquiditySwapIntent()}>
                 Open Intent JSON

@@ -867,11 +867,20 @@ class WalletService {
 
     assert(signed, 'Could not sign HNS HTLC lock transaction.');
 
+    const htlcOutputIndex = signed.outputs.findIndex(output => (
+      output.address
+      && output.address.toString(this.network) === htlc.addressString
+      && output.value === htlc.value
+    ));
+    assert(htlcOutputIndex >= 0, 'Could not locate HTLC output in signed transaction.');
+
     return {
       txid: signed.txid(),
       txHex: signed.toHex(),
       htlcAddress: htlc.addressString,
       htlcScript: htlc.scriptHex,
+      htlcOutputIndex,
+      refundLocktime: lockOptions.refundLocktime,
       refundPublicKey: lockOptions.refundPublicKey || refundKey.publicKey,
       refundAddress: refundKey?.address || null,
       value: htlc.value,
