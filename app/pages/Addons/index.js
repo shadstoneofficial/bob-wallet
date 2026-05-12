@@ -79,6 +79,9 @@ class Addons extends Component {
     liquiditySwapActionNotice: '',
     liquiditySwapLocalKeys: {},
     liquiditySwapActionLoading: false,
+    liquidityChannel: null,
+    liquidityChannelLoading: false,
+    liquidityChannelError: '',
   };
 
   componentDidMount() {
@@ -92,6 +95,7 @@ class Addons extends Component {
       liquiditySpotDraftHost: storedHost,
       liquiditySpotChannels: mergeLiquiditySpotChannels(storedChannels),
     });
+    this.loadLiquidityChannel(storedHost);
     this.loadLiquiditySwapIntent(this.props.deeplinkParams?.liquiditySwapIntentUrl);
   }
 
@@ -101,6 +105,35 @@ class Addons extends Component {
 
     if (previousIntentUrl !== currentIntentUrl) {
       this.loadLiquiditySwapIntent(currentIntentUrl);
+    }
+  }
+
+  async loadLiquidityChannel(host = this.state.liquiditySpotHost) {
+    const channelUrl = getLiquiditySpotChannelUrl(host, '/api/channel');
+
+    this.setState({
+      liquidityChannelLoading: true,
+      liquidityChannelError: '',
+    });
+
+    try {
+      const response = await fetch(channelUrl);
+
+      if (!response.ok)
+        throw new Error(`Liquidity channel returned ${response.status}`);
+
+      const channel = await response.json();
+
+      this.setState({
+        liquidityChannel: channel,
+        liquidityChannelLoading: false,
+      });
+    } catch (e) {
+      this.setState({
+        liquidityChannel: null,
+        liquidityChannelLoading: false,
+        liquidityChannelError: e.message || 'Unable to load the Liquidity channel.',
+      });
     }
   }
 
@@ -146,7 +179,7 @@ class Addons extends Component {
       liquiditySpotDraftHost: host,
       liquiditySpotChannels: channels,
       liquiditySpotChannelError: '',
-    });
+    }, () => this.loadLiquidityChannel(host));
   }
 
   resetLiquiditySpotChannel() {
@@ -156,7 +189,7 @@ class Addons extends Component {
       liquiditySpotDraftHost: DEFAULT_LIQUIDITY_SPOT_CHANNEL_HOST,
       liquiditySpotChannels: mergeLiquiditySpotChannels(),
       liquiditySpotChannelError: '',
-    });
+    }, () => this.loadLiquidityChannel(DEFAULT_LIQUIDITY_SPOT_CHANNEL_HOST));
   }
 
   confirmExternalAddon() {
@@ -199,6 +232,10 @@ class Addons extends Component {
     } catch (e) {}
 
     shell.openExternal(intentUrl);
+  }
+
+  openLiquidityChannelPath(path) {
+    shell.openExternal(getLiquiditySpotChannelUrl(this.state.liquiditySpotHost, path));
   }
 
   async loadLiquiditySwapIntent(intentUrl) {
@@ -509,6 +546,117 @@ class Addons extends Component {
     );
   }
 
+  renderLiquidityChannelListings() {
+    const {liquidityChannel, liquidityChannelLoading, liquidityChannelError} = this.state;
+    const p2pOffers = liquidityChannel?.p2p?.offers || [];
+    const atomicOrders = liquidityChannel?.atomic_swaps?.orders || [];
+
+    return (
+      <div className="addons-page__liquidity-channel">
+        <div className="addons-page__channel-card">
+          <div className="addons-page__liquidity-header">
+            <div>
+              <h3>Source Channel</h3>
+              <p>
+                Native listings pulled from {liquidityChannel?.name || this.state.liquiditySpotHost}. Accepting, posting, and trade chat still open on the source channel.
+              </p>
+            </div>
+            <button onClick={() => this.loadLiquidityChannel()}>
+              Refresh
+            </button>
+          </div>
+          {liquidityChannelLoading && (
+            <div className="addons-page__swap-intent-message">
+              Loading channel listings...
+            </div>
+          )}
+          {liquidityChannelError && (
+            <div className="addons-page__channel-error">
+              {liquidityChannelError}
+            </div>
+          )}
+          {liquidityChannel?.requirements?.bob_wallet && (
+            <div className="addons-page__swap-intent-message">
+              {liquidityChannel.requirements.bob_wallet}{' '}
+              <button onClick={() => shell.openExternal(liquidityChannel.requirements.bob_wallet_download_url)}>
+                Download Bob
+              </button>
+            </div>
+          )}
+        </div>
+        <div className="addons-page__listing-grid">
+          {this.renderLiquidityListingTable({
+            title: 'P2P Offers',
+            empty: 'No open P2P offers on this channel.',
+            rows: p2pOffers,
+            type: 'p2p',
+            actionLabel: 'Open P2P',
+            fallbackPath: '/p2p',
+          })}
+          {this.renderLiquidityListingTable({
+            title: 'Atomic Swap Orders',
+            empty: 'No open atomic swap orders on this channel.',
+            rows: atomicOrders,
+            type: 'atomic',
+            actionLabel: 'Open Orders',
+            fallbackPath: '/orders',
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  renderLiquidityListingTable({title, empty, rows, type, actionLabel, fallbackPath}) {
+    return (
+      <div className="addons-page__channel-card addons-page__listing-card">
+        <div className="addons-page__liquidity-header">
+          <h3>{title}</h3>
+          <button onClick={() => this.openLiquidityChannelPath(fallbackPath)}>
+            {actionLabel}
+          </button>
+        </div>
+        {rows.length ? (
+          <div className="addons-page__listing-table-wrap">
+            <table className="addons-page__listing-table">
+              <thead>
+                <tr>
+                  <th>User</th>
+                  <th>Side</th>
+                  <th>Amount</th>
+                  <th>Price</th>
+                  <th>Stake</th>
+                  {type === 'p2p' && <th>Method</th>}
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map(row => (
+                  <tr key={`${type}-${row.id}`}>
+                    <td>{row.creator?.username || row.user?.username || 'Unknown'}</td>
+                    <td className={`addons-page__side addons-page__side--${row.side}`}>
+                      {row.side}
+                    </td>
+                    <td>{row.amount_hns} HNS</td>
+                    <td>{row.price_btc_per_hns} BTC</td>
+                    <td>{row.gems_stake || 0}</td>
+                    {type === 'p2p' && <td>{row.payment_method || '-'}</td>}
+                    <td>
+                      <button onClick={() => shell.openExternal(row.url || getLiquiditySpotChannelUrl(this.state.liquiditySpotHost, fallbackPath))}>
+                        Open
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p>{empty}</p>
+        )}
+      </div>
+    );
+  }
+
   render() {
     const {t} = this.context;
     const {deeplinkParams, location} = this.props;
@@ -563,8 +711,7 @@ class Addons extends Component {
             </DocsHelp>
           </>
         )}
-        {!isLiquiditySwapPage && (
-          <div className="addons-page__channel-card">
+        <div className="addons-page__channel-card">
           <div>
             <h3>Liquidity Channel</h3>
             <p>
@@ -581,7 +728,7 @@ class Addons extends Component {
                   liquiditySpotHost: host,
                   liquiditySpotDraftHost: host,
                   liquiditySpotChannelError: '',
-                });
+                }, () => this.loadLiquidityChannel(host));
               }}
             >
               {liquiditySpotChannels.map(channel => (
@@ -610,8 +757,8 @@ class Addons extends Component {
               {liquiditySpotChannelError}
             </div>
           )}
-          </div>
-        )}
+        </div>
+        {isLiquiditySwapPage && this.renderLiquidityChannelListings()}
         {liquiditySwapIntentUrl && (
           <div className="addons-page__channel-card addons-page__swap-intent">
             <div>
