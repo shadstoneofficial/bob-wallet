@@ -61,6 +61,7 @@ const ADDONS = [
 class Addons extends Component {
   static propTypes = {
     history: PropTypes.object.isRequired,
+    location: PropTypes.object.isRequired,
     deeplinkParams: PropTypes.object,
   };
 
@@ -510,7 +511,7 @@ class Addons extends Component {
 
   render() {
     const {t} = this.context;
-    const {deeplinkParams} = this.props;
+    const {deeplinkParams, location} = this.props;
     const {
       pendingExternalAddon,
       liquiditySpotHost,
@@ -525,6 +526,7 @@ class Addons extends Component {
       liquiditySwapActionLoading,
     } = this.state;
     const liquiditySwapIntentUrl = deeplinkParams?.liquiditySwapIntentUrl;
+    const isLiquiditySwapPage = location.pathname === '/liquidity-swap';
     const addons = ADDONS.map(addon => {
       if (addon.name !== LIQUIDITY_ADDON_NAME) {
         return addon;
@@ -539,25 +541,30 @@ class Addons extends Component {
 
     return (
       <div className="addons-page">
-        <div className="addons-page__intro">
-          <div>
-            <h2>{t('moreAddonsTitle')}</h2>
-            <p>{t('moreAddonsIntro')}</p>
-          </div>
-          <button
-            className="addons-page__docs-button"
-            onClick={() => shell.openExternal('https://bobwallet.org')}
-          >
-            {t('openDocs')}
-          </button>
-        </div>
-        <DocsHelp
-          title="Add Ons"
-          href="https://bobwallet.org/docs/add-ons"
-        >
-          Add Ons are reviewed tools surfaced inside Bob. Native Add Ons stay in Bob; external Add Ons open outside Bob and never receive wallet secrets.
-        </DocsHelp>
-        <div className="addons-page__channel-card">
+        {!isLiquiditySwapPage && (
+          <>
+            <div className="addons-page__intro">
+              <div>
+                <h2>{t('moreAddonsTitle')}</h2>
+                <p>{t('moreAddonsIntro')}</p>
+              </div>
+              <button
+                className="addons-page__docs-button"
+                onClick={() => shell.openExternal('https://bobwallet.org')}
+              >
+                {t('openDocs')}
+              </button>
+            </div>
+            <DocsHelp
+              title="Add Ons"
+              href="https://bobwallet.org/docs/add-ons"
+            >
+              Add Ons are reviewed tools surfaced inside Bob. Native Add Ons stay in Bob; external Add Ons open outside Bob and never receive wallet secrets.
+            </DocsHelp>
+          </>
+        )}
+        {!isLiquiditySwapPage && (
+          <div className="addons-page__channel-card">
           <div>
             <h3>Liquidity Channel</h3>
             <p>
@@ -603,7 +610,8 @@ class Addons extends Component {
               {liquiditySpotChannelError}
             </div>
           )}
-        </div>
+          </div>
+        )}
         {liquiditySwapIntentUrl && (
           <div className="addons-page__channel-card addons-page__swap-intent">
             <div>
@@ -671,7 +679,18 @@ class Addons extends Component {
             </div>
           </div>
         )}
-        <div className="addons-page__grid">
+        {isLiquiditySwapPage && !liquiditySwapIntentUrl && (
+          <div className="addons-page__channel-card addons-page__swap-intent">
+            <div>
+              <h3>No Liquidity Swap Intent</h3>
+              <p>
+                Open a Liquidity.spot swap from the website to send Bob a signed wallet-intent URL. The swap controls will appear here after Bob receives that link.
+              </p>
+            </div>
+          </div>
+        )}
+        {!isLiquiditySwapPage && (
+          <div className="addons-page__grid">
           {addons.map(addon => (
             <div className="addons-page__card" key={addon.name}>
               <div className="addons-page__card-header">
@@ -714,7 +733,8 @@ class Addons extends Component {
               )}
             </div>
           ))}
-        </div>
+          </div>
+        )}
       </div>
     );
   }

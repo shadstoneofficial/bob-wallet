@@ -12,5 +12,5 @@ export default message => {
     }));
   }
 
-  history.push('/addons');
+  history.push('/liquidity-swap');
 };

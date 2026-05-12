@@ -174,6 +174,12 @@ class Sidebar extends Component {
             {t('headingMessages')}
           </NavLink>
           <NavLink
+            to="/liquidity-swap"
+            className={isActive => `sidebar__action ${isActive ? "sidebar__action--selected" : ''}`}
+          >
+            Liquidity Swap
+          </NavLink>
+          <NavLink
             to="/addons"
             className={isActive => `sidebar__action ${isActive ? "sidebar__action--selected" : ''}`}
           >

@@ -283,6 +283,12 @@ class App extends Component {
           <ProtectedRoute
             isLocked={isLocked}
             wallets={wallets}
+            path="/liquidity-swap"
+            render={this.routeRenderer('Liquidity Swap', Addons)}
+          />
+          <ProtectedRoute
+            isLocked={isLocked}
+            wallets={wallets}
             path="/multisig"
             render={this.routeRenderer(
               t(walletInitialized ? 'headingMultisig' : 'headingMultisigSetup'),
