@@ -331,3 +331,78 @@
     }
   }
 }
+
+body.bob-theme-dark {
+  .addons-page {
+    color: #e6edf3;
+
+    &__channel-card,
+    &__card,
+    &__external-notice {
+      background: #151b23;
+      border-color: rgba(255, 255, 255, .12);
+      color: #e6edf3;
+    }
+
+    &__swap-intent {
+      background: rgba($success-green, .08);
+      border-color: rgba($success-green, .28);
+
+      code {
+        background: rgba($black, .24);
+        border: 1px solid rgba(255, 255, 255, .08);
+        color: #c9d1d9;
+      }
+    }
+
+    &__swap-intent-details {
+      dt {
+        color: #9aa4af;
+      }
+
+      dd {
+        color: #e6edf3;
+      }
+    }
+
+    &__swap-intent-section {
+      border-top-color: rgba($success-green, .28);
+
+      h4 {
+        color: #e6edf3;
+      }
+    }
+
+    &__swap-intent-message {
+      background: rgba($azure-blue, .1);
+      border-color: rgba($azure-blue, .24);
+      color: #c9d1d9;
+    }
+
+    &__listing-table {
+      th {
+        color: #9aa4af;
+      }
+
+      td {
+        border-bottom-color: rgba(255, 255, 255, .08);
+        color: #e6edf3;
+      }
+    }
+
+    &__channel-controls {
+      select,
+      input {
+        background: #0d1117;
+        border-color: rgba(255, 255, 255, .14);
+        color: #e6edf3;
+      }
+    }
+
+    &__card-header {
+      h3 {
+        color: #e6edf3;
+      }
+    }
+  }
+}
