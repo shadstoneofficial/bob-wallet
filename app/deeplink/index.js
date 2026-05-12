@@ -13,8 +13,7 @@ export default function handleDeeplink(message) {
     pathname: url.pathname,
   });
 
-  // pathname = "//method/"
-  const [method] = url.pathname.substr(2).split('/');
+  const method = getDeeplinkMethod(url);
   const handler = methods[method];
 
   if (typeof handler === 'function') {
@@ -27,4 +26,16 @@ export default function handleDeeplink(message) {
   } else {
     console.error('Unknown deeplink:', message);
   }
+}
+
+function getDeeplinkMethod(url) {
+  const pathnameMethod = url.pathname.replace(/^\/+/, '').split('/')[0];
+
+  if (url.hostname === 'x' && pathnameMethod) {
+    return pathnameMethod.toLowerCase();
+  }
+
+  // Legacy Bob links encoded the method with a leading double slash in the
+  // path, which produced a pathname like "//fulfillauction".
+  return url.pathname.substr(2).split('/')[0].toLowerCase();
 }
