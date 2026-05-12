@@ -327,6 +327,9 @@ export const placeExchangeBid = (auction, bid) => async (dispatch, getState) => 
   try {
     const passphrase = await new Promise((resolve, reject) => dispatch(getPassphrase(resolve, reject)));
     fulfillment = await shakedex.fulfillSwap(auction, bid, passphrase);
+    if (!fulfillment || !fulfillment.fulfillmentTxHash) {
+      throw new Error('Bob did not receive a Shakedex purchase transaction hash. No confirmed broadcast was recorded.');
+    }
   } catch (e) {
     console.error(e);
     dispatch({
@@ -343,7 +346,7 @@ export const placeExchangeBid = (auction, bid) => async (dispatch, getState) => 
   dispatch({
     type: PLACE_EXCHANGE_BID_OK,
   });
-  dispatch(showSuccess('Bid successfully placed! Please wait 15 minutes for it to confirm on-chain.'));
+  dispatch(showSuccess(`Purchase transaction accepted by local HSD: ${fulfillment.fulfillmentTxHash}. Please wait for confirmation.`));
 };
 
 export const finalizeExchangeBid = (fulfillment) => async (dispatch, getState) => {

@@ -9,6 +9,7 @@ import { clear } from '../../ducks/notifications'
   (state) => ({
     message: state.notifications.message,
     type: state.notifications.type,
+    explorer: state.node.explorer,
   }),
   (dispatch) => ({
     clear: () => dispatch(clear())
@@ -20,7 +21,8 @@ export default class Notification extends Component {
     type: PropTypes.oneOf([
       'success',
       'error'
-    ]).isRequired
+    ]).isRequired,
+    explorer: PropTypes.object.isRequired
   };
 
   el = null;
@@ -59,9 +61,38 @@ export default class Notification extends Component {
     return (
       <div className={name} ref={(ref) => (this.el = ref)}>
         <div className="notification__close" onClick={this.clear}/>
-        {this.props.message}
+        {this.renderMessage()}
         {this.renderCreateIssue()}
       </div>
+    );
+  }
+
+  renderMessage() {
+    const { message, explorer } = this.props;
+    const match = String(message).match(/[a-f0-9]{64}/i);
+
+    if (!match || !explorer || !explorer.tx) {
+      return message;
+    }
+
+    const hash = match[0];
+    const before = message.slice(0, match.index);
+    const after = message.slice(match.index + hash.length);
+    const url = explorer.tx.replace('%s', hash);
+
+    return (
+      <span>
+        {before}
+        <button
+          className="notification__tx-link"
+          type="button"
+          onClick={() => require("electron").shell.openExternal(url)}
+          title={url}
+        >
+          {hash}
+        </button>
+        {after}
+      </span>
     );
   }
 

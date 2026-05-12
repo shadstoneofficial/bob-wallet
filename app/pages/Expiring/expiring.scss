@@ -118,5 +118,10 @@
       background: rgba($azure-blue, .08);
       color: $azure-blue;
     }
+
+    &--unknown {
+      background: rgba($manatee-gray, .12);
+      color: darken($manatee-gray, 18);
+    }
   }
 }

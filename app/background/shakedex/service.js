@@ -38,6 +38,7 @@ import {
 let db;
 
 const SHAKEDEX_CHANNEL_SETTINGS_KEY = 'exchange/settings/shakedexChannelHost';
+const SHAKEDEX_BROADCAST_REJECTION_CHECK_DELAYS = [500, 1500, 3000];
 
 function normalizeShakedexChannelHost(value) {
   const raw = `${value || ''}`.trim();
@@ -65,6 +66,35 @@ async function getMarketClient() {
     host: await getMarketApiHost(),
     ssl: true,
   });
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function assertPurchaseNotRejected(context, txHash) {
+  if (!txHash || !context.nodeClient || !context.nodeClient.checkMempoolRejectionFilter) {
+    return;
+  }
+
+  for (const delay of SHAKEDEX_BROADCAST_REJECTION_CHECK_DELAYS) {
+    await sleep(delay);
+
+    let rejection;
+    try {
+      rejection = await context.nodeClient.checkMempoolRejectionFilter(txHash);
+    } catch (e) {
+      console.warn('Could not check Shakedex purchase rejection filter.', e);
+      return;
+    }
+
+    if (rejection && rejection.invalid) {
+      throw new Error(
+        'Purchase transaction was rejected by your HSD node before it entered the mempool. '
+        + 'No funds were spent. Refresh the Shakedex channel and try again with a fresh buyable listing.',
+      );
+    }
+  }
 }
 
 export async function openDB() {
@@ -169,6 +199,41 @@ async function getMarketListingCoin(auction) {
   return data.coin;
 }
 
+async function getMarketNameInfo(name) {
+  const resp = await fetch(
+    `${await getMarketApiBaseUrl()}/api/v2/names/${encodeURIComponent(name)}/status`,
+  );
+  const data = await resp.json();
+
+  if (!resp.ok) {
+    throw new Error(data.error || 'The Shakedex channel could not provide name data.');
+  }
+
+  if (!data.nameInfo || !data.nameInfo.info) {
+    throw new Error('The Shakedex channel could not find the listing name on-chain.');
+  }
+
+  return data.nameInfo;
+}
+
+function isMissingNameInfo(result) {
+  return !result || !result.info;
+}
+
+const SHAKEDEX_SPV_FALLBACK_FEE_RATE = 5000;
+
+function isMissingFeeEstimate(result) {
+  const fee = Number(result && result.fee);
+  return !Number.isFinite(fee) || fee <= 0;
+}
+
+function getFallbackFeeEstimate() {
+  return {
+    fee: SHAKEDEX_SPV_FALLBACK_FEE_RATE,
+    blocks: 10,
+  };
+}
+
 export async function getMarketHsdStatus() {
   try {
     const resp = await fetch(`${await getMarketApiBaseUrl()}/api/v2/hsd/status`);
@@ -181,13 +246,14 @@ export async function getMarketHsdStatus() {
   }
 }
 
-export async function getChannelExpiringNames(limit = 100) {
+async function getExpiringNamesFeed(limit = 100, scope = '') {
   const host = await getMarketApiHost();
   const safeLimit = Math.max(1, Math.min(500, Number(limit) || 100));
+  const scopeQuery = scope ? `&scope=${encodeURIComponent(scope)}` : '';
 
   try {
     const resp = await fetch(
-      `${getShakedexChannelBaseUrl({host})}/api/v2/expiring-names?limit=${safeLimit}&refresh=1`,
+      `${getShakedexChannelBaseUrl({host})}/api/v2/expiring-names?limit=${safeLimit}&refresh=1${scopeQuery}`,
     );
     const data = await resp.json();
 
@@ -203,10 +269,18 @@ export async function getChannelExpiringNames(limit = 100) {
     return {
       host,
       names: [],
-      scope: 'channel-observed',
+      scope: scope || 'channel-observed',
       error: e.message || 'This Shakedex channel does not have expiring-name data available yet.',
     };
   }
+}
+
+export async function getChannelExpiringNames(limit = 100) {
+  return getExpiringNamesFeed(limit);
+}
+
+export async function getCommunityExpiringNames(limit = 100) {
+  return getExpiringNamesFeed(limit, 'community');
 }
 
 export async function getShakedexChannelSettings() {
@@ -303,6 +377,31 @@ async function attachMarketCoinFallback(context, auction) {
 
     return getMarketListingCoin(auction);
   };
+
+  const localExecNode = context.execNode.bind(context);
+  context.execNode = async (method, ...args) => {
+    const isListingNameInfo = method === 'getnameinfo' && args[0] === auction.name;
+    const isFeeEstimate = method === 'estimatesmartfee';
+
+    try {
+      const result = await localExecNode(method, ...args);
+      if (isListingNameInfo && isMissingNameInfo(result)) {
+        return getMarketNameInfo(auction.name);
+      }
+      if (isFeeEstimate && isMissingFeeEstimate(result)) {
+        return getFallbackFeeEstimate();
+      }
+      return result;
+    } catch (e) {
+      if (isListingNameInfo) {
+        return getMarketNameInfo(auction.name);
+      }
+      if (isFeeEstimate) {
+        return getFallbackFeeEstimate();
+      }
+      throw e;
+    }
+  };
 }
 
 export async function fulfillSwap(auction, bid, passphrase) {
@@ -322,13 +421,19 @@ export async function fulfillSwap(auction, bid, passphrase) {
 
   const fulfillment = await sdFulfillSwap(context, proof);
   const fulfillmentJSON = fulfillment.toJSON();
+  if (!fulfillmentJSON.fulfillmentTxHash) {
+    throw new Error('Shakedex purchase did not return a transaction hash.');
+  }
+  await assertPurchaseNotRejected(context, fulfillmentJSON.fulfillmentTxHash);
   await put(
     `${fillsPrefix()}/${fulfillmentJSON.name}/${fulfillmentJSON.fulfillmentTxHash}`,
     {
       fulfillment: fulfillmentJSON,
     },
   );
-  notifyMarketListingSold(fulfillmentJSON.name, fulfillmentJSON.fulfillmentTxHash);
+  notifyMarketListingSold(fulfillmentJSON.name, fulfillmentJSON.fulfillmentTxHash).catch((e) => {
+    console.warn('Failed to notify Shakedex channel of purchase transaction.', e);
+  });
   return fulfillmentJSON;
 }
 
@@ -809,6 +914,7 @@ const methods = {
   getBestBid,
   getMarketHsdStatus,
   getChannelExpiringNames,
+  getCommunityExpiringNames,
   getShakedexChannelSettings,
   validateShakedexChannelHost,
   setShakedexChannelHost,

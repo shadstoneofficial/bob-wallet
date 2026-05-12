@@ -34,6 +34,20 @@
     cursor: pointer;
   }
 
+  &__tx-link {
+    @extend %link;
+
+    appearance: none;
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+    display: inline;
+    font: inherit;
+    padding: 0;
+    text-align: left;
+    word-break: break-all;
+  }
+
   &__issue-wrapper {
     margin-top: 1rem;
     font-size: .75rem;
@@ -64,6 +78,10 @@ body.bob-theme-dark {
 
     &--error {
       border-left: 4px solid $orange-red;
+    }
+
+    &__tx-link {
+      color: #58a6ff;
     }
 
     &__issue-wrapper__title {

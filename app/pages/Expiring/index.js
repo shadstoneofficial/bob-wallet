@@ -38,6 +38,11 @@ class Expiring extends Component {
     channelExpiringLoading: false,
     channelExpiringScope: '',
     channelExpiringCheckedAt: null,
+    communityExpiringNames: [],
+    communityExpiringError: '',
+    communityExpiringLoading: false,
+    communityExpiringScope: '',
+    communityExpiringCheckedAt: null,
     channelHost: DEFAULT_SHAKEDEX_CHANNEL_HOST,
   };
 
@@ -54,22 +59,32 @@ class Expiring extends Component {
     this.setState({
       channelExpiringLoading: true,
       channelExpiringError: '',
+      communityExpiringLoading: true,
+      communityExpiringError: '',
     });
 
     try {
-      const data = await shakedex.getChannelExpiringNames(100);
+      const [channelData, communityData] = await Promise.all([
+        shakedex.getChannelExpiringNames(100),
+        shakedex.getCommunityExpiringNames(100),
+      ]);
 
       if (this.unmounted) {
         return;
       }
 
       this.setState({
-        channelHost: data.host || DEFAULT_SHAKEDEX_CHANNEL_HOST,
-        channelExpiringNames: data.names || [],
-        channelExpiringScope: data.scope || 'channel-observed',
+        channelHost: channelData.host || communityData.host || DEFAULT_SHAKEDEX_CHANNEL_HOST,
+        channelExpiringNames: channelData.names || [],
+        channelExpiringScope: channelData.scope || 'channel-observed',
         channelExpiringCheckedAt: Date.now(),
         channelExpiringLoading: false,
-        channelExpiringError: data.error || '',
+        channelExpiringError: channelData.error || '',
+        communityExpiringNames: communityData.names || [],
+        communityExpiringScope: communityData.scope || 'community-observed',
+        communityExpiringCheckedAt: Date.now(),
+        communityExpiringLoading: false,
+        communityExpiringError: communityData.error || '',
       });
     } catch (e) {
       if (this.unmounted) {
@@ -79,6 +94,8 @@ class Expiring extends Component {
       this.setState({
         channelExpiringError: e.message || 'Could not load channel expiring names.',
         channelExpiringLoading: false,
+        communityExpiringError: e.message || 'Could not load community expiring names.',
+        communityExpiringLoading: false,
       });
     }
   }
@@ -184,39 +201,54 @@ class Expiring extends Component {
     });
   }
 
-  renderChannelRows() {
-    const {
-      channelExpiringNames,
-      channelExpiringLoading,
-      channelExpiringError,
-    } = this.state;
-
-    if (channelExpiringLoading) {
-      return this.renderEmptyRow('Loading channel-observed names...');
+  getObservedStatus(row) {
+    if (!row.found || row.blocksUntilExpire === null || row.blocksUntilExpire === undefined) {
+      return {
+        className: 'expiring-page__status--unknown',
+        label: row.error ? 'Not found yet' : 'Pending',
+      };
     }
 
-    if (channelExpiringError) {
-      return this.renderEmptyRow(channelExpiringError);
+    return this.getStatus(row.blocksUntilExpire);
+  }
+
+  renderObservedRows({
+    rows,
+    loading,
+    error,
+    loadingMessage,
+    emptyMessage,
+    includeUnresolved = false,
+  }) {
+    if (loading) {
+      return this.renderEmptyRow(loadingMessage);
     }
 
-    const rows = channelExpiringNames
-      .filter(row => row.found && row.blocksUntilExpire !== null && row.blocksUntilExpire !== undefined)
-      .slice()
+    if (error) {
+      return this.renderEmptyRow(error);
+    }
+
+    const visibleRows = rows
+      .filter(row => includeUnresolved || (row.found && row.blocksUntilExpire !== null && row.blocksUntilExpire !== undefined))
       .sort((a, b) => {
-        const expirationCompare = a.blocksUntilExpire - b.blocksUntilExpire;
+        const aBlocks = a.blocksUntilExpire ?? Number.MAX_SAFE_INTEGER;
+        const bBlocks = b.blocksUntilExpire ?? Number.MAX_SAFE_INTEGER;
+        const expirationCompare = aBlocks - bBlocks;
         if (expirationCompare !== 0) {
           return expirationCompare;
         }
         return a.name.localeCompare(b.name);
       });
 
-    if (!rows.length) {
-      return this.renderEmptyRow('No channel-observed expiring names yet.');
+    if (!visibleRows.length) {
+      return this.renderEmptyRow(emptyMessage);
     }
 
-    return rows.map(row => {
-      const status = this.getStatus(row.blocksUntilExpire);
-      const estimatedDate = typeof row.daysUntilExpire === 'number'
+    return visibleRows.map(row => {
+      const status = this.getObservedStatus(row);
+      const estimatedDate = row.blocksUntilExpire === null || row.blocksUntilExpire === undefined
+        ? '-'
+        : typeof row.daysUntilExpire === 'number'
         ? moment().add(row.daysUntilExpire, 'days').format('YYYY-MM-DD')
         : moment().add(row.blocksUntilExpire * AVERAGE_BLOCK_TIME).format('YYYY-MM-DD');
 
@@ -225,7 +257,7 @@ class Expiring extends Component {
           <TableItem className="expiring-page__domain-cell" width="16rem" grow={0} shrink={0}>{formatName(row.name)}</TableItem>
           <TableItem className="expiring-page__date-cell" width="10rem" grow={0} shrink={0}>{row.expirationHeight || '-'}</TableItem>
           <TableItem className="expiring-page__date-cell" width="12rem" grow={0} shrink={0}>{estimatedDate}</TableItem>
-          <TableItem className="expiring-page__blocks-cell" width="11rem" grow={0} shrink={0}>{row.blocksUntilExpire}</TableItem>
+          <TableItem className="expiring-page__blocks-cell" width="11rem" grow={0} shrink={0}>{row.blocksUntilExpire ?? '-'}</TableItem>
           <TableItem className="expiring-page__status-cell" width="8rem" grow={0} shrink={0}>
             <span className={`expiring-page__status ${status.className}`}>
               {status.label}
@@ -278,7 +310,7 @@ class Expiring extends Component {
           <div>
             <h3>Channel-Observed Names</h3>
             <p>
-              Names observed by {this.state.channelHost}. This is not the full global expiry list yet.
+              Listings and pending listings observed by {this.state.channelHost}. This is not the full global expiry list yet.
             </p>
             {this.state.channelExpiringCheckedAt && (
               <p className="expiring-page__checked-at">
@@ -302,7 +334,43 @@ class Expiring extends Component {
             <HeaderItem width="11rem" grow={0} shrink={0}>{t('blocksRemaining')}</HeaderItem>
             <HeaderItem width="8rem" grow={0} shrink={0}>{t('expirationStatus')}</HeaderItem>
           </HeaderRow>
-          {this.renderChannelRows()}
+          {this.renderObservedRows({
+            rows: this.state.channelExpiringNames,
+            loading: this.state.channelExpiringLoading,
+            error: this.state.channelExpiringError,
+            loadingMessage: 'Loading channel-observed names...',
+            emptyMessage: 'No channel-observed expiring names yet.',
+          })}
+        </Table>
+        <div className="expiring-page__section-header expiring-page__section-header--spaced">
+          <div>
+            <h3>Community-Observed Names</h3>
+            <p>
+              Names imported by the LearnHNS community and refreshed against HSD when available.
+            </p>
+            {this.state.communityExpiringCheckedAt && (
+              <p className="expiring-page__checked-at">
+                Checked {moment(this.state.communityExpiringCheckedAt).format('HH:mm:ss')} · {this.state.communityExpiringScope}
+              </p>
+            )}
+          </div>
+        </div>
+        <Table className="expiring-page__table">
+          <HeaderRow>
+            <HeaderItem width="16rem" grow={0} shrink={0}>{t('domain')}</HeaderItem>
+            <HeaderItem width="10rem" grow={0} shrink={0}>{t('expiresOn')}</HeaderItem>
+            <HeaderItem width="12rem" grow={0} shrink={0}>{t('estimatedExpirationDate')}</HeaderItem>
+            <HeaderItem width="11rem" grow={0} shrink={0}>{t('blocksRemaining')}</HeaderItem>
+            <HeaderItem width="8rem" grow={0} shrink={0}>{t('expirationStatus')}</HeaderItem>
+          </HeaderRow>
+          {this.renderObservedRows({
+            rows: this.state.communityExpiringNames,
+            loading: this.state.communityExpiringLoading,
+            error: this.state.communityExpiringError,
+            loadingMessage: 'Loading community-observed names...',
+            emptyMessage: 'No community-observed names imported yet.',
+            includeUnresolved: true,
+          })}
         </Table>
       </div>
     );

@@ -206,8 +206,10 @@ export const stopWalletSync = () => async (dispatch) => {
   await dispatch({type: STOP_SYNC_WALLET});
 };
 
+const WALLET_SYNC_STALL_LIMIT_SECONDS = 180;
+
 export const waitForWalletSync = () => async (dispatch, getState) => {
-  let lastProgress = 0;
+  let lastProgressKey = '';
   let stall = 0;
 
   for (; ;) {
@@ -215,27 +217,33 @@ export const waitForWalletSync = () => async (dispatch, getState) => {
     const nodeHeight = state.node.chain.height;
     const {walletHeight, rescanHeight, walletSync} = state.wallet;
 
-    let progress;
     if (walletSync) {
-      progress = walletHeight / rescanHeight * 100;
-    } else {
-      progress = walletHeight / nodeHeight * 100;
+      if (rescanHeight === null || walletHeight >= rescanHeight) {
+        break;
+      }
+    } else if (nodeHeight && walletHeight >= nodeHeight) {
+      break;
     }
 
-    // If we go 50 seconds without any progress, throw an error
-    if (lastProgress === progress) {
+    let progress;
+    if (walletSync && rescanHeight) {
+      progress = walletHeight / rescanHeight * 100;
+    } else if (nodeHeight) {
+      progress = walletHeight / nodeHeight * 100;
+    } else {
+      progress = 0;
+    }
+
+    const progressKey = `${walletSync}:${walletHeight}:${rescanHeight}:${nodeHeight}:${progress.toFixed(4)}`;
+    if (lastProgressKey === progressKey) {
       stall++;
     } else {
-      lastProgress = progress;
+      lastProgressKey = progressKey;
       stall = 0;
     }
 
-    if (stall >= 50) {
+    if (stall >= WALLET_SYNC_STALL_LIMIT_SECONDS) {
       throw new Error('Wallet sync progress has stalled.');
-    }
-
-    if (walletSync ? (rescanHeight === null) : (progress === 100)) {
-      break;
     }
 
     await new Promise((r) => setTimeout(r, 1000));
