@@ -246,14 +246,15 @@ export async function getMarketHsdStatus() {
   }
 }
 
-async function getExpiringNamesFeed(limit = 100, scope = '') {
+async function getExpiringNamesFeed(limit = 100, scope = '', options = {}) {
   const host = await getMarketApiHost();
   const safeLimit = Math.max(1, Math.min(500, Number(limit) || 100));
   const scopeQuery = scope ? `&scope=${encodeURIComponent(scope)}` : '';
+  const statusQuery = options.status ? `&status=${encodeURIComponent(options.status)}` : '';
 
   try {
     const resp = await fetch(
-      `${getShakedexChannelBaseUrl({host})}/api/v2/expiring-names?limit=${safeLimit}&refresh=1${scopeQuery}`,
+      `${getShakedexChannelBaseUrl({host})}/api/v2/expiring-names?limit=${safeLimit}&refresh=1${scopeQuery}${statusQuery}`,
     );
     const data = await resp.json();
 
@@ -285,6 +286,10 @@ export async function getCommunityExpiringNames(limit = 100) {
 
 export async function getGlobalExpiringNames(limit = 100) {
   return getExpiringNamesFeed(limit, 'global');
+}
+
+export async function getRecentlyExpiredNames(limit = 100) {
+  return getExpiringNamesFeed(limit, 'global', {status: 'expired'});
 }
 
 export async function getShakedexChannelSettings() {
@@ -920,6 +925,7 @@ const methods = {
   getChannelExpiringNames,
   getCommunityExpiringNames,
   getGlobalExpiringNames,
+  getRecentlyExpiredNames,
   getShakedexChannelSettings,
   validateShakedexChannelHost,
   setShakedexChannelHost,
