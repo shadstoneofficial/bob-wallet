@@ -43,6 +43,12 @@ class Expiring extends Component {
     communityExpiringLoading: false,
     communityExpiringScope: '',
     communityExpiringCheckedAt: null,
+    globalExpiringNames: [],
+    globalExpiringError: '',
+    globalExpiringLoading: false,
+    globalExpiringScope: '',
+    globalExpiringCheckedAt: null,
+    globalExpiringIndexer: null,
     channelHost: DEFAULT_SHAKEDEX_CHANNEL_HOST,
   };
 
@@ -61,12 +67,15 @@ class Expiring extends Component {
       channelExpiringError: '',
       communityExpiringLoading: true,
       communityExpiringError: '',
+      globalExpiringLoading: true,
+      globalExpiringError: '',
     });
 
     try {
-      const [channelData, communityData] = await Promise.all([
+      const [channelData, communityData, globalData] = await Promise.all([
         shakedex.getChannelExpiringNames(100),
         shakedex.getCommunityExpiringNames(100),
+        shakedex.getGlobalExpiringNames(100),
       ]);
 
       if (this.unmounted) {
@@ -74,7 +83,7 @@ class Expiring extends Component {
       }
 
       this.setState({
-        channelHost: channelData.host || communityData.host || DEFAULT_SHAKEDEX_CHANNEL_HOST,
+        channelHost: channelData.host || communityData.host || globalData.host || DEFAULT_SHAKEDEX_CHANNEL_HOST,
         channelExpiringNames: channelData.names || [],
         channelExpiringScope: channelData.scope || 'channel-observed',
         channelExpiringCheckedAt: Date.now(),
@@ -85,6 +94,12 @@ class Expiring extends Component {
         communityExpiringCheckedAt: Date.now(),
         communityExpiringLoading: false,
         communityExpiringError: communityData.error || '',
+        globalExpiringNames: globalData.names || [],
+        globalExpiringScope: globalData.scope || 'global',
+        globalExpiringCheckedAt: Date.now(),
+        globalExpiringLoading: false,
+        globalExpiringError: globalData.error || '',
+        globalExpiringIndexer: globalData.indexer || null,
       });
     } catch (e) {
       if (this.unmounted) {
@@ -96,6 +111,8 @@ class Expiring extends Component {
         channelExpiringLoading: false,
         communityExpiringError: e.message || 'Could not load community expiring names.',
         communityExpiringLoading: false,
+        globalExpiringError: e.message || 'Could not load global expiring names.',
+        globalExpiringLoading: false,
       });
     }
   }
@@ -340,6 +357,36 @@ class Expiring extends Component {
             error: this.state.channelExpiringError,
             loadingMessage: 'Loading channel-observed names...',
             emptyMessage: 'No channel-observed expiring names yet.',
+          })}
+        </Table>
+        <div className="expiring-page__section-header expiring-page__section-header--spaced">
+          <div>
+            <h3>Global Expiring Names</h3>
+            <p>
+              Chain-observed names from the LearnHNS global indexer. This index is live, but still marked forward-only until a full historical backfill is complete.
+            </p>
+            {this.state.globalExpiringCheckedAt && (
+              <p className="expiring-page__checked-at">
+                Checked {moment(this.state.globalExpiringCheckedAt).format('HH:mm:ss')} · {this.state.globalExpiringScope}
+                {this.state.globalExpiringIndexer?.status ? ` · ${this.state.globalExpiringIndexer.status}` : ''}
+              </p>
+            )}
+          </div>
+        </div>
+        <Table className="expiring-page__table">
+          <HeaderRow>
+            <HeaderItem width="16rem" grow={0} shrink={0}>{t('domain')}</HeaderItem>
+            <HeaderItem width="10rem" grow={0} shrink={0}>{t('expiresOn')}</HeaderItem>
+            <HeaderItem width="12rem" grow={0} shrink={0}>{t('estimatedExpirationDate')}</HeaderItem>
+            <HeaderItem width="11rem" grow={0} shrink={0}>{t('blocksRemaining')}</HeaderItem>
+            <HeaderItem width="8rem" grow={0} shrink={0}>{t('expirationStatus')}</HeaderItem>
+          </HeaderRow>
+          {this.renderObservedRows({
+            rows: this.state.globalExpiringNames,
+            loading: this.state.globalExpiringLoading,
+            error: this.state.globalExpiringError,
+            loadingMessage: 'Loading global expiring names...',
+            emptyMessage: 'No global expiring names indexed yet.',
           })}
         </Table>
         <div className="expiring-page__section-header expiring-page__section-header--spaced">

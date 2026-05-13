@@ -283,6 +283,10 @@ export async function getCommunityExpiringNames(limit = 100) {
   return getExpiringNamesFeed(limit, 'community');
 }
 
+export async function getGlobalExpiringNames(limit = 100) {
+  return getExpiringNamesFeed(limit, 'global');
+}
+
 export async function getShakedexChannelSettings() {
   const host = await getMarketApiHost();
   return {
@@ -915,6 +919,7 @@ const methods = {
   getMarketHsdStatus,
   getChannelExpiringNames,
   getCommunityExpiringNames,
+  getGlobalExpiringNames,
   getShakedexChannelSettings,
   validateShakedexChannelHost,
   setShakedexChannelHost,
