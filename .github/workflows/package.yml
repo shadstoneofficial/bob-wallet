@@ -44,7 +44,7 @@ jobs:
           $NodeDirPath = Split-Path $WhereNode -Parent
           $NodeModulesPath = $NodeDirPath + "\node_modules\npm\node_modules\@npmcli\run-script"
           cd $NodeModulesPath
-          npm install node-gyp@latest
+          npm install node-gyp@9.4.1
 
       - name: Install dependencies (linux only)
         if: startsWith(matrix.os, 'ubuntu')
