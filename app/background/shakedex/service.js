@@ -12,8 +12,11 @@ import {
   transferNameLockCancel,
   finalizeNameLockCancel,
 } from 'shakedex/src/swapService.js';
+import { createFinalize as sdCreateFinalize } from 'shakedex/src/utils.js';
 import { SwapFill } from 'shakedex/src/swapFill.js';
+import { SwapFinalize } from 'shakedex/src/swapFinalize.js';
 import { Auction, AuctionFactory, linearReductionStrategy } from 'shakedex/src/auction.js';
+const Coin = require('hsd/lib/primitives/coin.js');
 const jsonSchemaValidate = require('jsonschema').validate;
 import { NameLockFinalize } from 'shakedex/src/nameLock.js';
 import stream from 'stream';
@@ -167,7 +170,11 @@ export async function listAuction(auction) {
       auction,
     }),
   });
-  return resp.json();
+  const json = await resp.json();
+  if (resp.ok && !json.error) {
+    await saveMarketSubmission(auction, json);
+  }
+  return json;
 }
 
 async function getMarketListingCoin(auction) {
@@ -194,6 +201,23 @@ async function getMarketListingCoin(auction) {
     || !data.coin
   ) {
     throw new Error('The Shakedex channel returned coin data for a different listing.');
+  }
+
+  return data.coin;
+}
+
+async function getMarketCoin(txHash, outputIndex) {
+  const resp = await fetch(
+    `${await getMarketApiBaseUrl()}/api/v2/coin/${txHash}/${outputIndex}`,
+  );
+  const data = await resp.json();
+
+  if (!resp.ok || !data.coin) {
+    throw new Error(data.error || 'The Shakedex channel could not provide transfer coin data.');
+  }
+
+  if (data.txHash !== txHash || Number(data.outputIndex) !== Number(outputIndex)) {
+    throw new Error('The Shakedex channel returned coin data for a different transfer.');
   }
 
   return data.coin;
@@ -364,6 +388,115 @@ async function notifyMarketListingCancelled(name, cancelTxHash) {
   });
 }
 
+function getListingModeForMarket(params = {}) {
+  return params.mode === LISTING_MODES.REVERSE ? 'reverse-auction' : 'fixed-price';
+}
+
+function getExpectedPriceForMarket(params = {}) {
+  if (params.mode === LISTING_MODES.REVERSE) {
+    return Number.isFinite(params.startPrice) ? params.startPrice : null;
+  }
+
+  return Number.isFinite(params.price) ? params.price : null;
+}
+
+function getAddressString(address, networkName) {
+  if (!address) {
+    return null;
+  }
+
+  if (typeof address === 'string') {
+    return address;
+  }
+
+  if (typeof address.toString === 'function') {
+    return address.toString(networkName);
+  }
+
+  return null;
+}
+
+async function findTransferOutputIdx(transferTxHash, name) {
+  try {
+    const [{ info: { nameHash } }, transferTx] = await Promise.all([
+      nodeService.getNameInfo(name),
+      nodeService.getTx(transferTxHash),
+    ]);
+
+    if (!transferTx || !Array.isArray(transferTx.outputs)) {
+      return null;
+    }
+
+    const idx = transferTx.outputs.findIndex((output) => (
+      (output.covenant.action === 'TRANSFER' || output.covenant.type === 9)
+      && output.covenant.items
+      && output.covenant.items[0] === nameHash
+    ));
+
+    return idx >= 0 ? idx : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function publishPendingListing(nameLock, params) {
+  const payload = {
+    name: nameLock.name,
+    network: nodeService.networkName,
+    transferTxHash: nameLock.transferTxHash,
+    transferOutputIdx: Number.isInteger(nameLock.transferOutputIdx)
+      ? nameLock.transferOutputIdx
+      : await findTransferOutputIdx(nameLock.transferTxHash, nameLock.name),
+    lockScriptAddr: getAddressString(nameLock.lockScriptAddr, nodeService.networkName),
+    listingMode: getListingModeForMarket(params),
+    expectedPrice: getExpectedPriceForMarket(params),
+    sellerNote: 'Pending Shakedex listing. Final proof will be uploaded after the transfer lock matures.',
+  };
+
+  const resp = await fetch(`${await getMarketApiBaseUrl()}/api/v2/pending-listings`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  const json = await resp.json();
+
+  if (!resp.ok) {
+    throw new Error(json.error || 'The Shakedex channel could not publish the pending listing.');
+  }
+
+  return json;
+}
+
+async function saveMarketSubmission(auction, response) {
+  const updates = [];
+  await iteratePrefix(listingPrefix(), (key, value) => {
+    const listing = JSON.parse(value.toString('utf-8'));
+    const listingAuction = listing.auction || {};
+    if (
+      listingAuction.name === auction.name
+      && listingAuction.lockingTxHash === auction.lockingTxHash
+      && listingAuction.lockingOutputIdx === auction.lockingOutputIdx
+    ) {
+      updates.push({
+        key: key.toString('utf-8'),
+        listing: {
+          ...listing,
+          marketSubmission: {
+            submittedAt: Date.now(),
+            response,
+          },
+        },
+      });
+    }
+  });
+
+  for (const update of updates) {
+    await put(update.key, update.listing);
+  }
+}
+
 async function attachMarketCoinFallback(context, auction) {
   if (!await nodeService.getSpvMode()) {
     return;
@@ -413,6 +546,193 @@ async function attachMarketCoinFallback(context, auction) {
   };
 }
 
+async function finalizeSwapWithMarketFallback(context, fulfillment) {
+  const transferOutputIdx = 0;
+  const [transferCoinJSON, nameInfo] = await Promise.all([
+    getMarketCoin(fulfillment.fulfillmentTxHash, transferOutputIdx),
+    getMarketNameInfo(fulfillment.name),
+  ]);
+  const lockup = nameInfo.info && nameInfo.info.stats
+    ? Number(nameInfo.info.stats.blocksUntilValidFinalize)
+    : null;
+
+  if (Number.isFinite(lockup) && lockup > 0) {
+    throw new Error(`Transfer lockup is not complete. Try again in ${lockup} block(s).`);
+  }
+
+  const localExecNode = context.execNode.bind(context);
+  context.execNode = async (method, ...args) => {
+    const isNameInfo = method === 'getnameinfo' && args[0] === fulfillment.name;
+    const isFeeEstimate = method === 'estimatesmartfee';
+
+    try {
+      const result = await localExecNode(method, ...args);
+      if (isNameInfo && isMissingNameInfo(result)) {
+        return nameInfo;
+      }
+      if (isFeeEstimate && isMissingFeeEstimate(result)) {
+        return getFallbackFeeEstimate();
+      }
+      return result;
+    } catch (e) {
+      if (isNameInfo) {
+        return nameInfo;
+      }
+      if (isFeeEstimate) {
+        return getFallbackFeeEstimate();
+      }
+      throw e;
+    }
+  };
+
+  const localGetBlock = context.nodeClient.getBlock.bind(context.nodeClient);
+  context.nodeClient.getBlock = async (height) => {
+    try {
+      return await localGetBlock(height);
+    } catch (e) {
+      return nodeService.getBlock(height);
+    }
+  };
+
+  await context.unlockWallet();
+  const transferCoin = new Coin().fromJSON(transferCoinJSON);
+  const mtx = await sdCreateFinalize(
+    context,
+    fulfillment.name,
+    transferCoin,
+    fulfillment.lockingPublicKey,
+  );
+  await context.execNode('sendrawtransaction', mtx.toHex());
+
+  return new SwapFinalize({
+    name: fulfillment.name,
+    finalizeTxHash: mtx.toJSON().hash,
+    broadcastAt: Date.now(),
+  });
+}
+
+async function getTransferCoinForNameLock(nameLock) {
+  const nameInfo = await getMarketNameInfo(nameLock.name);
+  let transferOutputIdx = Number.isInteger(nameLock.transferOutputIdx)
+    ? nameLock.transferOutputIdx
+    : null;
+
+  const owner = nameInfo.info && nameInfo.info.owner;
+  if (
+    transferOutputIdx === null
+    && owner
+    && owner.hash === nameLock.transferTxHash
+    && Number.isInteger(owner.index)
+  ) {
+    transferOutputIdx = owner.index;
+  }
+
+  if (transferOutputIdx === null) {
+    transferOutputIdx = await findTransferOutputIdx(nameLock.transferTxHash, nameLock.name);
+  }
+
+  if (transferOutputIdx === null) {
+    throw new Error('Could not find the Shakedex lock transfer output. Wait for the channel to index the transfer, then try again.');
+  }
+
+  const lockup = nameInfo.info && nameInfo.info.stats
+    ? Number(nameInfo.info.stats.blocksUntilValidFinalize)
+    : null;
+
+  if (Number.isFinite(lockup) && lockup > 0) {
+    throw new Error(`Transfer lockup is not complete. Try again in ${lockup} block(s).`);
+  }
+
+  return {
+    nameInfo,
+    transferCoinJSON: await getMarketCoin(nameLock.transferTxHash, transferOutputIdx),
+  };
+}
+
+function attachSellerFinalizeFallbacks(context, name, nameInfo) {
+  const localExecNode = context.execNode.bind(context);
+  context.execNode = async (method, ...args) => {
+    const isNameInfo = method === 'getnameinfo' && args[0] === name;
+    const isFeeEstimate = method === 'estimatesmartfee';
+
+    try {
+      const result = await localExecNode(method, ...args);
+      if (isNameInfo && isMissingNameInfo(result)) {
+        return nameInfo;
+      }
+      if (isFeeEstimate && isMissingFeeEstimate(result)) {
+        return getFallbackFeeEstimate();
+      }
+      return result;
+    } catch (e) {
+      if (isNameInfo) {
+        return nameInfo;
+      }
+      if (isFeeEstimate) {
+        return getFallbackFeeEstimate();
+      }
+      throw e;
+    }
+  };
+
+  const localGetBlock = context.nodeClient.getBlock.bind(context.nodeClient);
+  context.nodeClient.getBlock = async (height) => {
+    try {
+      return await localGetBlock(height);
+    } catch (e) {
+      return nodeService.getBlock(height);
+    }
+  };
+}
+
+async function finalizeNameLockWithMarketFallback(context, nameLock, password) {
+  const { nameInfo, transferCoinJSON } = await getTransferCoinForNameLock(nameLock);
+  const privateKey = Buffer.from(decrypt(nameLock.encryptedPrivateKey, password), 'hex');
+  const publicKey = secp256k1.publicKeyCreate(privateKey);
+  attachSellerFinalizeFallbacks(context, nameLock.name, nameInfo);
+
+  await context.unlockWallet();
+  const transferCoin = new Coin().fromJSON(transferCoinJSON);
+  const mtx = await sdCreateFinalize(
+    context,
+    nameLock.name,
+    transferCoin,
+    publicKey,
+  );
+  await context.execNode('sendrawtransaction', mtx.toHex());
+
+  return new NameLockFinalize({
+    name: nameLock.name,
+    finalizeTxHash: mtx.toJSON().hash,
+    finalizeOutputIdx: 0,
+    privateKey,
+    broadcastAt: Date.now(),
+  });
+}
+
+function attachSellerLockCoinFallback(context, lockFinalize, coinJSON) {
+  const lockHash = `${lockFinalize.finalizeTxHash}`;
+  const lockIndex = Number(lockFinalize.finalizeOutputIdx);
+  const localGetCoin = context.nodeClient.getCoin.bind(context.nodeClient);
+
+  context.nodeClient.getCoin = async (hash, index) => {
+    const isLockCoin = hash === lockHash && Number(index) === lockIndex;
+
+    try {
+      const coin = await localGetCoin(hash, index);
+      if (coin || !isLockCoin) {
+        return coin;
+      }
+    } catch (e) {
+      if (!isLockCoin) {
+        throw e;
+      }
+    }
+
+    return coinJSON;
+  };
+}
+
 export async function fulfillSwap(auction, bid, passphrase) {
   const context = getContext(passphrase);
   await attachMarketCoinFallback(context, auction);
@@ -449,7 +769,9 @@ export async function fulfillSwap(auction, bid, passphrase) {
 export async function finalizeSwap(fulfillmentJSON, passphrase) {
   const context = getContext(passphrase);
   const fulfillment = new SwapFill(fulfillmentJSON);
-  const finalize = await sdFinalizeSwap(context, fulfillment);
+  const finalize = await nodeService.getSpvMode()
+    ? await finalizeSwapWithMarketFallback(context, fulfillment)
+    : await sdFinalizeSwap(context, fulfillment);
   const out = {
     fulfillment: fulfillmentJSON,
     finalize: finalize.toJSON(),
@@ -461,10 +783,10 @@ export async function finalizeSwap(fulfillmentJSON, passphrase) {
   return out;
 }
 
-export async function getFulfillments() {
+export async function getFulfillments(walletName = null) {
   const swaps = [];
   await iteratePrefix(
-    fillsPrefix(),
+    fillsPrefix(walletName),
     (key, value) => swaps.push(
       JSON.parse(value.toString('utf-8')),
     ),
@@ -472,14 +794,16 @@ export async function getFulfillments() {
   return swaps;
 }
 
-function fillsPrefix() {
-  const walletName = walletService.name;
-  return `exchange/fills/${walletName}`;
+function fillsPrefix(walletName = null) {
+  return `exchange/fills/${getWalletScopeName(walletName)}`;
 }
 
-function listingPrefix() {
-  const walletName = walletService.name;
-  return `exchange/listings/${walletName}`;
+function listingPrefix(walletName = null) {
+  return `exchange/listings/${getWalletScopeName(walletName)}`;
+}
+
+function getWalletScopeName(walletName = null) {
+  return `${walletName || walletService.name || ''}`.toLowerCase();
 }
 
 const LISTING_MODES = {
@@ -491,6 +815,12 @@ export async function transferLock(name, params, password) {
   const context = getContext(password);
   const nameLock = await transferNameLock(context, name);
   const {privateKey, ...nameLockJSON} = nameLock.toJSON();
+  if (!Number.isInteger(nameLockJSON.transferOutputIdx)) {
+    nameLockJSON.transferOutputIdx = await findTransferOutputIdx(
+      nameLockJSON.transferTxHash,
+      nameLockJSON.name,
+    );
+  }
   const out = {
     nameLock: {
       ...nameLockJSON,
@@ -498,6 +828,12 @@ export async function transferLock(name, params, password) {
     },
     params,
   };
+  try {
+    out.pendingListing = await publishPendingListing(nameLockJSON, params);
+  } catch (e) {
+    out.pendingListingError = e.message;
+    console.warn('Failed to publish pending Shakedex listing.', e);
+  }
   await put(
     `${listingPrefix()}/${nameLockJSON.name}/${nameLockJSON.transferTxHash}`,
     out,
@@ -513,6 +849,7 @@ export async function transferCancel(nameLock, password) {
   const {
     tx: finalizeTx,
     coin: finalizeCoin,
+    outputIdx: finalizeOutputIdx,
   } = await getFinalizeFromTransferTx(
     nameLock.transferTxHash,
     nameLock.name,
@@ -522,7 +859,7 @@ export async function transferCancel(nameLock, password) {
   const cancelNameLock = await transferNameLockCancel(context, {
     ...nameLock,
     finalizeTxHash: finalizeTx.hash,
-    finalizeOutputIdx: finalizeCoin.index,
+    finalizeOutputIdx: finalizeCoin.index ?? finalizeOutputIdx,
     publicKey: Buffer.from(nameLock.publicKey, 'hex'),
     privateKey: Buffer.from(decrypt(nameLock.encryptedPrivateKey, password), 'hex'),
   });
@@ -618,10 +955,18 @@ export async function restoreOneFill(fill) {
 
 export async function finalizeLock(nameLock, password) {
   const context = getContext(password);
-  const finalizeLock = await finalizeNameLock(context, {
-    ...nameLock,
-    privateKey: decrypt(nameLock.encryptedPrivateKey, password),
-  });
+  let finalizeLock;
+  try {
+    finalizeLock = await finalizeNameLock(context, {
+      ...nameLock,
+      privateKey: decrypt(nameLock.encryptedPrivateKey, password),
+    });
+  } catch (e) {
+    if (!await nodeService.getSpvMode()) {
+      throw e;
+    }
+    finalizeLock = await finalizeNameLockWithMarketFallback(context, nameLock, password);
+  }
   const {privateKey, ...finalizeLockJSON} = finalizeLock.toJSON();
   const existing = await get(
     `${listingPrefix()}/${nameLock.name}/${nameLock.transferTxHash}`,
@@ -640,10 +985,10 @@ export async function finalizeLock(nameLock, password) {
   return out;
 }
 
-export async function getListings() {
+export async function getListings(walletName = null) {
   const listings = [];
   await iteratePrefix(
-    listingPrefix(),
+    listingPrefix(walletName),
     (key, value) => listings.push(
       JSON.parse(value.toString('utf-8')),
     ),
@@ -678,6 +1023,7 @@ export async function launchAuction(nameLock, passphrase, paramsOverride, persis
     const {
       tx: finalizeTx,
       coin: finalizeCoin,
+      outputIdx: finalizeOutputIdx,
     } = await getFinalizeFromTransferTx(
       listing.nameLock.transferTxHash,
       listing.nameLock.name,
@@ -687,14 +1033,16 @@ export async function launchAuction(nameLock, passphrase, paramsOverride, persis
     if (!finalizeCoin) throw new Error('cannot find finalize coin');
 
     const mtp = await nodeService.getMTP();
+    const lockFinalize = new NameLockFinalize({
+      ...listing.nameLock,
+      finalizeTxHash: finalizeTx.hash,
+      finalizeOutputIdx: finalizeCoin.index ?? finalizeOutputIdx,
+      privateKey: decrypt(listing.nameLock.encryptedPrivateKey, passphrase),
+    });
+    attachSellerLockCoinFallback(context, lockFinalize, finalizeCoin);
     const fixedAuction = await createFixedPriceAuction({
       context,
-      lockFinalize: new NameLockFinalize({
-        ...listing.nameLock,
-        finalizeTxHash: finalizeTx.hash,
-        finalizeOutputIdx: finalizeCoin.index,
-        privateKey: decrypt(listing.nameLock.encryptedPrivateKey, passphrase),
-      }),
+      lockFinalize,
       price,
       lockTime: mtp >>> 0,
       feeRate: feeRate || 0,
@@ -729,6 +1077,7 @@ export async function launchAuction(nameLock, passphrase, paramsOverride, persis
   const {
     tx: finalizeTx,
     coin: finalizeCoin,
+    outputIdx: finalizeOutputIdx,
   } = await getFinalizeFromTransferTx(
     listing.nameLock.transferTxHash,
     listing.nameLock.name,
@@ -738,6 +1087,13 @@ export async function launchAuction(nameLock, passphrase, paramsOverride, persis
   if (!finalizeCoin) throw new Error('cannot find finalize coin');
 
   const mtp = await nodeService.getMTP();
+  const lockFinalize = new NameLockFinalize({
+    ...listing.nameLock,
+    finalizeTxHash: finalizeTx.hash,
+    finalizeOutputIdx: finalizeCoin.index ?? finalizeOutputIdx,
+    privateKey: decrypt(listing.nameLock.encryptedPrivateKey, passphrase)
+  });
+  attachSellerLockCoinFallback(context, lockFinalize, finalizeCoin);
 
   const auctionFactory = new AuctionFactory({
     name: listing.nameLock.name,
@@ -753,12 +1109,7 @@ export async function launchAuction(nameLock, passphrase, paramsOverride, persis
 
   const auction = await auctionFactory.createAuction(
     context,
-    new NameLockFinalize({
-      ...listing.nameLock,
-      finalizeTxHash: finalizeTx.hash,
-      finalizeOutputIdx: finalizeCoin.index,
-      privateKey: decrypt(listing.nameLock.encryptedPrivateKey, passphrase)
-    }),
+    lockFinalize,
   );
   const auctionJSON = auction.toJSON(context);
   if (persist) {
@@ -886,9 +1237,9 @@ function getContext(passphrase = null) {
     nodeApiKey,
   );
 
-  // Bob LearnHNS test builds run HSD on offset ports so they can coexist with
+  // Bob LearnHNS fork builds run HSD on offset ports so they can coexist with
   // production Bob. Shakedex's Context defaults to network ports, so wire the
-  // active Bob node/wallet ports explicitly before any fulfillment call.
+  // active Bob node/wallet ports explicitly before any Shakedex operation.
   context.nodeClient = new NodeClient({
     port: nodeService.getRpcPort(),
     host,

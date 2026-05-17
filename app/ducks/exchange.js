@@ -5,6 +5,7 @@ import { showSuccess, showError } from './notifications.js';
 import networks from 'hsd/lib/protocol/networks.js';
 import {getFinalizeFromTransferTx} from "../utils/shakedex";
 import { LISTING_STATUS } from '../constants/exchange.js';
+import { SET_WALLET } from './walletReducer.js';
 
 const shakedex = shakedexClientStub(() => require('electron').ipcRenderer);
 const nodeClient = nodeClientStub(() => require('electron').ipcRenderer);
@@ -119,14 +120,15 @@ export const getExchangeAuctions = () => async (dispatch, getState) => {
   });
 };
 
-export const getExchangeFullfillments = () => async dispatch => {
+export const getExchangeFullfillments = () => async (dispatch, getState) => {
   dispatch({
     type: GET_EXCHANGE_FULLFILLMENTS,
   });
+  const walletId = getState().wallet.wid;
 
   let fulfillments;
   try {
-    fulfillments = await shakedex.getFulfillments();
+    fulfillments = await shakedex.getFulfillments(walletId);
   } catch (e) {
     dispatch({
       type: GET_EXCHANGE_FULLFILLMENTS_ERR,
@@ -134,6 +136,10 @@ export const getExchangeFullfillments = () => async dispatch => {
         message: e.message,
       },
     });
+    return;
+  }
+
+  if (walletId !== getState().wallet.wid) {
     return;
   }
 
@@ -165,6 +171,10 @@ export const getExchangeFullfillments = () => async dispatch => {
     fulfillment.status = finalizeTx && finalizeTx.height > -1 ? FULFILLMENT_STATUS.FINALIZED : FULFILLMENT_STATUS.FINALIZING;
   }
 
+  if (walletId !== getState().wallet.wid) {
+    return;
+  }
+
   dispatch({
     type: GET_EXCHANGE_FULLFILLMENTS_OK,
     payload: {
@@ -177,10 +187,11 @@ export const getExchangeListings = (page = 1) => async (dispatch, getState) => {
   dispatch({
     type: GET_EXCHANGE_LISTINGS,
   });
+  const walletId = getState().wallet.wid;
 
   let listings;
   try {
-    listings = await shakedex.getListings();
+    listings = await shakedex.getListings(walletId);
   } catch (e) {
     dispatch({
       type: GET_EXCHANGE_LISTINGS_ERR,
@@ -188,6 +199,10 @@ export const getExchangeListings = (page = 1) => async (dispatch, getState) => {
         message: e.message,
       },
     });
+    return;
+  }
+
+  if (walletId !== getState().wallet.wid) {
     return;
   }
 
@@ -213,15 +228,6 @@ export const getExchangeListings = (page = 1) => async (dispatch, getState) => {
     try {
       transferTx = await nodeClient.getTx(listing.nameLock.transferTxHash);
 
-      const finalize = await getFinalizeFromTransferTx(
-        listing.nameLock.transferTxHash,
-        listing.nameLock.name,
-        nodeClient,
-      );
-
-      finalizeTx = finalize.tx;
-      finalizeCoin = finalize.coin;
-
       cancelTx = listing.nameLockCancel
         ? await nodeClient.getTx(listing.nameLockCancel.transferTxHash)
         : null;
@@ -241,12 +247,30 @@ export const getExchangeListings = (page = 1) => async (dispatch, getState) => {
       continue;
     }
 
-    if (!finalizeTx) {
-      const blocksSinceTransfer = info.chain.height - transferTx.height;
+    const blocksSinceTransfer = info.chain.height - transferTx.height;
+    if (blocksSinceTransfer <= transferLockup) {
       listing.blocksUntilFinalize = Math.max(transferLockup - blocksSinceTransfer, 0);
-      listing.status = blocksSinceTransfer > transferLockup
-        ? LISTING_STATUS.TRANSFER_CONFIRMED
-        : LISTING_STATUS.TRANSFER_CONFIRMED_LOCKUP;
+      listing.status = LISTING_STATUS.TRANSFER_CONFIRMED_LOCKUP;
+      continue;
+    }
+
+    try {
+      const finalize = await getFinalizeFromTransferTx(
+        listing.nameLock.transferTxHash,
+        listing.nameLock.name,
+        nodeClient,
+      );
+
+      finalizeTx = finalize.tx;
+      finalizeCoin = finalize.coin;
+    } catch (e) {
+      listing.status = LISTING_STATUS.TRANSFER_CONFIRMED;
+      continue;
+    }
+
+    if (!finalizeTx) {
+      listing.blocksUntilFinalize = 0;
+      listing.status = LISTING_STATUS.TRANSFER_CONFIRMED;
       continue;
     }
 
@@ -310,6 +334,10 @@ export const getExchangeListings = (page = 1) => async (dispatch, getState) => {
     listing.status = LISTING_STATUS.SOLD;
   }
 
+  if (walletId !== getState().wallet.wid) {
+    return;
+  }
+
   dispatch({
     type: GET_EXCHANGE_LISTINGS_OK,
     payload: {
@@ -346,7 +374,7 @@ export const placeExchangeBid = (auction, bid) => async (dispatch, getState) => 
   dispatch({
     type: PLACE_EXCHANGE_BID_OK,
   });
-  dispatch(showSuccess(`Purchase transaction accepted by local HSD: ${fulfillment.fulfillmentTxHash}. Please wait for confirmation.`));
+  dispatch(showSuccess(`Purchase transaction accepted by local HSD: ${fulfillment.fulfillmentTxHash}. After the transfer lockup ends, finalize it from Your Fills.`));
 };
 
 export const finalizeExchangeBid = (fulfillment) => async (dispatch, getState) => {
@@ -359,8 +387,9 @@ export const finalizeExchangeBid = (fulfillment) => async (dispatch, getState) =
 
   const passphrase = await new Promise((resolve, reject) => dispatch(getPassphrase(resolve, reject)));
 
+  let finalized;
   try {
-    await shakedex.finalizeSwap(fulfillment, passphrase);
+    finalized = await shakedex.finalizeSwap(fulfillment, passphrase);
   } catch (e) {
     dispatch({
       type: FINALIZE_EXCHANGE_BID_ERR,
@@ -368,7 +397,7 @@ export const finalizeExchangeBid = (fulfillment) => async (dispatch, getState) =
         message: e.message,
       },
     });
-    dispatch(showError('An error occurred finalizing your bid. Please try again.'));
+    dispatch(showError(`Could not finalize Shakedex purchase: ${e.message}`));
     return;
   }
 
@@ -376,7 +405,8 @@ export const finalizeExchangeBid = (fulfillment) => async (dispatch, getState) =
   dispatch({
     type: FINALIZE_EXCHANGE_BID_OK,
   });
-  dispatch(showSuccess('Successfully finalized bid! Please wait 15 minutes for it to confirm on-chain.'));
+  const finalizeTxHash = finalized && finalized.finalize && finalized.finalize.finalizeTxHash;
+  dispatch(showSuccess(`Finalize transaction accepted by local HSD${finalizeTxHash ? `: ${finalizeTxHash}` : ''}. Please wait 15 minutes for it to confirm on-chain.`));
 };
 
 export const transferExchangeLock = (name, params) => async (dispatch) => {
@@ -539,6 +569,14 @@ export const submitToShakedex = (auction) => async dispatch => {
 
 export default function (state = getInitialState(), action) {
   switch (action.type) {
+    case SET_WALLET:
+      return {
+        ...state,
+        listings: [],
+        fulfillments: [],
+        finalizingName: null,
+      };
+
     case GET_EXCHANGE_AUCTIONS:
       return {
         ...state,

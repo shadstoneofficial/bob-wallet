@@ -17,14 +17,18 @@ const appRuntimeHints = [
   process.resourcesPath || '',
   process.argv.join(' '),
 ].join(' ');
-const isLearnHnsTestBuild = process.env.BOB_LEARNHNS_TEST === 'true'
+const isLearnHnsForkBuild = process.env.BOB_LEARNHNS_TEST === 'true'
+  || process.env.BOB_LEARNHNS_FORK === 'true'
+  || appRuntimeHints.includes('Bob LearnHNS')
   || appRuntimeHints.includes('Bob LearnHNS Test')
+  || appRuntimeHints.includes('com.learnhns.Bob')
   || appRuntimeHints.includes('com.learnhns.BobTest');
 
-if (isLearnHnsTestBuild) {
+if (isLearnHnsForkBuild) {
+  process.env.BOB_LEARNHNS_FORK = 'true';
   process.env.BOB_LEARNHNS_TEST = 'true';
-  app.setName('Bob LearnHNS Test');
-  app.setPath('userData', path.join(app.getPath('appData'), 'Bob LearnHNS Test'));
+  app.setName('Bob LearnHNS');
+  app.setPath('userData', path.join(app.getPath('appData'), 'Bob LearnHNS'));
 }
 
 require('./sentry');
@@ -41,8 +45,8 @@ if (
   require('electron-debug')();
 }
 
-if (isLearnHnsTestBuild) {
-  // Do not let local test builds take over production Bob deep links.
+if (isLearnHnsForkBuild) {
+  // Do not let LearnHNS fork builds take over production Bob deep links.
 } else if (process.env.NODE_ENV === 'development' && (process.platform === 'win32' || process.platform === 'linux')) {
   app.setAsDefaultProtocolClient('bob', process.execPath, [
     path.resolve(path.join(app.getAppPath(), 'dist', 'main.js')),

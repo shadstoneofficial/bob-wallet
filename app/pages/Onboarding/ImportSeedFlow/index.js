@@ -13,11 +13,15 @@ import walletClient from '../../../utils/walletClient';
 import * as logger from '../../../utils/logClient';
 import OptInAnalytics from '../OptInAnalytics';
 import { clientStub as aClientStub } from '../../../background/analytics/client';
+import { clientStub as nClientStub } from '../../../background/node/client';
 import { showError } from '../../../ducks/notifications';
 import SetName from '../SetName';
 import SelectWalletType from '../SelectWalletType';
+import SelectNodeMode from '../SelectNodeMode';
+import SelectRescanStrategy from '../SelectRescanStrategy';
 
 const analytics = aClientStub(() => require('electron').ipcRenderer);
+const nodeClient = nClientStub(() => require('electron').ipcRenderer);
 
 const TERMS_OF_USE = 0;
 const WARNING_STEP = 1;
@@ -26,8 +30,10 @@ const SELECT_WALLET_TYPE = 3;
 const CREATE_PASSWORD = 4;
 const ENTRY_STEP = 5;
 const OPT_IN_ANALYTICS = 6;
+const SELECT_NODE_MODE = 7;
+const SELECT_RESCAN_STRATEGY = 8;
 
-const TOTAL_STEPS = 6;
+const TOTAL_STEPS = 8;
 
 class ImportSeedFlow extends Component {
   static propTypes = {
@@ -150,7 +156,38 @@ class ImportSeedFlow extends Component {
             onBack={() => this.goTo(ENTRY_STEP)}
             onNext={async (optInState) => {
               await analytics.setOptIn(optInState);
-              await this.finishFlow();
+              this.goTo(SELECT_NODE_MODE);
+            }}
+            onCancel={() => history.push('/funding-options')}
+            isLoading={isLoading}
+          />
+        );
+      case SELECT_NODE_MODE:
+        return (
+          <SelectNodeMode
+            currentStep={currentStep}
+            totalSteps={TOTAL_STEPS}
+            onBack={() => this.goTo(OPT_IN_ANALYTICS)}
+            onNext={async (spv) => {
+              if (spv) {
+                this.goTo(SELECT_RESCAN_STRATEGY);
+                return;
+              }
+
+              await this.applyNodeModeAndFinish(false, 0);
+            }}
+            onCancel={() => history.push('/funding-options')}
+            isLoading={isLoading}
+          />
+        );
+      case SELECT_RESCAN_STRATEGY:
+        return (
+          <SelectRescanStrategy
+            currentStep={currentStep}
+            totalSteps={TOTAL_STEPS}
+            onBack={() => this.goTo(SELECT_NODE_MODE)}
+            onNext={async (rescanHeight) => {
+              await this.applyNodeModeAndFinish(true, rescanHeight);
             }}
             onCancel={() => history.push('/funding-options')}
             isLoading={isLoading}
@@ -165,14 +202,14 @@ class ImportSeedFlow extends Component {
     });
   }
 
-  finishFlow = async () => {
+  finishFlow = async (rescanHeight = 0) => {
     const {type} = this.props.match.params;
     const {name, passphrase, secret, m, n} = this.state;
 
     this.setState({isLoading: true});
     try {
       await walletClient.importSeed(name, passphrase, type, secret, m, n);
-      walletClient.rescan(0);
+      walletClient.rescan(rescanHeight);
       await this.props.completeInitialization(name, passphrase);
       await this.props.fetchWallet();
       await this.props.fetchTransactions();
@@ -180,6 +217,27 @@ class ImportSeedFlow extends Component {
     } catch (e) {
       this.props.showError(e.message);
       logger.error(`Error received from ImportSeedFlow - finishFlow]\n\n${e.message}\n${e.stack}\n`);
+      this.setState({isLoading: false});
+    }
+  };
+
+  applyNodeMode = async (spv) => {
+    this.setState({isLoading: true});
+    const currentSpv = await nodeClient.getSpvMode();
+    await nodeClient.setSpvMode(spv);
+
+    if (currentSpv !== spv) {
+      await nodeClient.reset();
+    }
+  };
+
+  applyNodeModeAndFinish = async (spv, rescanHeight) => {
+    try {
+      await this.applyNodeMode(spv);
+      await this.finishFlow(rescanHeight);
+    } catch (e) {
+      this.props.showError(e.message);
+      logger.error(`Error received from ImportSeedFlow - applyNodeModeAndFinish]\n\n${e.message}\n${e.stack}\n`);
       this.setState({isLoading: false});
     }
   };

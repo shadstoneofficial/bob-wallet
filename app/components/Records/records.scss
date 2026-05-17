@@ -18,10 +18,13 @@
       height: 1rem;
       background-size: contain;
       background-repeat: no-repeat;
+      background-color: transparent;
+      background-position: center;
       cursor: pointer;
       opacity: 0.9;
       transition: opacity 250ms ease-in-out;
       border: none;
+      outline: none;
       padding: 0;
 
       &:hover {

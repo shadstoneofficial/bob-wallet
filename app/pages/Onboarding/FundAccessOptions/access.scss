@@ -58,6 +58,57 @@
     }
   }
 
+  &__migration {
+    width: 100%;
+    box-sizing: border-box;
+    margin-top: 1rem;
+    padding: .75rem;
+    border: 1px solid rgba($azure-blue, .25);
+    border-radius: 8px;
+    background: rgba($azure-blue, .04);
+
+    &__title {
+      color: $dark-grey;
+      font-size: .78rem;
+      font-weight: 700;
+      margin-bottom: .35rem;
+    }
+
+    &__body {
+      color: $manatee-gray;
+      font-size: .68rem;
+      line-height: 1rem;
+      margin-bottom: .5rem;
+    }
+
+    &__command {
+      margin: 0 0 .5rem;
+      padding: .55rem;
+      border-radius: 6px;
+      background: rgba($black, .04);
+      color: $dark-grey;
+      font-family: monospace;
+      font-size: .56rem;
+      line-height: .85rem;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 5.2rem;
+      overflow: auto;
+    }
+
+    &__copy {
+      justify-content: center;
+      width: 100%;
+    }
+
+    &__link {
+      margin-top: .5rem;
+      text-align: center;
+      font-size: .68rem;
+      font-weight: 600;
+    }
+  }
+
   &__footer {
     @extend %col-nowrap;
 

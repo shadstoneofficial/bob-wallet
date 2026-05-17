@@ -301,6 +301,7 @@ export async function getFinalizeFromTransferTx(transferTxHash, name, nodeClient
   return {
     tx: finalizeTx,
     coin: finalizeCoin,
+    outputIdx: finalizeOutputIdx,
   };
 }
 

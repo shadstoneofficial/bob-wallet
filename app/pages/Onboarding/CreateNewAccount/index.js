@@ -10,15 +10,18 @@ import CopySeed from '../../CopySeed/index';
 import ConfirmSeed from '../ConfirmSeed/index';
 import SetName from '../SetName/index';
 import SelectWalletType from '../SelectWalletType/index';
+import SelectNodeMode from '../SelectNodeMode';
 import * as walletActions from '../../../ducks/walletActions';
 import '../ImportSeedEnterMnemonic/importenter.scss';
 import '../ImportSeedWarning/importwarning.scss';
 import walletClient from '../../../utils/walletClient';
 import OptInAnalytics from '../OptInAnalytics';
 import { clientStub as aClientStub } from '../../../background/analytics/client';
+import { clientStub as nClientStub } from '../../../background/node/client';
 import {I18nContext} from "../../../utils/i18n";
 
 const analytics = aClientStub(() => require('electron').ipcRenderer);
+const nodeClient = nClientStub(() => require('electron').ipcRenderer);
 
 const TERMS_OF_USE = 0;
 const SET_NAME = 1;
@@ -28,7 +31,8 @@ const OPT_IN_ANALYTICS = 4;
 const BACK_UP_SEED_WARNING = 5;
 const COPY_SEEDPHRASE = 6;
 const CONFIRM_SEEDPHRASE = 7;
-const LEDGER_CONNECT = 8;
+const SELECT_NODE_MODE = 8;
+const LEDGER_CONNECT = 9;
 
 class CreateNewAccount extends Component {
   static propTypes = {
@@ -61,7 +65,7 @@ class CreateNewAccount extends Component {
     const variation = this.props.match.params.loc;
     const {currentStep} = this.state;
 
-    const totalSteps = variation === 'ledger' ? 5 : 7;
+    const totalSteps = variation === 'ledger' ? 5 : 8;
 
     switch (currentStep) {
       case TERMS_OF_USE:
@@ -206,20 +210,47 @@ class CreateNewAccount extends Component {
             totalSteps={totalSteps}
             seedphrase={this.state.seedphrase}
             onBack={() => this.goTo(COPY_SEEDPHRASE)}
-            onNext={async () => {
-              await this.props.completeInitialization(
-                this.state.name,
-                this.state.passphrase
-              );
-              this.props.history.push('/account');
+            onNext={() => this.goTo(SELECT_NODE_MODE)}
+            onCancel={() => this.props.history.push('/funding-options')}
+          />
+        );
+      case SELECT_NODE_MODE:
+        return (
+          <SelectNodeMode
+            currentStep={currentStep}
+            totalSteps={totalSteps}
+            onBack={() => this.goTo(CONFIRM_SEEDPHRASE)}
+            onNext={async (spv) => {
+              this.setState({isLoading: true});
+              try {
+                await this.applyNodeMode(spv);
+                await this.props.completeInitialization(
+                  this.state.name,
+                  this.state.passphrase
+                );
+                this.props.history.push('/account');
+              } catch (e) {
+                console.error(e);
+                this.setState({isLoading: false});
+              }
             }}
             onCancel={() => this.props.history.push('/funding-options')}
+            isLoading={this.state.isLoading}
           />
         );
       default:
         return <noscript />;
     }
   }
+
+  applyNodeMode = async (spv) => {
+    const currentSpv = await nodeClient.getSpvMode();
+    await nodeClient.setSpvMode(spv);
+
+    if (currentSpv !== spv) {
+      await nodeClient.reset();
+    }
+  };
 }
 
 export default withRouter(

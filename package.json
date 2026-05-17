@@ -1,8 +1,8 @@
 {
   "name": "bob-wallet",
-  "productName": "Bob LearnHNS Test",
+  "productName": "Bob LearnHNS",
   "author": "Kyokan Group, Inc.",
-  "version": "2.1.0",
+  "version": "2.2.0-learnhns-beta.1",
   "description": "A Handshake wallet and auction manager.",
   "scripts": {
     "build": "./scripts/package.sh",
@@ -26,8 +26,8 @@
   },
   "main": "./dist/main.js",
   "build": {
-    "productName": "Bob LearnHNS Test",
-    "appId": "com.learnhns.BobTest",
+    "productName": "Bob LearnHNS",
+    "appId": "com.learnhns.Bob",
     "protocols": {
       "name": "bob-wallet",
       "schemes": [

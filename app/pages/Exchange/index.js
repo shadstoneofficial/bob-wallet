@@ -37,7 +37,6 @@ import {Link} from "react-router-dom";
 import GenerateListingModal from "./GenerateListingModal";
 import {getPageIndices} from "../../utils/pageable";
 import Dropdown from "../../components/Dropdown";
-import DocsHelp from '../../components/DocsHelp';
 import ShakedexDeprecated from '../../components/ShakedexDeprecated/index.js';
 import SpinnerSVG from '../../assets/images/brick-loader.svg';
 import ConfirmFeeModal from './ConfirmFeeModal.js';
@@ -51,7 +50,7 @@ import {
 const analytics = aClientStub(() => require('electron').ipcRenderer);
 const shakedex = sClientStub(() => require('electron').ipcRenderer);
 const MARKET_STATUS_REFRESH_INTERVAL = 60000;
-const ENABLE_SPV_SELLER_BETA = process.env.BOB_SHAKEDEX_SPV_SELLER_BETA === 'true';
+const ENABLE_SPV_SELLER_BETA = process.env.BOB_SHAKEDEX_SPV_SELLER_BETA !== 'false';
 
 function getAuctionExpiryTime(auction) {
   if (auction.expiresAt) {
@@ -91,6 +90,7 @@ class Exchange extends Component {
     height: PropTypes.number.isRequired,
     walletType: PropTypes.string.isRequired,
     walletWatchOnly: PropTypes.bool.isRequired,
+    walletId: PropTypes.string.isRequired,
   };
 
   static contextType = I18nContext;
@@ -114,6 +114,7 @@ class Exchange extends Component {
       marketStatusCheckedAt: null,
       marketChannelHost: DEFAULT_SHAKEDEX_CHANNEL_HOST,
       marketplaceQuery: '',
+      marketplaceAvailabilityFilter: 'all',
       marketplaceModeFilter: 'all',
       marketplaceSort: 'name',
       isHandlingFulfillAuctionDeeplink: false,
@@ -124,8 +125,7 @@ class Exchange extends Component {
 
   componentDidMount() {
     analytics.screenView('Exchange');
-    this.props.getExchangeFullfillments();
-    this.props.getExchangeListings();
+    this.refreshLocalListings();
     if (this.isMarketplaceVisible()) {
       this.fetchChannelSettings();
       this.fetchShakedex();
@@ -146,8 +146,12 @@ class Exchange extends Component {
 
   async componentDidUpdate(prevProps, prevState) {
     if (this.props.height !== prevProps.height) {
-      this.props.getExchangeFullfillments();
-      this.props.getExchangeListings();
+      this.refreshLocalListings();
+    }
+
+    if (this.props.walletId !== prevProps.walletId) {
+      this.refreshLocalListings();
+      setTimeout(this.refreshLocalListings, 750);
     }
 
     if (this.props.deeplinkParams !== prevProps.deeplinkParams) {
@@ -255,17 +259,33 @@ class Exchange extends Component {
     ]);
   }
 
+  refreshLocalListings = () => {
+    this.props.getExchangeFullfillments();
+    this.props.getExchangeListings();
+  }
+
   clearMarketplaceFilters = () => this.setState({
     marketplaceQuery: '',
+    marketplaceAvailabilityFilter: 'all',
     marketplaceModeFilter: 'all',
     marketplaceSort: 'name',
   });
+
+  getMarketplaceAvailabilityItems() {
+    const { t } = this.context;
+
+    return [
+      { label: t('allListings'), value: 'all' },
+      { label: t('availableNow'), value: 'available' },
+      { label: t('pending'), value: 'pending' },
+    ];
+  }
 
   getMarketplaceModeItems() {
     const { t } = this.context;
 
     return [
-      { label: t('allListings'), value: 'all' },
+      { label: t('allListingTypes'), value: 'all' },
       { label: t('buyNow'), value: 'fixed' },
       { label: t('reverseAuction'), value: 'reverse' },
     ];
@@ -284,18 +304,23 @@ class Exchange extends Component {
 
   getVisibleMarketplaceAuctions() {
     const query = this.state.marketplaceQuery.trim().toLowerCase();
+    const availability = this.state.marketplaceAvailabilityFilter;
     const mode = this.state.marketplaceModeFilter;
     const sort = this.state.marketplaceSort;
 
     const filtered = this.props.auctions.filter((auction) => {
       const matchesQuery = !query || auction.name.toLowerCase().includes(query);
+      const isPending = isPendingAuction(auction);
+      const matchesAvailability = availability === 'all'
+        || (availability === 'available' && !isPending)
+        || (availability === 'pending' && isPending);
       const isFixed = isFixedPriceAuction(auction);
       const matchesMode = mode === 'all'
-        || (isPendingAuction(auction) && mode === 'fixed' && auction.listingMode === 'fixed-price')
+        || (isPending && mode === 'fixed' && auction.listingMode === 'fixed-price')
         || (mode === 'fixed' && isFixed)
-        || (mode === 'reverse' && !isFixed && !isPendingAuction(auction));
+        || (mode === 'reverse' && !isFixed && !isPending);
 
-      return matchesQuery && matchesMode;
+      return matchesQuery && matchesAvailability && matchesMode;
     });
 
     return [...filtered].sort((a, b) => {
@@ -580,6 +605,7 @@ class Exchange extends Component {
     }
 
     const isSpv = this.props.spv;
+    const showSellerListings = !isSpv || ENABLE_SPV_SELLER_BETA;
     const marketplaceAuctions = this.getVisibleMarketplaceAuctions();
     const activeChannelText = this.state.marketChannelHost;
     const marketBaseUrl = getShakedexChannelBaseUrl({host: this.state.marketChannelHost});
@@ -587,28 +613,81 @@ class Exchange extends Component {
     return (
       <div className="exchange">
         {this.isMarketplaceVisible() && this.renderReadinessPanel()}
-        {this.isMarketplaceVisible() && (
-          <DocsHelp
-            title="Shakedex Marketplace"
-            href="https://bobwallet.org/docs/shakedex-safety"
-          >
-            SPV wallets can browse and buy after Bob and the active Shakedex channel are ready. Selling still uses the Shakedex lock flow and needs extra care.
-          </DocsHelp>
-        )}
-        {this.isMarketplaceVisible() && this.renderSellerToolsPanel()}
-        {!isSpv && (
+        {this.isMarketplaceVisible() ? <>
+          <div className="exchange-marketplace-header">
+            <div>
+              <h2>{t('learnHnsMarketplace')}</h2>
+              <div className="exchange-marketplace-header__channel">
+                {`${t('activeChannel')}: ${activeChannelText}`}
+              </div>
+            </div>
+            <div className="exchange-marketplace-header__actions">
+              <button
+                className="exchange-marketplace-header__button"
+                disabled={this.state.isLoading || this.state.marketStatusLoading}
+                onClick={this.refreshMarketplace}
+              >
+                {t('refresh')}
+              </button>
+              <button
+                className="exchange-marketplace-header__button"
+                onClick={() => shell.openExternal(`${marketBaseUrl}/sold`)}
+              >
+                {t('openMarketHistory')}
+              </button>
+              <Link
+                className="exchange-marketplace-header__button"
+                to="/settings/exchange"
+              >
+                {t('learnMore')}
+              </Link>
+            </div>
+          </div>
+          {this.renderMarketplaceFilters(marketplaceAuctions.length)}
+          <Table className="exchange-table">
+            <Header />
+            {this.state.isLoading && (
+              <TableRow>
+                <div className="loader" style={{ backgroundImage: `url(${SpinnerSVG})`}} />
+              </TableRow>
+            )}
+            {!this.state.isLoading && !!marketplaceAuctions.length && marketplaceAuctions.map(this.renderAuctionRow)}
+            {this.renderListingControls()}
+            {!this.state.isLoading && !marketplaceAuctions.length && (
+              <TableRow>
+                <TableItem>
+                  {t('noMarketplaceListingsFound')}
+                </TableItem>
+              </TableRow>
+            )}
+            {this.props.isError && (
+              <div>
+                {t('genericError')}
+              </div>
+            )}
+          </Table>
+        </> : null}
+        {showSellerListings && (
           <>
             <div className="exchange__button-header">
               <h2>{t('yourListings')}</h2>
-              <button
-                className="exchange__button-header-button extension_cta_button"
-                disabled={!this.canStartSellerListing()}
-                onClick={() => this.canStartSellerListing()
-                  ? this.setState({ isPlacingListing: true })
-                  : this.showSellerNotReady()}
-              >
-                {t('createListing')}
-              </button>
+              <div className="exchange__button-header-actions">
+                <button
+                  className="exchange__button-header-button exchange__button-header-button--secondary"
+                  onClick={this.refreshLocalListings}
+                >
+                  {t('refresh')}
+                </button>
+                <button
+                  className="exchange__button-header-button extension_cta_button"
+                  disabled={!this.canStartSellerListing()}
+                  onClick={() => this.canStartSellerListing()
+                    ? this.setState({ isPlacingListing: true })
+                    : this.showSellerNotReady()}
+                >
+                  {t('createListing')}
+                </button>
+              </div>
             </div>
             <ShakedexDeprecated toggle={this.state.shakedexDeprecatedToggle} />
             <div className="exchange__button-header__sub">
@@ -632,7 +711,10 @@ class Exchange extends Component {
               )}
               {!!this.props.listings.length && this.props.listings.map((l, i) => this.renderListingRow(l, i))}
             </Table>
-
+          </>
+        )}
+        {(!isSpv || this.isMarketplaceVisible()) && (
+          <>
             <div className="exchange__button-header">
               <h2>{t('yourFills')}</h2>
               <button
@@ -664,7 +746,7 @@ class Exchange extends Component {
                           className="bid-action__link"
                           onClick={() => this.props.finalizeExchangeBid(f.fulfillment)}
                         >
-                          {this.props.finalizingName === f.name ? 'Finalizing...' : 'Finalize'}
+                          {this.props.finalizingName === f.fulfillment.name ? 'Finalizing...' : 'Finalize'}
                         </div>
                       </div>
                     )}
@@ -679,65 +761,6 @@ class Exchange extends Component {
             </Table>
           </>
         )}
-
-        {this.isMarketplaceVisible() ? <>
-        <div className="exchange-marketplace-header">
-          <div>
-            <h2>{t('learnHnsMarketplace')}</h2>
-            <div className="exchange-marketplace-header__channel">
-              {`${t('activeChannel')}: ${activeChannelText}`}
-            </div>
-          </div>
-          <div className="exchange-marketplace-header__actions">
-            <button
-              className="exchange-marketplace-header__button"
-              disabled={this.state.isLoading || this.state.marketStatusLoading}
-              onClick={this.refreshMarketplace}
-            >
-              {t('refresh')}
-            </button>
-            <button
-              className="exchange-marketplace-header__button"
-              onClick={() => shell.openExternal(marketBaseUrl)}
-            >
-              {t('openLearnHnsMarket')}
-            </button>
-            <button
-              className="exchange-marketplace-header__button"
-              onClick={() => shell.openExternal(`${marketBaseUrl}/status`)}
-            >
-              {t('openChannelStatus')}
-            </button>
-          </div>
-        </div>
-        {this.renderMarketplaceFilters(marketplaceAuctions.length)}
-        {isSpv && (
-          <div className="exchange__button-header__sub">
-            {t('spvMarketplaceEnabled')}
-          </div>
-        )}
-        <Table className="exchange-table">
-          <Header />
-          {this.state.isLoading && (
-            <TableRow>
-              <div className="loader" style={{ backgroundImage: `url(${SpinnerSVG})`}} />
-            </TableRow>
-          )}
-          {!this.state.isLoading && !!marketplaceAuctions.length && marketplaceAuctions.map(this.renderAuctionRow)}
-          {this.renderListingControls()}
-          {!this.state.isLoading && !marketplaceAuctions.length && (
-            <TableRow>
-              <TableItem>
-                {t('noMarketplaceListingsFound')}
-              </TableItem>
-            </TableRow>
-          )}
-          {this.props.isError && (
-            <div>
-              {t('genericError')}
-            </div>
-          )}
-        </Table></> : null}
         {this.state.placingAuction && this.state.placingCurrentBid && (
           <PlaceBidModal
             auction={this.state.placingAuction}
@@ -853,11 +876,16 @@ class Exchange extends Component {
 
   renderMarketplaceFilters(visibleCount) {
     const { t } = this.context;
+    const availabilityItems = this.getMarketplaceAvailabilityItems();
     const modeItems = this.getMarketplaceModeItems();
     const sortItems = this.getMarketplaceSortItems();
+    const currentAvailabilityIndex = availabilityItems.findIndex(
+      item => item.value === this.state.marketplaceAvailabilityFilter,
+    );
     const currentModeIndex = modeItems.findIndex(item => item.value === this.state.marketplaceModeFilter);
     const currentSortIndex = sortItems.findIndex(item => item.value === this.state.marketplaceSort);
     const isFiltered = Boolean(this.state.marketplaceQuery.trim())
+      || this.state.marketplaceAvailabilityFilter !== 'all'
       || this.state.marketplaceModeFilter !== 'all'
       || this.state.marketplaceSort !== 'name';
 
@@ -870,6 +898,12 @@ class Exchange extends Component {
             placeholder={t('searchMarketplaceListings')}
           />
         </div>
+        <Dropdown
+          className="exchange-marketplace-filters__availability"
+          items={availabilityItems}
+          currentIndex={Math.max(currentAvailabilityIndex, 0)}
+          onChange={(marketplaceAvailabilityFilter) => this.setState({ marketplaceAvailabilityFilter })}
+        />
         <Dropdown
           className="exchange-marketplace-filters__mode"
           items={modeItems}
@@ -893,47 +927,6 @@ class Exchange extends Component {
             {t('clearFilters')}
           </button>
         )}
-      </div>
-    );
-  }
-
-  renderSellerToolsPanel() {
-    const { t } = this.context;
-    const canStartSellerListing = this.canStartSellerListing();
-
-    return (
-      <div className="exchange-seller-tools">
-        <div className="exchange-seller-tools__copy">
-          <div className="exchange-seller-tools__eyebrow">{t('sellerTools')}</div>
-          <h2>{t('sellOnLearnHns')}</h2>
-          <p>{t('learnHnsSellerToolsIntro')}</p>
-          <div className="exchange-seller-tools__modes">
-            <span>{t('buyNow')}</span>
-            <span>{t('reverseAuction')}</span>
-          </div>
-          <div className="exchange-seller-tools__steps">
-            <div>{t('sellerStepLock')}</div>
-            <div>{t('sellerStepWait')}</div>
-            <div>{t('sellerStepFinalize')}</div>
-            <div>{t('sellerStepBackup')}</div>
-          </div>
-          <div className="exchange-seller-tools__note">
-            {this.props.spv
-              ? ENABLE_SPV_SELLER_BETA
-                ? t('spvSellerBetaEnabled')
-                : t('spvSellerBetaPending')
-              : t('learnHnsSellerFlowNote')}
-          </div>
-        </div>
-        <button
-          className="exchange-seller-tools__button"
-          disabled={!canStartSellerListing}
-          onClick={() => canStartSellerListing
-            ? this.setState({ isPlacingListing: true })
-            : this.showSellerNotReady()}
-        >
-          {t('createListing')}
-        </button>
       </div>
     );
   }
@@ -1363,6 +1356,7 @@ export default connect(
     deeplinkParams: state.app.deeplinkParams,
     walletType: state.wallet.type,
     walletWatchOnly: state.wallet.watchOnly,
+    walletId: state.wallet.wid,
     spv: state.node.spv,
     nodeProgress: state.node.chain.progress || 0,
     walletSync: state.wallet.walletSync,

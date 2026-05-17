@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import { Route, Switch, withRouter } from 'react-router-dom';
 import { ContentArea } from '../ContentArea';
 import { connect } from 'react-redux';
+import {shell} from 'electron';
 import './index.scss';
 import AccountIndexModal from './AccountIndexModal';
 import MaxIdleModal from './MaxIdleModal';
@@ -41,7 +42,10 @@ import Dropdown from "../../components/Dropdown";
 import {I18nContext, langs, languageDropdownItems} from "../../utils/i18n";
 import {setLocale, setCustomLocale, setTheme} from "../../ducks/app";
 import {clientStub as settingClientStub} from "../../background/setting/client";
-import {DEFAULT_SHAKEDEX_CHANNEL_HOST} from "../../constants/shakedexChannels";
+import {
+  DEFAULT_SHAKEDEX_CHANNEL_HOST,
+  getShakedexChannelBaseUrl,
+} from "../../constants/shakedexChannels";
 import {
   DEFAULT_LIQUIDITY_SPOT_CHANNEL_HOST,
   LIQUIDITY_SPOT_CHANNEL_LIST_STORAGE_KEY,
@@ -768,6 +772,7 @@ export default class Settings extends Component {
       isValidatingShakedexChannel,
       isSavingShakedexChannel,
     } = this.state;
+    const marketBaseUrl = getShakedexChannelBaseUrl({host: shakedexChannelHost});
 
     return (
       <>
@@ -836,6 +841,20 @@ export default class Settings extends Component {
             <div className="settings__channel-card__actions">
               <button
                 className="settings__content__section__cta"
+                onClick={() => shell.openExternal(marketBaseUrl)}
+              >
+                {t('openLearnHnsMarket')}
+              </button>
+              <button
+                className="settings__content__section__cta"
+                onClick={() => shell.openExternal(`${marketBaseUrl}/status`)}
+              >
+                {t('openChannelStatus')}
+              </button>
+            </div>
+            <div className="settings__channel-card__actions">
+              <button
+                className="settings__content__section__cta"
                 onClick={this.exportChannelSettings}
               >
                 Export Channels
@@ -846,6 +865,37 @@ export default class Settings extends Component {
               >
                 Import Channels
               </button>
+            </div>
+          </div>,
+        )}
+        {this.renderSection(
+          t('sellOnLearnHns'),
+          t('learnHnsSellerToolsIntro'),
+          '',
+          null,
+          <div className="settings__channel-card">
+            <div className="settings__channel-card__status settings__channel-card__status--ok">
+              {t('learnHnsSellerLockWarning')}
+            </div>
+            <div className="settings__channel-card__row">
+              <span>{t('sellerStepLock')}</span>
+              <strong>{t('buyNow')} / {t('reverseAuction')}</strong>
+            </div>
+            <div className="settings__channel-card__row">
+              <span>{t('sellerStepWait')}</span>
+              <strong>{t('sellerStepFinalize')}</strong>
+            </div>
+            <div className="settings__channel-card__row">
+              <span>{t('sellerStepBackup')}</span>
+              <strong>{t('settingBackupListingTitle')}</strong>
+            </div>
+            <div className="settings__channel-card__status">
+              {t('learnHnsSellerFlowNote')}
+            </div>
+            <div className="settings__channel-card__actions">
+              <Anchor href="https://bobwallet.org/docs/shakedex-safety">
+                {t('learnMore')}
+              </Anchor>
             </div>
           </div>,
         )}

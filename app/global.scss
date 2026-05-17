@@ -373,6 +373,13 @@ body.bob-theme-dark {
     color: #9aa4af;
   }
 
+  .domain-manager__page-control__page--active,
+  .transactions__page-control__page--active {
+    background-color: #2480fd;
+    color: #ffffff;
+    box-shadow: 0 0 0 1px rgba(121, 192, 255, 0.42);
+  }
+
   .domains__bid-card__redeem-btn {
     background-color: rgba(255, 224, 0, 0.12);
     border: 1px solid rgba(255, 224, 0, 0.54);
