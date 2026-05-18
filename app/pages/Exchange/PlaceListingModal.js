@@ -234,7 +234,11 @@ export class PlaceListingModal extends Component {
         Number(this.state.startPrice) > Number(this.state.endPrice);
 
     return (
-      <MiniModal title={t('createLearnHnsListing')} onClose={onClose}>
+      <MiniModal
+        title={t('createLearnHnsListing')}
+        onClose={onClose}
+        className="exchange__create-listing-modal"
+      >
         <div className="exchange__place-listing-modal">
           <Alert type="warning">
             {t('learnHnsSellerLockWarning')}
