@@ -233,6 +233,20 @@
   cursor: not-allowed;
 }
 
+.bid-action {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: .3rem .65rem;
+  min-width: 0;
+}
+
+.bid-action__link {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 .exchange-readiness {
   display: flex;
   flex-wrap: wrap;
@@ -391,6 +405,35 @@
   .pointer {
     cursor: pointer;
   }
+}
+
+.exchange-table--listings {
+  &.table {
+    .table__header__item,
+    .table__row__item {
+      min-width: 0;
+
+      &:nth-of-type(3) {
+        flex-basis: 6.25rem;
+      }
+
+      &:nth-of-type(4) {
+        flex-basis: 6.5rem;
+      }
+
+      &:nth-of-type(5) {
+        flex-basis: 12.75rem;
+        overflow: visible;
+        padding-left: .5rem;
+        white-space: normal;
+      }
+    }
+  }
+}
+
+.exchange-table__actions-cell {
+  overflow: visible;
+  white-space: normal;
 }
 
 .exchange-table__empty-note {

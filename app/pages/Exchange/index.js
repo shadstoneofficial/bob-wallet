@@ -749,7 +749,7 @@ class Exchange extends Component {
                 {t('marketplaceBackupSettings')}
               </Link>
             </div>
-            <Table className="exchange-table">
+            <Table className="exchange-table exchange-table--listings">
               <HeaderRow>
                 <HeaderItem>{t('domain')}</HeaderItem>
                 <HeaderItem>{t('status')}</HeaderItem>
@@ -1124,7 +1124,7 @@ class Exchange extends Component {
             ? displayBalance(l.params.price)
             : `${displayBalance(l.params.startPrice)} -> ${displayBalance(l.params.endPrice)}`}
         </TableItem>
-        <TableItem>
+        <TableItem className="exchange-table__actions-cell">
           {l.status === LISTING_STATUS.TRANSFER_CONFIRMED && (
             <div className="bid-action">
               <div
