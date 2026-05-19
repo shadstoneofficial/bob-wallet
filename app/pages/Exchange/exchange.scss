@@ -231,6 +231,8 @@
 .bid-action__link--disabled {
   color: $manatee-gray;
   cursor: not-allowed;
+  opacity: .72;
+  pointer-events: none;
 }
 
 .bid-action {

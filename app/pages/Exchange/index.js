@@ -1093,6 +1093,18 @@ class Exchange extends Component {
     );
   }
 
+  renderDisabledListingAction(label, title) {
+    return (
+      <div
+        className="bid-action__link bid-action__link--disabled"
+        title={title}
+        aria-disabled="true"
+      >
+        {label}
+      </div>
+    );
+  }
+
   renderListingRow = (l, idx) => {
     const { auction, deprecated, lowestDeprecatedPrice } = l;
     const listingMode = l.params.mode || 'reverse';
@@ -1154,6 +1166,30 @@ class Exchange extends Component {
               >
                 {t('generate')}
               </div>
+              {this.renderDisabledListingAction(
+                t('download'),
+                'Available after you generate the listing proof.'
+              )}
+              {this.renderDisabledListingAction(
+                t('submit'),
+                'Available after you generate the listing proof.'
+              )}
+            </div>
+          )}
+          {l.status === LISTING_STATUS.FINALIZE_CONFIRMING && (
+            <div className="bid-action">
+              {this.renderDisabledListingAction(
+                t('generate'),
+                'Available after the finalize transaction confirms on-chain.'
+              )}
+              {this.renderDisabledListingAction(
+                t('download'),
+                'Available after you generate the listing proof.'
+              )}
+              {this.renderDisabledListingAction(
+                t('submit'),
+                'Available after you generate the listing proof.'
+              )}
             </div>
           )}
           {l.status === LISTING_STATUS.CANCEL_CONFIRMED && (
