@@ -121,6 +121,7 @@ class Exchange extends Component {
       marketplaceModeFilter: 'all',
       marketplaceSort: 'name',
       isHandlingFulfillAuctionDeeplink: false,
+      deeplinkAuctionName: '',
     };
 
     this.marketStatusTimer = null;
@@ -404,12 +405,15 @@ class Exchange extends Component {
       return;
     }
 
-    const { presignJSONString } = this.props.deeplinkParams || {};
+    const { presignJSONString, name } = this.props.deeplinkParams || {};
     if (!presignJSONString) {
       return;
     }
 
-    this.setState({ isHandlingFulfillAuctionDeeplink: true });
+    this.setState({
+      isHandlingFulfillAuctionDeeplink: true,
+      deeplinkAuctionName: name || '',
+    });
 
     try {
       this.props.clearDeeplinkParams();
@@ -434,7 +438,10 @@ class Exchange extends Component {
       this.props.clearDeeplinkParams();
       this.props.showError(e.message);
     } finally {
-      this.setState({ isHandlingFulfillAuctionDeeplink: false });
+      this.setState({
+        isHandlingFulfillAuctionDeeplink: false,
+        deeplinkAuctionName: '',
+      });
     }
   };
 
@@ -659,6 +666,15 @@ class Exchange extends Component {
 
     return (
       <div className="exchange">
+        {this.state.isHandlingFulfillAuctionDeeplink && (
+          <div className="exchange-deeplink-loading">
+            <div className="loader" style={{ backgroundImage: `url(${SpinnerSVG})`}} />
+            <div>
+              <strong>Opening Shakedex buy{this.state.deeplinkAuctionName ? ` for ${formatName(this.state.deeplinkAuctionName)}` : ''}...</strong>
+              <span>Bob is reading the listing proof and preparing the confirmation modal.</span>
+            </div>
+          </div>
+        )}
         {this.isMarketplaceVisible() && this.renderReadinessPanel()}
         {this.isMarketplaceVisible() ? <>
           <div className="exchange-marketplace-header">

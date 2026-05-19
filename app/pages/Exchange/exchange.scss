@@ -228,6 +228,36 @@
   display: flex;
 }
 
+.exchange-deeplink-loading {
+  display: flex;
+  align-items: center;
+  gap: .85rem;
+  margin-bottom: 1rem;
+  padding: .85rem 1rem;
+  border: 1px solid $azure-blue;
+  border-radius: 8px;
+  background: rgba(46, 133, 229, .08);
+  color: $dark-grey;
+
+  .loader {
+    position: static;
+    width: 2rem;
+    height: 2rem;
+    flex: 0 0 auto;
+  }
+
+  strong,
+  span {
+    display: block;
+  }
+
+  span {
+    margin-top: .2rem;
+    color: $manatee-gray;
+    font-size: .8rem;
+  }
+}
+
 .bid-action__link--disabled {
   color: $manatee-gray;
   cursor: not-allowed;

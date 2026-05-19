@@ -10,8 +10,7 @@ import Dropdown from '../../components/Dropdown';
 import { withRouter } from 'react-router';
 import walletClient from "../../utils/walletClient";
 import {I18nContext} from "../../utils/i18n";
-import handleDeeplink from '../../deeplink';
-import {clearDeeplink} from '../../ducks/app';
+import {clearDeeplink, setDeeplinkParams} from '../../ducks/app';
 
 @withRouter
 @connect(
@@ -25,6 +24,22 @@ import {clearDeeplink} from '../../ducks/app';
     verifyPhrase: (passphrase) => dispatch(walletActions.verifyPhrase(passphrase)),
     fetchWallet: () => dispatch(walletActions.fetchWallet()),
     clearDeeplink: () => dispatch(clearDeeplink()),
+    openShakedexBuyDeeplink: (message) => {
+      const url = new URL(message);
+      const params = url.searchParams;
+      const presignJSONString = params.get('presign');
+      const name = params.get('name');
+
+      if (!presignJSONString) {
+        throw new Error('Shakedex buy link is missing its listing proof.');
+      }
+
+      dispatch(setDeeplinkParams({
+        presignJSONString,
+        name,
+        openedAt: Date.now(),
+      }));
+    },
   }),
 )
 export default class AccountLogin extends Component {
@@ -33,6 +48,7 @@ export default class AccountLogin extends Component {
     verifyPhrase: PropTypes.func.isRequired,
     fetchWallet: PropTypes.func.isRequired,
     clearDeeplink: PropTypes.func.isRequired,
+    openShakedexBuyDeeplink: PropTypes.func.isRequired,
   };
 
   static defaultProps = {
@@ -61,7 +77,8 @@ export default class AccountLogin extends Component {
       if (this.props.pendingDeeplink) {
         const pendingDeeplink = this.props.pendingDeeplink;
         this.props.clearDeeplink();
-        handleDeeplink(pendingDeeplink);
+        this.props.openShakedexBuyDeeplink(pendingDeeplink);
+        this.props.history.push('/exchange');
       } else {
         this.props.history.push('/account');
       }
