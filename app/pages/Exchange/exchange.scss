@@ -258,6 +258,26 @@
   }
 }
 
+.exchange-bulk-generate-notice {
+  margin: 0 0 1rem;
+  padding: .75rem 1rem;
+  border-radius: 8px;
+  font-size: .85rem;
+  line-height: 1.25rem;
+}
+
+.exchange-bulk-generate-notice--success {
+  border: 1px solid rgba($success-green, .35);
+  background: rgba($success-green, .08);
+  color: $dark-grey;
+}
+
+.exchange-bulk-generate-notice--warning {
+  border: 1px solid rgba($orange-red, .35);
+  background: rgba($orange-red, .08);
+  color: $dark-grey;
+}
+
 .bid-action__link--disabled {
   color: $manatee-gray;
   cursor: not-allowed;

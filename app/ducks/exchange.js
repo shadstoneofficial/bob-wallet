@@ -586,6 +586,7 @@ export const launchExchangeAuctionsBulk = (listings) => async (dispatch, getStat
   });
 
   const failures = [];
+  const succeeded = [];
 
   try {
     const passphrase = await new Promise((resolve, reject) => dispatch(getPassphrase(resolve, reject)));
@@ -598,6 +599,7 @@ export const launchExchangeAuctionsBulk = (listings) => async (dispatch, getStat
           getListingOverrideParams(listing),
           true,
         );
+        succeeded.push(listing.nameLock && listing.nameLock.name);
       } catch (e) {
         failures.push({
           name: listing.nameLock && listing.nameLock.name,
@@ -610,7 +612,14 @@ export const launchExchangeAuctionsBulk = (listings) => async (dispatch, getStat
       type: LAUNCH_EXCHANGE_AUCTIONS_BULK_ERR,
     });
     dispatch(showError(e.message || 'Failed to generate listing proofs. Please try again.'));
-    return;
+    return {
+      total: listings.length,
+      succeeded,
+      failures: listings.map(listing => ({
+        name: listing.nameLock && listing.nameLock.name,
+        message: e.message,
+      })),
+    };
   }
 
   await dispatch(getExchangeListings());
@@ -620,13 +629,22 @@ export const launchExchangeAuctionsBulk = (listings) => async (dispatch, getStat
       type: LAUNCH_EXCHANGE_AUCTIONS_BULK_ERR,
     });
     dispatch(showError(`Generated ${listings.length - failures.length} of ${listings.length} listing proofs. Failed: ${failures.map(f => f.name).join(', ')}`));
-    return;
+    return {
+      total: listings.length,
+      succeeded,
+      failures,
+    };
   }
 
   dispatch({
     type: LAUNCH_EXCHANGE_AUCTIONS_BULK_OK,
   });
   dispatch(showSuccess(`Generated ${listings.length} listing proof${listings.length === 1 ? '' : 's'} locally. No on-chain transaction was sent. Click Submit on each listing to publish it to the Shakedex channel, or Download to save backups.`));
+  return {
+    total: listings.length,
+    succeeded,
+    failures,
+  };
 };
 
 export const submitToShakedex = (auction) => async dispatch => {

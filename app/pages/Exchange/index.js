@@ -122,6 +122,8 @@ class Exchange extends Component {
       marketplaceSort: 'name',
       isHandlingFulfillAuctionDeeplink: false,
       deeplinkAuctionName: '',
+      bulkGeneratingNames: [],
+      bulkGenerateNotice: null,
     };
 
     this.marketStatusTimer = null;
@@ -295,13 +297,37 @@ class Exchange extends Component {
       return;
     }
 
-    this.setState({ isGeneratingReadyListings: true });
+    const generatingNames = readyListings.map(l => l.nameLock && l.nameLock.name).filter(Boolean);
+
+    this.setState({
+      isGeneratingReadyListings: true,
+      bulkGeneratingNames: generatingNames,
+      bulkGenerateNotice: null,
+    });
 
     try {
-      await this.props.launchExchangeAuctionsBulk(readyListings);
+      const result = await this.props.launchExchangeAuctionsBulk(readyListings);
       await this.refreshLocalListings();
+      if (result) {
+        const succeeded = result.succeeded || [];
+        const failures = result.failures || [];
+        const remainingCount = this.getReadyToGenerateListings().length;
+        this.setState({
+          bulkGenerateNotice: {
+            type: failures.length ? 'warning' : 'success',
+            message: [
+              succeeded.length ? `Proof ready: ${succeeded.map(formatName).join(', ')}` : null,
+              failures.length ? `Failed: ${failures.map(f => formatName(f.name)).join(', ')}` : null,
+              remainingCount ? `${remainingCount} listing${remainingCount === 1 ? '' : 's'} still ready to generate.` : null,
+            ].filter(Boolean).join(' '),
+          },
+        });
+      }
     } finally {
-      this.setState({ isGeneratingReadyListings: false });
+      this.setState({
+        isGeneratingReadyListings: false,
+        bulkGeneratingNames: [],
+      });
     }
   }
 
@@ -562,6 +588,7 @@ class Exchange extends Component {
   renderListingStatus(status, listing = {}) {
     let statusText = status;
     const {t} = this.context;
+    const isBulkGenerating = this.state.bulkGeneratingNames.includes(l.nameLock.name);
 
     const i18nKey = listingStatusToI18nKey(status);
 
@@ -742,7 +769,7 @@ class Exchange extends Component {
                     onClick={this.generateReadyListings}
                   >
                     {this.state.isGeneratingReadyListings
-                      ? `${t('generating')}...`
+                      ? `${t('generating')} ${this.state.bulkGeneratingNames.length} proof${this.state.bulkGeneratingNames.length === 1 ? '' : 's'}...`
                       : `${t('generateReadyListings')} (${readyToGenerateListings.length})`}
                   </button>
                 )}
@@ -771,6 +798,11 @@ class Exchange extends Component {
                 {t('marketplaceBackupSettings')}
               </Link>
             </div>
+            {this.state.bulkGenerateNotice && (
+              <div className={`exchange-bulk-generate-notice exchange-bulk-generate-notice--${this.state.bulkGenerateNotice.type}`}>
+                {this.state.bulkGenerateNotice.message}
+              </div>
+            )}
             <Table className="exchange-table exchange-table--listings">
               <HeaderRow>
                 <HeaderItem>{t('domain')}</HeaderItem>
@@ -1173,15 +1205,20 @@ class Exchange extends Component {
           )}
           {l.status === LISTING_STATUS.FINALIZE_CONFIRMED && (
             <div className="bid-action">
-              <div
-                className="bid-action__link"
-                onClick={() => this.setState({
-                  isGeneratingListing: true,
-                  generatingListing: l,
-                })}
-              >
-                {t('generate')}
-              </div>
+              {isBulkGenerating
+                ? this.renderDisabledListingAction(`${t('generating')}...`, 'Generating this listing proof now.')
+                : (
+                  <div
+                    className="bid-action__link"
+                    onClick={() => this.setState({
+                      isGeneratingListing: true,
+                      generatingListing: l,
+                    })}
+                  >
+                    {t('generate')}
+                  </div>
+                )
+              }
               {this.renderDisabledListingAction(
                 t('download'),
                 'Available after you generate the listing proof.'
