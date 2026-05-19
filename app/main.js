@@ -46,7 +46,17 @@ if (
 }
 
 if (isLearnHnsForkBuild) {
-  // Do not let LearnHNS fork builds take over production Bob deep links.
+  if (process.env.NODE_ENV === 'development' && (process.platform === 'win32' || process.platform === 'linux')) {
+    app.setAsDefaultProtocolClient('bob-learnhns', process.execPath, [
+      path.resolve(path.join(app.getAppPath(), 'dist', 'main.js')),
+    ]);
+  } else if (process.platform === 'win32' || process.platform === 'linux') {
+    app.setAsDefaultProtocolClient('bob-learnhns', process.execPath, [
+      path.resolve(path.join(app.getAppPath(), 'main.js')),
+    ]);
+  } else {
+    app.setAsDefaultProtocolClient('bob-learnhns');
+  }
 } else if (process.env.NODE_ENV === 'development' && (process.platform === 'win32' || process.platform === 'linux')) {
   app.setAsDefaultProtocolClient('bob', process.execPath, [
     path.resolve(path.join(app.getAppPath(), 'dist', 'main.js')),
