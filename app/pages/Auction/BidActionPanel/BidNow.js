@@ -87,13 +87,14 @@ class BidNow extends Component {
       this.setState({
         isReviewing: false,
         isPlacingBid: false,
-        showSuccessModal: res !== null,
+        showSuccessModal: true,
       });
       analytics.track('sent bid');
     } catch (e) {
       console.error(e);
       await this.props.stopWalletSync();
       logger.error(`Error received from BidNow - sendBid]\n\n${e.message}\n${e.stack}\n`);
+      this.setState({showSuccessModal: false});
       this.props.showError(`Failed to place bid: ${e.message}`);
     } finally {
       await this.props.fetchPendingTransactions();

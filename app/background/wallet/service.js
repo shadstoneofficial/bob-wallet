@@ -1531,8 +1531,22 @@ class WalletService {
         } else {
           // Handle hot wallets (non-multisig)
           const rings = await wallet.deriveInputs(mtx);
+          if (!rings.length) {
+            throw new Error(
+              'No spendable wallet key was found for this transaction. Make sure the selected wallet/account has the funds and private keys needed to sign.'
+            );
+          }
           const type = parsedMtxData.metadata?.inputs?.[0]?.sighashType ?? Script.hashType.ALL;
-          await mtx.sign(rings, type);
+          try {
+            await mtx.sign(rings, type);
+          } catch (error) {
+            if (error && error.message === 'No private key available.') {
+              throw new Error(
+                'No spendable wallet key was found for this transaction. Make sure the selected wallet/account has the funds and private keys needed to sign.'
+              );
+            }
+            throw error;
+          }
         }
       }
 
@@ -1550,6 +1564,7 @@ class WalletService {
           return mtx;
         } catch (error) {
           console.error(error);
+          throw new Error(`Transaction signing succeeded, but broadcast failed: ${error.message}`);
         }
       }
 

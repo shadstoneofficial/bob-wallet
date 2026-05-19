@@ -238,6 +238,9 @@ export const sendBid = (name, amount, lockup, height) => async (dispatch) => {
   }
 
   let res = await walletClient.sendBid(name, amount, lockup);
+  if (!res) {
+    throw new Error('Bid transaction was not fully signed or broadcast.');
+  }
   await namesDb.storeName(name);
   return res;
 };
