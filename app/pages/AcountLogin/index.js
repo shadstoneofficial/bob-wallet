@@ -10,17 +10,21 @@ import Dropdown from '../../components/Dropdown';
 import { withRouter } from 'react-router';
 import walletClient from "../../utils/walletClient";
 import {I18nContext} from "../../utils/i18n";
+import handleDeeplink from '../../deeplink';
+import {clearDeeplink} from '../../ducks/app';
 
 @withRouter
 @connect(
   (state) => ({
     wallets: state.wallet.wallets,
     walletsDetails: state.wallet.walletsDetails,
+    pendingDeeplink: state.app.deeplink,
   }),
   dispatch => ({
     unlockWallet: (name, passphrase) => dispatch(walletActions.unlockWallet(name, passphrase)),
     verifyPhrase: (passphrase) => dispatch(walletActions.verifyPhrase(passphrase)),
     fetchWallet: () => dispatch(walletActions.fetchWallet()),
+    clearDeeplink: () => dispatch(clearDeeplink()),
   }),
 )
 export default class AccountLogin extends Component {
@@ -28,6 +32,7 @@ export default class AccountLogin extends Component {
     unlockWallet: PropTypes.func.isRequired,
     verifyPhrase: PropTypes.func.isRequired,
     fetchWallet: PropTypes.func.isRequired,
+    clearDeeplink: PropTypes.func.isRequired,
   };
 
   static defaultProps = {
@@ -53,7 +58,13 @@ export default class AccountLogin extends Component {
       );
       await this.props.fetchWallet();
       await this.props.verifyPhrase(passphrase);
-      this.props.history.push('/account');
+      if (this.props.pendingDeeplink) {
+        const pendingDeeplink = this.props.pendingDeeplink;
+        this.props.clearDeeplink();
+        handleDeeplink(pendingDeeplink);
+      } else {
+        this.props.history.push('/account');
+      }
       await walletClient.lock();
     } catch (error) {
       return this.setState({showError: true});

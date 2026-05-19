@@ -4,6 +4,8 @@ import * as remoteMain from '@electron/remote/main';
 remoteMain.initialize();
 
 let mainWindow;
+let rendererReady = false;
+let pendingDeeplinks = [];
 
 export default function showMainWindow() {
   if (mainWindow) {
@@ -32,16 +34,22 @@ export default function showMainWindow() {
     if (!mainWindow) {
       throw new Error('"mainWindow" is not defined');
     }
+    rendererReady = true;
     if (process.env.START_MINIMIZED) {
       mainWindow.minimize();
     } else {
       mainWindow.show();
       mainWindow.focus();
     }
+
+    while (pendingDeeplinks.length) {
+      mainWindow.webContents.send('deeplink', pendingDeeplinks.shift());
+    }
   });
 
   mainWindow.on('closed', () => {
     mainWindow = null;
+    rendererReady = false;
 
     // need to quit the entire app (i.e., including
     // the HSD window) once the main window is closed
@@ -61,5 +69,14 @@ export function dispatchToMainWindow(reduxAction) {
 }
 
 export function sendDeeplinkToMainWindow(url) {
+  if (!url) {
+    return;
+  }
+
+  if (!mainWindow || !rendererReady) {
+    pendingDeeplinks.push(url);
+    return;
+  }
+
   mainWindow.webContents.send('deeplink', url);
 }
