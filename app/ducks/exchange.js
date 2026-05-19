@@ -637,6 +637,7 @@ export const submitToShakedex = (auction) => async dispatch => {
       return;
     }
 
+    await dispatch(getExchangeListings());
     dispatch(showSuccess('Your auction is now listed on the Shakedex channel'));
   } catch (e) {
     console.error(e);

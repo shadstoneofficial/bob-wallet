@@ -247,6 +247,14 @@
   white-space: nowrap;
 }
 
+.bid-action__hint {
+  color: $manatee-gray;
+  flex: 0 0 auto;
+  font-size: .72rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .exchange-readiness {
   display: flex;
   flex-wrap: wrap;

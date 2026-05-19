@@ -1091,6 +1091,7 @@ export async function launchAuction(nameLock, passphrase, paramsOverride, persis
     auctionJSON.expiresAt = (mtp + listingDurationDays * 24 * 60 * 60) >>> 0;
     if (persist) {
       listing.auction = auctionJSON;
+      delete listing.marketSubmission;
       await put(
         key,
         listing,
@@ -1154,6 +1155,7 @@ export async function launchAuction(nameLock, passphrase, paramsOverride, persis
   const auctionJSON = auction.toJSON(context);
   if (persist) {
     listing.auction = auctionJSON;
+    delete listing.marketSubmission;
     if (lowestDeprecatedPrice) {
       listing.lowestDeprecatedPrice = lowestDeprecatedPrice;
     }

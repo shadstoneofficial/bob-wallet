@@ -565,6 +565,12 @@ class Exchange extends Component {
       statusText = `${statusText} (${listing.blocksUntilFinalize} ${t('blocks')})`;
     }
 
+    if (status === LISTING_STATUS.ACTIVE) {
+      statusText = listing.marketSubmission
+        ? t('listedOnShakedex')
+        : t('proofReady');
+    }
+
     return (
       <div className={classNames('exchange-table__listing-status', {
         'exchange-table__listing-status--active': status === LISTING_STATUS.ACTIVE,
@@ -1185,7 +1191,7 @@ class Exchange extends Component {
               >
                 {t('download')}
               </div>
-              {this.props.network === 'main' && (
+              {this.props.network === 'main' && !l.marketSubmission && (
                 l.deprecated ?
                   <div
                     className="bid-action__link"
@@ -1206,6 +1212,15 @@ class Exchange extends Component {
                   >
                     {t('submit')}
                   </div>
+              )}
+              {l.marketSubmission && (
+                <div
+                  className="bid-action__hint"
+                  title={t('listedOnShakedexHelp')}
+                  aria-label={t('listedOnShakedexHelp')}
+                >
+                  {t('submitted')}
+                </div>
               )}
 
               <div
