@@ -161,16 +161,37 @@ export async function getExchangeAuctions(currentPage = 1) {
 }
 
 export async function listAuction(auction) {
-  const resp = await fetch(`${await getMarketApiBaseUrl()}/api/v2/auctions`, {
+  const proof = JSON.stringify(auction);
+  const formData = new FormData();
+  formData.append(
+    'proof',
+    new Blob([proof], { type: 'application/json' }),
+    `${auction.name || 'shakedex-listing'}-proof.json`,
+  );
+
+  const resp = await fetch(`${await getMarketApiBaseUrl()}/api/upload-proof`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      auction,
-    }),
+    body: formData,
   });
-  const json = await resp.json();
+
+  let json;
+  const text = await resp.text();
+  try {
+    json = text ? JSON.parse(text) : {};
+  } catch (e) {
+    json = {
+      error: {
+        message: text || `Shakedex channel returned HTTP ${resp.status}`,
+      },
+    };
+  }
+
+  if (!resp.ok && !json.error) {
+    json.error = {
+      message: `Shakedex channel returned HTTP ${resp.status}`,
+    };
+  }
+
   if (resp.ok && !json.error) {
     await saveMarketSubmission(auction, json);
   }
@@ -1018,6 +1039,7 @@ export async function launchAuction(nameLock, passphrase, paramsOverride, persis
   }
 
   const effectiveMode = mode || LISTING_MODES.REVERSE;
+  const listingDurationDays = durationDays || 7;
 
   if (effectiveMode === LISTING_MODES.FIXED) {
     const {
@@ -1049,6 +1071,7 @@ export async function launchAuction(nameLock, passphrase, paramsOverride, persis
       feeAddr,
     });
     const auctionJSON = fixedAuction.toJSON(context);
+    auctionJSON.expiresAt = (mtp + listingDurationDays * 24 * 60 * 60) >>> 0;
     if (persist) {
       listing.auction = auctionJSON;
       await put(
@@ -1060,7 +1083,7 @@ export async function launchAuction(nameLock, passphrase, paramsOverride, persis
   }
 
   let reductionTime;
-  switch (durationDays) {
+  switch (listingDurationDays) {
     case 1:
       reductionTime = 60 * 60;
       break;
@@ -1098,7 +1121,7 @@ export async function launchAuction(nameLock, passphrase, paramsOverride, persis
   const auctionFactory = new AuctionFactory({
     name: listing.nameLock.name,
     startTime: mtp >>> 0,
-    endTime: (mtp + durationDays * 24 * 60 * 60) >>> 0,
+    endTime: (mtp + listingDurationDays * 24 * 60 * 60) >>> 0,
     startPrice: startPrice,
     endPrice: endPrice,
     reductionTime,

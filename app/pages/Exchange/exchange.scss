@@ -25,6 +25,13 @@
   display: block;
 }
 
+.exchange__field-help {
+  color: $manatee-gray;
+  font-size: .75rem;
+  line-height: 1.15rem;
+  margin: -.25rem 0 .5rem;
+}
+
 .exchange__name-filter {
   margin-bottom: .5rem;
 
@@ -81,6 +88,18 @@
   background: transparent;
   border: 1px solid $azure-blue;
   color: $azure-blue;
+}
+
+.exchange__backup-link {
+  color: $azure-blue;
+  font-weight: 700;
+  margin-left: .25rem;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+
+  &:hover {
+    color: lighten($azure-blue, 10%);
+  }
 }
 
 .exchange-marketplace-header {
@@ -371,6 +390,20 @@
 
   .pointer {
     cursor: pointer;
+  }
+}
+
+.exchange-table__empty-note {
+  display: flex;
+  flex-direction: column;
+  gap: .25rem;
+  color: $manatee-gray;
+  font-size: .8rem;
+  line-height: 1.25rem;
+
+  strong {
+    color: $dark-grey;
+    font-weight: 600;
   }
 }
 

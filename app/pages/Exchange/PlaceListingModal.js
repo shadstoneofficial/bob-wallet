@@ -31,7 +31,7 @@ export class PlaceListingModal extends Component {
       selectedName: '',
       nameQuery: '',
       nameFilter: 'all',
-      durationIdx: 0,
+      durationIdx: this.durationOpts.indexOf(7),
       errorMessage: '',
     };
   }
@@ -195,6 +195,7 @@ export class PlaceListingModal extends Component {
         ? {
           mode: 'fixed',
           price: Math.round(Number(this.state.price) * 1e6),
+          durationDays: this.durationOpts[this.state.durationIdx],
         }
         : {
           mode: 'reverse',
@@ -305,6 +306,17 @@ export class PlaceListingModal extends Component {
                   })}
                 />
               </div>
+              <label className="exchange__label">{`${t('duration')}:`}</label>
+              <Dropdown
+                items={this.durationOpts.map(d => ({
+                  label: `${d} ${t('days')}`,
+                }))}
+                onChange={(i) => this.setState({
+                  durationIdx: i,
+                  errorMessage: '',
+                })}
+                currentIndex={this.state.durationIdx}
+              />
             </>
           ) : (
             <>

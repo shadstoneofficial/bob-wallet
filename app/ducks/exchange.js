@@ -49,6 +49,9 @@ export const FINALIZE_EXCHANGE_LOCK_ERR = 'FINALIZE_EXCHANGE_LOCK/ERR';
 export const LAUNCH_EXCHANGE_AUCTION = 'LAUNCH_EXCHANGE_AUCTION';
 export const LAUNCH_EXCHANGE_AUCTION_OK = 'LAUNCH_EXCHANGE_AUCTION/OK';
 export const LAUNCH_EXCHANGE_AUCTION_ERR = 'LAUNCH_EXCHANGE_AUCTION/ERR';
+export const LAUNCH_EXCHANGE_AUCTIONS_BULK = 'LAUNCH_EXCHANGE_AUCTIONS_BULK';
+export const LAUNCH_EXCHANGE_AUCTIONS_BULK_OK = 'LAUNCH_EXCHANGE_AUCTIONS_BULK/OK';
+export const LAUNCH_EXCHANGE_AUCTIONS_BULK_ERR = 'LAUNCH_EXCHANGE_AUCTIONS_BULK/ERR';
 
 export const SET_AUCTIONS_PAGE = 'SET_AUCTION_PAGE';
 
@@ -427,7 +430,7 @@ export const transferExchangeLock = (name, params) => async (dispatch) => {
     throw e;
   }
 
-  dispatch(getExchangeListings());
+  await dispatch(getExchangeListings());
   dispatch({
     type: PLACE_EXCHANGE_LISTING_OK,
   });
@@ -549,7 +552,81 @@ export const launchExchangeAuction = (nameLock, overrideParams) => async (dispat
     type: LAUNCH_EXCHANGE_AUCTION_OK,
   });
 
-  dispatch(showSuccess('Successfully generated proof. Submit it to a Shakedex channel or download a backup copy.'));
+  dispatch(showSuccess('Listing proof generated locally. No on-chain transaction was sent. Click Submit to publish it to the Shakedex channel, or Download to save a backup copy.'));
+};
+
+function getListingOverrideParams(listing) {
+  const params = listing.params || {};
+
+  if (params.mode === 'fixed') {
+    return {
+      mode: 'fixed',
+      price: Math.round(Number(params.price || 0)),
+      durationDays: params.durationDays || 7,
+    };
+  }
+
+  const overrideParams = {
+    mode: 'reverse',
+    startPrice: Math.round(Number(params.startPrice || 0)),
+    endPrice: Math.round(Number(params.endPrice || 0)),
+    durationDays: params.durationDays || 7,
+  };
+
+  if (listing.lowestDeprecatedPrice) {
+    overrideParams.lowestDeprecatedPrice = listing.lowestDeprecatedPrice;
+  }
+
+  return overrideParams;
+}
+
+export const launchExchangeAuctionsBulk = (listings) => async (dispatch, getState) => {
+  dispatch({
+    type: LAUNCH_EXCHANGE_AUCTIONS_BULK,
+  });
+
+  const failures = [];
+
+  try {
+    const passphrase = await new Promise((resolve, reject) => dispatch(getPassphrase(resolve, reject)));
+
+    for (const listing of listings) {
+      try {
+        await shakedex.launchAuction(
+          listing.nameLock,
+          passphrase,
+          getListingOverrideParams(listing),
+          true,
+        );
+      } catch (e) {
+        failures.push({
+          name: listing.nameLock && listing.nameLock.name,
+          message: e.message,
+        });
+      }
+    }
+  } catch (e) {
+    dispatch({
+      type: LAUNCH_EXCHANGE_AUCTIONS_BULK_ERR,
+    });
+    dispatch(showError(e.message || 'Failed to generate listing proofs. Please try again.'));
+    return;
+  }
+
+  await dispatch(getExchangeListings());
+
+  if (failures.length) {
+    dispatch({
+      type: LAUNCH_EXCHANGE_AUCTIONS_BULK_ERR,
+    });
+    dispatch(showError(`Generated ${listings.length - failures.length} of ${listings.length} listing proofs. Failed: ${failures.map(f => f.name).join(', ')}`));
+    return;
+  }
+
+  dispatch({
+    type: LAUNCH_EXCHANGE_AUCTIONS_BULK_OK,
+  });
+  dispatch(showSuccess(`Generated ${listings.length} listing proof${listings.length === 1 ? '' : 's'} locally. No on-chain transaction was sent. Click Submit on each listing to publish it to the Shakedex channel, or Download to save backups.`));
 };
 
 export const submitToShakedex = (auction) => async dispatch => {
@@ -563,7 +640,7 @@ export const submitToShakedex = (auction) => async dispatch => {
     dispatch(showSuccess('Your auction is now listed on the Shakedex channel'));
   } catch (e) {
     console.error(e);
-    dispatch(showError('Failed to post to the Shakedex channel. You can still download your proofs and distribute them.'));
+    dispatch(showError(`Failed to post to the Shakedex channel: ${e.message}. You can still download your proof as a backup.`));
   }
 };
 
@@ -713,6 +790,17 @@ export default function (state = getInitialState(), action) {
         finalizingName: null,
       };
     }
+    case LAUNCH_EXCHANGE_AUCTIONS_BULK:
+      return {
+        ...state,
+        isLoading: true,
+      };
+    case LAUNCH_EXCHANGE_AUCTIONS_BULK_ERR:
+    case LAUNCH_EXCHANGE_AUCTIONS_BULK_OK:
+      return {
+        ...state,
+        isLoading: false,
+      };
     case SET_AUCTIONS_PAGE:
       return {
         ...state,

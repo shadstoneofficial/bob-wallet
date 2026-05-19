@@ -12,6 +12,7 @@ import {
   getExchangeAuctions,
   finalizeExchangeBid,
   finalizeExchangeLock,
+  launchExchangeAuctionsBulk,
   launchExchangeAuction,
 } from '../../ducks/exchange.js';
 import { displayBalance } from '../../utils/balances.js';
@@ -103,10 +104,12 @@ class Exchange extends Component {
       isPlacingListing: false,
       isUploadingFile: false,
       isGeneratingListing: false,
+      isGeneratingReadyListings: false,
       isShowingFeeConfirmationFor: false,
       feeInfo: null,
       generatingListing: null,
       isLoading: true,
+      isLoadingLocalListings: true,
       shakedexDeprecatedToggle: false,
       currentBidsMap: new Map(),
       marketStatus: null,
@@ -259,9 +262,46 @@ class Exchange extends Component {
     ]);
   }
 
-  refreshLocalListings = () => {
-    this.props.getExchangeFullfillments();
-    this.props.getExchangeListings();
+  refreshLocalListings = async () => {
+    this.setState({ isLoadingLocalListings: true });
+
+    await Promise.all([
+      this.props.getExchangeFullfillments(),
+      this.props.getExchangeListings(),
+    ]);
+
+    this.setState({
+      isLoadingLocalListings: false,
+    });
+  }
+
+  getReadyToGenerateListings() {
+    return this.props.listings.filter(l => l.status === LISTING_STATUS.FINALIZE_CONFIRMED);
+  }
+
+  generateReadyListings = async () => {
+    const readyListings = this.getReadyToGenerateListings();
+
+    if (!readyListings.length || this.state.isGeneratingReadyListings) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `${this.context.t('generateReadyListingsConfirm')} ${readyListings.map(l => formatName(l.nameLock.name)).join(', ')}`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    this.setState({ isGeneratingReadyListings: true });
+
+    try {
+      await this.props.launchExchangeAuctionsBulk(readyListings);
+      await this.refreshLocalListings();
+    } finally {
+      this.setState({ isGeneratingReadyListings: false });
+    }
   }
 
   clearMarketplaceFilters = () => this.setState({
@@ -609,6 +649,7 @@ class Exchange extends Component {
     const marketplaceAuctions = this.getVisibleMarketplaceAuctions();
     const activeChannelText = this.state.marketChannelHost;
     const marketBaseUrl = getShakedexChannelBaseUrl({host: this.state.marketChannelHost});
+    const readyToGenerateListings = this.getReadyToGenerateListings();
 
     return (
       <div className="exchange">
@@ -672,11 +713,23 @@ class Exchange extends Component {
             <div className="exchange__button-header">
               <h2>{t('yourListings')}</h2>
               <div className="exchange__button-header-actions">
+                {!!readyToGenerateListings.length && (
+                  <button
+                    className="exchange__button-header-button exchange__button-header-button--secondary"
+                    disabled={this.state.isGeneratingReadyListings}
+                    onClick={this.generateReadyListings}
+                  >
+                    {this.state.isGeneratingReadyListings
+                      ? `${t('generating')}...`
+                      : `${t('generateReadyListings')} (${readyToGenerateListings.length})`}
+                  </button>
+                )}
                 <button
                   className="exchange__button-header-button exchange__button-header-button--secondary"
+                  disabled={this.state.isLoadingLocalListings}
                   onClick={this.refreshLocalListings}
                 >
-                  {t('refresh')}
+                  {this.state.isLoadingLocalListings ? `${t('refreshing')}...` : t('refresh')}
                 </button>
                 <button
                   className="exchange__button-header-button extension_cta_button"
@@ -692,7 +745,9 @@ class Exchange extends Component {
             <ShakedexDeprecated toggle={this.state.shakedexDeprecatedToggle} />
             <div className="exchange__button-header__sub">
               {t('sdBackupReminder', '')}
-              <Link to="/settings/exchange/backup">Settings/Marketplace</Link>
+              <Link className="exchange__backup-link" to="/settings/exchange/backup">
+                {t('marketplaceBackupSettings')}
+              </Link>
             </div>
             <Table className="exchange-table">
               <HeaderRow>
@@ -702,14 +757,26 @@ class Exchange extends Component {
                 <HeaderItem>{t('price')}</HeaderItem>
                 <HeaderItem />
               </HeaderRow>
-              {!this.props.listings.length && (
+              {this.state.isLoadingLocalListings && (
                 <TableRow>
                   <TableItem>
-                    {t('noListingFound')}
+                    <div className="exchange-table__empty-note">
+                      {t('checkingLocalListings')}
+                    </div>
                   </TableItem>
                 </TableRow>
               )}
-              {!!this.props.listings.length && this.props.listings.map((l, i) => this.renderListingRow(l, i))}
+              {!this.state.isLoadingLocalListings && !this.props.listings.length && (
+                <TableRow>
+                  <TableItem>
+                    <div className="exchange-table__empty-note">
+                      <strong>{t('noLocalListingsLoaded')}</strong>
+                      <span>{t('noLocalListingsLoadedHelp')}</span>
+                    </div>
+                  </TableItem>
+                </TableRow>
+              )}
+              {!this.state.isLoadingLocalListings && !!this.props.listings.length && this.props.listings.map((l, i) => this.renderListingRow(l, i))}
             </Table>
           </>
         )}
@@ -1098,7 +1165,7 @@ class Exchange extends Component {
           {l.status === LISTING_STATUS.ACTIVE && (
             <div className="bid-action">
               {
-                (!auction && hasLastBidReleased) && (
+                hasLastBidReleased && (
                   <div
                     className="bid-action__link"
                     onClick={() => this.setState({
@@ -1112,6 +1179,8 @@ class Exchange extends Component {
               }
               <div
                 className="bid-action__link"
+                title={t('downloadListingProofHelp')}
+                aria-label={t('downloadListingProofHelp')}
                 onClick={() => this.onDownloadPresigns(l)}
               >
                 {t('download')}
@@ -1129,6 +1198,8 @@ class Exchange extends Component {
                   </div>
                   : <div
                     className="bid-action__link"
+                    title={t('submitListingProofHelp')}
+                    aria-label={t('submitListingProofHelp')}
                     onClick={() => this.canUseMarketplaceActions()
                       ? this.onClickSubmitShakedex(l)
                       : this.showMarketplaceNotReady()}
@@ -1139,6 +1210,8 @@ class Exchange extends Component {
 
               <div
                 className="bid-action__link"
+                title={t('cancelListingHelp')}
+                aria-label={t('cancelListingHelp')}
                 onClick={() => this.canUseMarketplaceActions()
                   ? this.props.cancelExchangeLock(l.nameLock)
                   : this.showMarketplaceNotReady()}
@@ -1376,6 +1449,7 @@ export default connect(
     cancelExchangeLock: (nameLock) => dispatch(cancelExchangeLock(nameLock)),
     finalizeCancelExchangeLock: (nameLock) => dispatch(finalizeCancelExchangeLock(nameLock)),
     launchExchangeAuction: (nameLock) => dispatch(launchExchangeAuction(nameLock)),
+    launchExchangeAuctionsBulk: (listings) => dispatch(launchExchangeAuctionsBulk(listings)),
     submitToShakedex: (auction) => dispatch(submitToShakedex(auction)),
     showError: (errorMessage) => dispatch(showError(errorMessage)),
     clearDeeplinkParams: () => dispatch(clearDeeplinkParams()),

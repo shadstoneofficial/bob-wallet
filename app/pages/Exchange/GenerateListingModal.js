@@ -20,13 +20,14 @@ export class GenerateListingModal extends Component {
 
     this.durationOpts = [1, 3, 5, 7, 14];
     const listingMode = props.listing.params.mode || 'reverse';
+    const durationIdx = this.durationOpts.indexOf(props.listing.params.durationDays);
 
     this.state = {
       listingMode,
       price: Number(props.listing.params.price || 0) / 1e6 || '',
       startPrice: Number(props.listing.params.startPrice) / 1e6,
       endPrice: Number(props.listing.params.endPrice) / 1e6,
-      durationIdx: this.durationOpts.indexOf(props.listing.params.durationDays),
+      durationIdx: durationIdx >= 0 ? durationIdx : this.durationOpts.indexOf(7),
       errorMessage: '',
     };
   }
@@ -38,7 +39,7 @@ export class GenerateListingModal extends Component {
       const durationDays = this.durationOpts[durationIdx];
 
       const overrideParams = listingMode === 'fixed'
-        ? { mode: 'fixed', price: Math.round(price * 1e6) }
+        ? { mode: 'fixed', price: Math.round(price * 1e6), durationDays }
         : {
           mode: 'reverse',
           startPrice: Math.round(startPrice * 1e6),
@@ -86,6 +87,10 @@ export class GenerateListingModal extends Component {
             {formatName(listing.nameLock.name)}
           </div>
 
+          <Alert type="info">
+            {t('generateListingProofInfo')}
+          </Alert>
+
           <label className="exchange__label">{`${t('listingType')}:`}</label>
           <Dropdown
             items={[
@@ -102,6 +107,9 @@ export class GenerateListingModal extends Component {
           {isFixed ? (
             <>
               <label className="exchange__label">{`${t('buyNowPrice')}:`}</label>
+              <div className="exchange__field-help">
+                {t('generateListingProofPriceHelp')}
+              </div>
               <div className="exchange__input send__input">
                 <input
                   type="number"
@@ -112,6 +120,17 @@ export class GenerateListingModal extends Component {
                   })}
                 />
               </div>
+              <label className="exchange__label">{`${t('duration')}:`}</label>
+              <Dropdown
+                items={this.durationOpts.map(d => ({
+                  label: `${d} ${t('days')}`,
+                }))}
+                onChange={(i) => this.setState({
+                  durationIdx: i,
+                  errorMessage: '',
+                })}
+                currentIndex={this.state.durationIdx}
+              />
             </>
           ) : (
             <>
