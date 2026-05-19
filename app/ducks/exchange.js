@@ -337,6 +337,27 @@ export const getExchangeListings = (page = 1) => async (dispatch, getState) => {
     listing.status = LISTING_STATUS.SOLD;
   }
 
+  try {
+    const marketSales = await shakedex.getExchangeSales();
+    const salePendingByName = new Map(
+      marketSales
+        .filter(sale => sale && sale.status === 'sale-pending')
+        .map(sale => [String(sale.name).toLowerCase(), sale])
+    );
+
+    for (const listing of listings) {
+      const name = String(listing.nameLock && listing.nameLock.name || '').toLowerCase();
+      const salePending = salePendingByName.get(name);
+
+      if (salePending) {
+        listing.marketSale = salePending;
+        listing.status = LISTING_STATUS.SALE_PENDING;
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to load Shakedex channel sale state:', e);
+  }
+
   if (walletId !== getState().wallet.wid) {
     return;
   }
@@ -543,8 +564,8 @@ export const launchExchangeAuction = (nameLock, overrideParams) => async (dispat
     dispatch({
       type: LAUNCH_EXCHANGE_AUCTION_ERR,
     });
-    dispatch(showError('Failed to generate presigns. Please try again.'));
-    return;
+    dispatch(showError(`Failed to generate listing proof: ${e.message || 'Please try again.'}`));
+    throw e;
   }
 
   dispatch(getExchangeListings());
@@ -562,7 +583,7 @@ function getListingOverrideParams(listing) {
     return {
       mode: 'fixed',
       price: Math.round(Number(params.price || 0)),
-      durationDays: params.durationDays || 7,
+      durationDays: Math.max(Number(params.durationDays || 0), 365),
     };
   }
 

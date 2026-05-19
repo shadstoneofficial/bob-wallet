@@ -482,6 +482,10 @@
       }
 
       &:nth-of-type(5) {
+        flex-basis: 8rem;
+      }
+
+      &:nth-of-type(6) {
         flex-basis: 12.75rem;
         overflow: visible;
         padding-left: .5rem;
@@ -508,6 +512,76 @@
     color: $dark-grey;
     font-weight: 600;
   }
+}
+
+.exchange-submit-confirmation__details {
+  border: 1px solid rgba($white, .18);
+  border-radius: .5rem;
+  margin: 1rem 0;
+  overflow: hidden;
+
+  div {
+    align-items: center;
+    border-bottom: 1px solid rgba($white, .12);
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: .75rem 1rem;
+
+    &:last-child {
+      border-bottom: 0;
+    }
+  }
+
+  strong {
+    color: $manatee-gray;
+    font-size: .75rem;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+  }
+
+  span {
+    color: $white;
+    font-weight: 600;
+    text-align: right;
+  }
+}
+
+.exchange-submit-confirmation__processing {
+  border: 1px solid rgba($azure-blue, .65);
+  border-radius: .5rem;
+  color: $azure-blue;
+  font-size: .9rem;
+  line-height: 1.35rem;
+  margin: 1rem 0;
+  padding: .75rem 1rem;
+}
+
+.exchange-submit-confirmation__note {
+  color: $manatee-gray;
+  font-size: .9rem;
+  line-height: 1.35rem;
+}
+
+.exchange-submit-confirmation__warning {
+  border: 1px solid rgba($school-bus-yellow, .45);
+  border-radius: .5rem;
+  color: $school-bus-yellow;
+  font-size: .9rem;
+  line-height: 1.35rem;
+  margin-bottom: 1rem;
+  padding: .75rem 1rem;
+}
+
+.exchange-listing-expiry {
+  color: $dark-grey;
+  display: inline-block;
+  font-size: .85rem;
+  line-height: 1.2rem;
+}
+
+.exchange-listing-expiry--short {
+  color: $school-bus-yellow;
 }
 
 .exchange__place-listing-modal {

@@ -14,14 +14,16 @@ import {LISTING_STATUS} from '../../constants/exchange.js';
 
 const MARKET_API_BASE_URL = getShakedexChannelBaseUrl();
 const EXPIRING_SOON_BLOCKS = 30 * 24 * 6;
+const REVERSE_DURATION_OPTS = [1, 3, 5, 7, 14];
+const FIXED_DURATION_OPTS = [30, 90, 180, 365];
+const DEFAULT_FIXED_DURATION_DAYS = 365;
+const DEFAULT_REVERSE_DURATION_DAYS = 7;
 
 export class PlaceListingModal extends Component {
   static contextType = I18nContext;
 
   constructor(props) {
     super(props);
-
-    this.durationOpts = [1, 3, 5, 7, 14];
 
     this.state = {
       listingMode: 'fixed',
@@ -31,9 +33,15 @@ export class PlaceListingModal extends Component {
       selectedName: '',
       nameQuery: '',
       nameFilter: 'all',
-      durationIdx: this.durationOpts.indexOf(7),
+      durationIdx: FIXED_DURATION_OPTS.indexOf(DEFAULT_FIXED_DURATION_DAYS),
       errorMessage: '',
     };
+  }
+
+  getDurationOpts() {
+    return this.state.listingMode === 'fixed'
+      ? FIXED_DURATION_OPTS
+      : REVERSE_DURATION_OPTS;
   }
 
   componentDidMount() {
@@ -195,13 +203,13 @@ export class PlaceListingModal extends Component {
         ? {
           mode: 'fixed',
           price: Math.round(Number(this.state.price) * 1e6),
-          durationDays: this.durationOpts[this.state.durationIdx],
+          durationDays: this.getDurationOpts()[this.state.durationIdx],
         }
         : {
           mode: 'reverse',
           startPrice: Math.round(Number(this.state.startPrice) * 1e6),
           endPrice: Math.round(Number(this.state.endPrice) * 1e6),
-          durationDays: this.durationOpts[this.state.durationIdx],
+          durationDays: this.getDurationOpts()[this.state.durationIdx],
         };
 
       await this.props.transferExchangeLock(
@@ -237,13 +245,22 @@ export class PlaceListingModal extends Component {
     return (
       <MiniModal
         title={t('createLearnHnsListing')}
-        onClose={onClose}
+        onClose={() => {
+          if (!this.props.isPlacingListing) {
+            onClose();
+          }
+        }}
         className="exchange__create-listing-modal"
       >
         <div className="exchange__place-listing-modal">
           <Alert type="warning">
             {t('learnHnsSellerLockWarning')}
           </Alert>
+          {this.props.isPlacingListing && (
+            <Alert type="info">
+              {t('submittingListingLockTransfer')}
+            </Alert>
+          )}
           <p>{t('learnHnsSellerFlowNote')}</p>
           <p><Anchor href={`${MARKET_API_BASE_URL}/docs`}>{t('learnMore')}</Anchor></p>
           <div className="exchange__label">{`${t('chooseName')}:`}</div>
@@ -288,6 +305,9 @@ export class PlaceListingModal extends Component {
             ]}
             onChange={(i) => this.setState({
               listingMode: i === 0 ? 'fixed' : 'reverse',
+              durationIdx: i === 0
+                ? FIXED_DURATION_OPTS.indexOf(DEFAULT_FIXED_DURATION_DAYS)
+                : REVERSE_DURATION_OPTS.indexOf(DEFAULT_REVERSE_DURATION_DAYS),
               errorMessage: '',
             })}
             currentIndex={isFixed ? 0 : 1}
@@ -308,7 +328,7 @@ export class PlaceListingModal extends Component {
               </div>
               <label className="exchange__label">{`${t('duration')}:`}</label>
               <Dropdown
-                items={this.durationOpts.map(d => ({
+                items={this.getDurationOpts().map(d => ({
                   label: `${d} ${t('days')}`,
                 }))}
                 onChange={(i) => this.setState({
@@ -346,7 +366,7 @@ export class PlaceListingModal extends Component {
 
               <label className="exchange__label">{`${t('duration')}:`}</label>
               <Dropdown
-                items={this.durationOpts.map(d => ({
+                items={this.getDurationOpts().map(d => ({
                   label: `${d} ${t('days')}`,
                 }))}
                 onChange={(i) => this.setState({
@@ -382,7 +402,7 @@ export class PlaceListingModal extends Component {
               onClick={this.createListing}
               disabled={this.props.isPlacingListing || !isValid}
             >
-              {this.props.isPlacingListing ? t('loading') : t('startListingLock')}
+              {this.props.isPlacingListing ? t('submittingTransfer') : t('startListingLock')}
             </button>
           </div>
         </div>

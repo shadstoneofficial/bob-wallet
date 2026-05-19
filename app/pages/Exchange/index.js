@@ -41,6 +41,7 @@ import Dropdown from "../../components/Dropdown";
 import ShakedexDeprecated from '../../components/ShakedexDeprecated/index.js';
 import SpinnerSVG from '../../assets/images/brick-loader.svg';
 import ConfirmFeeModal from './ConfirmFeeModal.js';
+import MiniModal from '../../components/Modal/MiniModal.js';
 import {I18nContext} from "../../utils/i18n";
 import { Auction } from 'shakedex/src/auction.js';
 import {
@@ -54,10 +55,19 @@ const MARKET_STATUS_REFRESH_INTERVAL = 60000;
 const ENABLE_SPV_SELLER_BETA = process.env.BOB_SHAKEDEX_SPV_SELLER_BETA !== 'false';
 
 function getAuctionExpiryTime(auction) {
+  if (!auction) {
+    return null;
+  }
+
   if (auction.expiresAt) {
-    const expiresAt = Date.parse(auction.expiresAt);
-    if (!Number.isNaN(expiresAt)) {
-      return expiresAt;
+    const expiresAt = Number(auction.expiresAt);
+    if (Number.isFinite(expiresAt)) {
+      return expiresAt * 1000;
+    }
+
+    const parsedExpiresAt = Date.parse(auction.expiresAt);
+    if (!Number.isNaN(parsedExpiresAt)) {
+      return parsedExpiresAt;
     }
   }
 
@@ -75,6 +85,25 @@ function getAuctionExpiryTime(auction) {
 function isAuctionExpired(auction) {
   const expiryTime = getAuctionExpiryTime(auction);
   return Boolean(expiryTime && expiryTime <= Date.now());
+}
+
+function getAuctionExpiryLabel(auction) {
+  const expiryTime = getAuctionExpiryTime(auction);
+  if (!expiryTime) {
+    return 'Not generated';
+  }
+
+  const daysLeft = Math.max(0, Math.ceil((expiryTime - Date.now()) / (24 * 60 * 60 * 1000)));
+  return `${moment(expiryTime).utc().format('YYYY-MM-DD')} (${daysLeft}d)`;
+}
+
+function isShortFixedListingProof(listing) {
+  const expiryTime = getAuctionExpiryTime(listing?.auction);
+  if (!expiryTime || (listing?.params?.mode || 'reverse') !== 'fixed') {
+    return false;
+  }
+
+  return expiryTime - Date.now() < 30 * 24 * 60 * 60 * 1000;
 }
 
 class Exchange extends Component {
@@ -106,6 +135,8 @@ class Exchange extends Component {
       isGeneratingListing: false,
       isGeneratingReadyListings: false,
       isShowingFeeConfirmationFor: false,
+      submitConfirmationListing: null,
+      isSubmittingListingProof: false,
       feeInfo: null,
       generatingListing: null,
       isLoading: true,
@@ -123,6 +154,7 @@ class Exchange extends Component {
       isHandlingFulfillAuctionDeeplink: false,
       deeplinkAuctionName: '',
       bulkGeneratingNames: [],
+      preparingSubmitNames: [],
       bulkGenerateNotice: null,
     };
 
@@ -162,6 +194,24 @@ class Exchange extends Component {
 
     if (this.props.deeplinkParams !== prevProps.deeplinkParams) {
       this.handleFulfillAuctionDeeplink();
+    }
+
+    if (
+      this.state.preparingSubmitNames.length
+      && this.props.listings !== prevProps.listings
+    ) {
+      const activeNames = new Set(
+        this.props.listings
+          .filter(listing => listing.status === LISTING_STATUS.ACTIVE)
+          .map(listing => listing.nameLock && listing.nameLock.name)
+          .filter(Boolean),
+      );
+      const preparingSubmitNames = this.state.preparingSubmitNames
+        .filter(name => !activeNames.has(name));
+
+      if (preparingSubmitNames.length !== this.state.preparingSubmitNames.length) {
+        this.setState({ preparingSubmitNames });
+      }
     }
   }
 
@@ -573,22 +623,128 @@ class Exchange extends Component {
   };
 
   onClickSubmitShakedex = async (listing) => {
-    const feeInfo = await shakedex.getFeeInfo();
+    this.setState({
+      submitConfirmationListing: listing,
+    });
+  };
 
-    if (feeInfo.rate === 0) {
-      return this.props.submitToShakedex(listing.auction);
+  submitConfirmedListing = async () => {
+    const listing = this.state.submitConfirmationListing;
+    if (!listing) {
+      return;
     }
 
     this.setState({
-      isShowingFeeConfirmationFor: listing,
-      feeInfo,
+      isSubmittingListingProof: true,
     });
+
+    try {
+      const feeInfo = await shakedex.getFeeInfo();
+
+      if (feeInfo.rate === 0) {
+        await this.props.submitToShakedex(listing.auction);
+        this.setState({
+          submitConfirmationListing: null,
+          isSubmittingListingProof: false,
+        });
+        return;
+      }
+
+      this.setState({
+        submitConfirmationListing: null,
+        isSubmittingListingProof: false,
+        isShowingFeeConfirmationFor: listing,
+        feeInfo,
+      });
+    } catch (e) {
+      this.setState({
+        isSubmittingListingProof: false,
+      });
+    }
   };
+
+  renderSubmitConfirmationModal() {
+    const listing = this.state.submitConfirmationListing;
+    if (!listing) {
+      return null;
+    }
+
+    const {t} = this.context;
+    const expiryTime = getAuctionExpiryTime(listing.auction);
+    const listingMode = listing.params.mode || 'reverse';
+    const isFixedPrice = listingMode === 'fixed';
+    const isShortProof = isShortFixedListingProof(listing);
+
+    return (
+      <MiniModal
+        title="Submit Listing Proof"
+        onClose={() => {
+          if (!this.state.isSubmittingListingProof) {
+            this.setState({submitConfirmationListing: null});
+          }
+        }}
+      >
+        <p>
+          This publishes your locally generated proof to the Shakedex channel so buyers can see and buy the listing.
+        </p>
+        {this.state.isSubmittingListingProof && (
+          <div className="exchange-submit-confirmation__processing">
+            {t('submittingListingProof')}
+          </div>
+        )}
+        <div className="exchange-submit-confirmation__details">
+          <div>
+            <strong>Domain</strong>
+            <span>{formatName(listing.nameLock.name)}</span>
+          </div>
+          <div>
+            <strong>Listing Type</strong>
+            <span>{isFixedPrice ? t('buyNow') : t('reverseAuction')}</span>
+          </div>
+          <div>
+            <strong>{isFixedPrice ? 'Buy Now Price' : 'Price Range'}</strong>
+            <span>
+              {isFixedPrice
+                ? `${displayBalance(listing.params.price)} HNS`
+                : `${displayBalance(listing.params.startPrice)} -> ${displayBalance(listing.params.endPrice)} HNS`}
+            </span>
+          </div>
+          <div>
+            <strong>Buyable Until</strong>
+            <span>{expiryTime ? moment(expiryTime).utc().format('YYYY-MM-DD HH:mm [UTC]') : 'Unknown'}</span>
+          </div>
+        </div>
+        <p className="exchange-submit-confirmation__note">
+          No on-chain transaction is sent by this step. You can still Download the proof as a backup.
+        </p>
+        {isShortProof && (
+          <div className="exchange-submit-confirmation__warning">
+            This proof expires in less than 30 days. To make a longer fixed-price listing, click Cancel, then Regenerate and choose a longer listing length before submitting.
+          </div>
+        )}
+        <div className="place-bid-modal__buttons">
+          <button
+            className="place-bid-modal__cancel"
+            onClick={() => this.setState({submitConfirmationListing: null})}
+            disabled={this.state.isSubmittingListingProof}
+          >
+            {t('cancel')}
+          </button>
+          <button
+            className="place-bid-modal__send"
+            onClick={this.submitConfirmedListing}
+            disabled={this.state.isSubmittingListingProof}
+          >
+            {this.state.isSubmittingListingProof ? t('submitting') : t('submit')}
+          </button>
+        </div>
+      </MiniModal>
+    );
+  }
 
   renderListingStatus(status, listing = {}) {
     let statusText = status;
     const {t} = this.context;
-    const isBulkGenerating = this.state.bulkGeneratingNames.includes(l.nameLock.name);
 
     const i18nKey = listingStatusToI18nKey(status);
 
@@ -616,6 +772,7 @@ class Exchange extends Component {
           LISTING_STATUS.TRANSFER_CONFIRMING,
           LISTING_STATUS.CANCEL_CONFIRMING,
           LISTING_STATUS.FINALIZE_CANCEL_CONFIRMING,
+          LISTING_STATUS.SALE_PENDING,
         ].includes(status),
         'exchange-table__listing-status--sold': [
           LISTING_STATUS.SOLD,
@@ -809,6 +966,7 @@ class Exchange extends Component {
                 <HeaderItem>{t('status')}</HeaderItem>
                 <HeaderItem>{t('listingType')}</HeaderItem>
                 <HeaderItem>{t('price')}</HeaderItem>
+                <HeaderItem>Expires</HeaderItem>
                 <HeaderItem />
               </HeaderRow>
               {this.state.isLoadingLocalListings && (
@@ -902,6 +1060,11 @@ class Exchange extends Component {
         {this.state.isGeneratingListing && (
           <GenerateListingModal
             listing={this.state.generatingListing}
+            onProofGenerated={(name) => this.setState(prevState => ({
+              preparingSubmitNames: prevState.preparingSubmitNames.includes(name)
+                ? prevState.preparingSubmitNames
+                : [...prevState.preparingSubmitNames, name],
+            }))}
             onClose={() => this.setState({
               isGeneratingListing: false,
               generatingListing: null,
@@ -918,6 +1081,7 @@ class Exchange extends Component {
             })}
           />
         )}
+        {this.renderSubmitConfirmationModal()}
       </div>
     );
   }
@@ -1161,6 +1325,9 @@ class Exchange extends Component {
     const { lockTime = 0 } = lastBid || {}
     const now = Date.now();
     const hasLastBidReleased = now > lockTime * 1000;
+    const isBulkGenerating = this.state.bulkGeneratingNames.includes(l.nameLock.name);
+    const isPreparingSubmit = this.state.preparingSubmitNames.includes(l.nameLock.name);
+    const expiryLabel = getAuctionExpiryLabel(l.auction);
     const {t} = this.context;
 
     return (
@@ -1190,8 +1357,42 @@ class Exchange extends Component {
             ? displayBalance(l.params.price)
             : `${displayBalance(l.params.startPrice)} -> ${displayBalance(l.params.endPrice)}`}
         </TableItem>
+        <TableItem>
+          <span
+            className={classNames('exchange-listing-expiry', {
+              'exchange-listing-expiry--short': isShortFixedListingProof(l),
+            })}
+            title={l.auction ? `Buyable until ${expiryLabel}` : 'Generate a proof to set the listing length.'}
+          >
+            {expiryLabel}
+          </span>
+        </TableItem>
         <TableItem className="exchange-table__actions-cell">
-          {l.status === LISTING_STATUS.TRANSFER_CONFIRMED && (
+          {isPreparingSubmit && (
+            <div className="bid-action">
+              {this.renderDisabledListingAction(
+                `${t('preparingSubmit')}...`,
+                t('preparingSubmitHelp'),
+              )}
+              {this.renderDisabledListingAction(
+                t('download'),
+                t('preparingSubmitHelp'),
+              )}
+              {this.renderDisabledListingAction(
+                t('submit'),
+                t('preparingSubmitHelp'),
+              )}
+            </div>
+          )}
+          {!isPreparingSubmit && l.status === LISTING_STATUS.SALE_PENDING && (
+            <div className="bid-action">
+              {this.renderDisabledListingAction(
+                t('salePending'),
+                t('salePendingHelp'),
+              )}
+            </div>
+          )}
+          {!isPreparingSubmit && l.status === LISTING_STATUS.TRANSFER_CONFIRMED && (
             <div className="bid-action">
               <div
                 className="bid-action__link"
@@ -1203,7 +1404,7 @@ class Exchange extends Component {
               </div>
             </div>
           )}
-          {l.status === LISTING_STATUS.FINALIZE_CONFIRMED && (
+          {!isPreparingSubmit && l.status === LISTING_STATUS.FINALIZE_CONFIRMED && (
             <div className="bid-action">
               {isBulkGenerating
                 ? this.renderDisabledListingAction(`${t('generating')}...`, 'Generating this listing proof now.')
@@ -1229,7 +1430,7 @@ class Exchange extends Component {
               )}
             </div>
           )}
-          {l.status === LISTING_STATUS.FINALIZE_CONFIRMING && (
+          {!isPreparingSubmit && l.status === LISTING_STATUS.FINALIZE_CONFIRMING && (
             <div className="bid-action">
               {this.renderDisabledListingAction(
                 t('generate'),
@@ -1245,7 +1446,7 @@ class Exchange extends Component {
               )}
             </div>
           )}
-          {l.status === LISTING_STATUS.CANCEL_CONFIRMED && (
+          {!isPreparingSubmit && l.status === LISTING_STATUS.CANCEL_CONFIRMED && (
             <div className="bid-action">
               <div
                 className="bid-action__link"
@@ -1257,7 +1458,7 @@ class Exchange extends Component {
               </div>
             </div>
           )}
-          {l.status === LISTING_STATUS.ACTIVE && (
+          {!isPreparingSubmit && l.status === LISTING_STATUS.ACTIVE && (
             <div className="bid-action">
               {
                 hasLastBidReleased && (

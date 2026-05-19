@@ -181,6 +181,12 @@ export async function getExchangeAuctions(currentPage = 1) {
   }
 }
 
+export async function getExchangeSales() {
+  const marketClient = await getMarketClient();
+  const res = await marketClient.get('api/v2/sales');
+  return Array.isArray(res.sales) ? res.sales : [];
+}
+
 export async function listAuction(auction) {
   const proof = JSON.stringify(auction);
   const {body, headers} = buildProofUploadPayload(auction, proof);
@@ -515,7 +521,7 @@ async function saveMarketSubmission(auction, response) {
     if (
       listingAuction.name === auction.name
       && listingAuction.lockingTxHash === auction.lockingTxHash
-      && listingAuction.lockingOutputIdx === auction.lockingOutputIdx
+      && Number(listingAuction.lockingOutputIdx || 0) === Number(auction.lockingOutputIdx || 0)
     ) {
       updates.push({
         key: key.toString('utf-8'),
@@ -1056,7 +1062,9 @@ export async function launchAuction(nameLock, passphrase, paramsOverride, persis
   }
 
   const effectiveMode = mode || LISTING_MODES.REVERSE;
-  const listingDurationDays = durationDays || 7;
+  const listingDurationDays = durationDays || (
+    effectiveMode === LISTING_MODES.FIXED ? 365 : 7
+  );
 
   if (effectiveMode === LISTING_MODES.FIXED) {
     const {
@@ -1311,6 +1319,7 @@ const methods = {
   restoreOneListing,
   restoreOneFill,
   getExchangeAuctions,
+  getExchangeSales,
   listAuction,
   getFeeInfo,
   getBestBid,
