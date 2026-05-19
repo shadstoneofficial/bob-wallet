@@ -71,6 +71,27 @@ async function getMarketClient() {
   });
 }
 
+function buildProofUploadPayload(auction, proof) {
+  const boundary = `----BobLearnHNS${Date.now().toString(16)}`;
+  const filename = `${auction.name || 'shakedex-listing'}-proof.json`
+    .replace(/["\r\n]/g, '_');
+  const head = Buffer.from(
+    `--${boundary}\r\n`
+    + `Content-Disposition: form-data; name="proof"; filename="${filename}"\r\n`
+    + 'Content-Type: application/json\r\n\r\n',
+  );
+  const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
+  const body = Buffer.concat([head, Buffer.from(proof), tail]);
+
+  return {
+    body,
+    headers: {
+      'Content-Type': `multipart/form-data; boundary=${boundary}`,
+      'Content-Length': `${body.length}`,
+    },
+  };
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -162,16 +183,12 @@ export async function getExchangeAuctions(currentPage = 1) {
 
 export async function listAuction(auction) {
   const proof = JSON.stringify(auction);
-  const formData = new FormData();
-  formData.append(
-    'proof',
-    new Blob([proof], { type: 'application/json' }),
-    `${auction.name || 'shakedex-listing'}-proof.json`,
-  );
+  const {body, headers} = buildProofUploadPayload(auction, proof);
 
   const resp = await fetch(`${await getMarketApiBaseUrl()}/api/upload-proof`, {
     method: 'POST',
-    body: formData,
+    headers,
+    body,
   });
 
   let json;
