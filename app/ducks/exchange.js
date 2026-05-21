@@ -573,7 +573,7 @@ export const launchExchangeAuction = (nameLock, overrideParams) => async (dispat
     type: LAUNCH_EXCHANGE_AUCTION_OK,
   });
 
-  dispatch(showSuccess('Listing proof generated locally. No on-chain transaction was sent. Click Submit to publish it to the Shakedex channel, or Download to save a backup copy.'));
+  dispatch(showSuccess('Listing proof generated locally. No on-chain transaction was sent. Click Submit to confirm the listing on the Shakedex channel, or Download to save a backup copy.'));
 };
 
 function getListingOverrideParams(listing) {
@@ -660,7 +660,7 @@ export const launchExchangeAuctionsBulk = (listings) => async (dispatch, getStat
   dispatch({
     type: LAUNCH_EXCHANGE_AUCTIONS_BULK_OK,
   });
-  dispatch(showSuccess(`Generated ${listings.length} listing proof${listings.length === 1 ? '' : 's'} locally. No on-chain transaction was sent. Click Submit on each listing to publish it to the Shakedex channel, or Download to save backups.`));
+  dispatch(showSuccess(`Generated ${listings.length} listing proof${listings.length === 1 ? '' : 's'} locally. No on-chain transaction was sent. Click Submit on each listing to confirm it on the Shakedex channel, or Download to save backups.`));
   return {
     total: listings.length,
     succeeded,
@@ -672,15 +672,29 @@ export const submitToShakedex = (auction) => async dispatch => {
   try {
     const json = await shakedex.listAuction(auction);
     if (json.error) {
-      dispatch(showError(json.error.message));
-      return;
+      const err = new Error(json.error.message || 'The Shakedex channel rejected this listing proof.');
+      err.wasShown = true;
+      dispatch(showError(err.message));
+      throw err;
+    }
+
+    if (json.success === false) {
+      const err = new Error(json.message || 'The Shakedex channel did not accept this listing proof.');
+      err.wasShown = true;
+      dispatch(showError(err.message));
+      throw err;
     }
 
     await dispatch(getExchangeListings());
-    dispatch(showSuccess('Your auction is now listed on the Shakedex channel'));
+    dispatch(showSuccess(`${auction.name}/ is now listed on the Shakedex channel.`));
+    return json;
   } catch (e) {
     console.error(e);
-    dispatch(showError(`Failed to post to the Shakedex channel: ${e.message}. You can still download your proof as a backup.`));
+    if (!e.wasShown) {
+      const message = `Failed to post to the Shakedex channel: ${e.message}. You can still download your proof as a backup.`;
+      dispatch(showError(message));
+    }
+    throw e;
   }
 };
 

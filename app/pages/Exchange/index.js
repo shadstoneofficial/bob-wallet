@@ -137,6 +137,7 @@ class Exchange extends Component {
       isShowingFeeConfirmationFor: false,
       submitConfirmationListing: null,
       isSubmittingListingProof: false,
+      submitListingError: '',
       feeInfo: null,
       generatingListing: null,
       isLoading: true,
@@ -366,7 +367,7 @@ class Exchange extends Component {
           bulkGenerateNotice: {
             type: failures.length ? 'warning' : 'success',
             message: [
-              succeeded.length ? `Proof ready: ${succeeded.map(formatName).join(', ')}` : null,
+              succeeded.length ? `Proof ready: ${succeeded.map(formatName).join(', ')}. Use Submit to confirm each listing on Shakedex.` : null,
               failures.length ? `Failed: ${failures.map(f => formatName(f.name)).join(', ')}` : null,
               remainingCount ? `${remainingCount} listing${remainingCount === 1 ? '' : 's'} still ready to generate.` : null,
             ].filter(Boolean).join(' '),
@@ -625,6 +626,7 @@ class Exchange extends Component {
   onClickSubmitShakedex = async (listing) => {
     this.setState({
       submitConfirmationListing: listing,
+      submitListingError: '',
     });
   };
 
@@ -636,6 +638,7 @@ class Exchange extends Component {
 
     this.setState({
       isSubmittingListingProof: true,
+      submitListingError: '',
     });
 
     try {
@@ -659,6 +662,7 @@ class Exchange extends Component {
     } catch (e) {
       this.setState({
         isSubmittingListingProof: false,
+        submitListingError: e.message || 'The listing proof could not be submitted. Please try again.',
       });
     }
   };
@@ -690,6 +694,11 @@ class Exchange extends Component {
         {this.state.isSubmittingListingProof && (
           <div className="exchange-submit-confirmation__processing">
             {t('submittingListingProof')}
+          </div>
+        )}
+        {this.state.submitListingError && (
+          <div className="exchange-submit-confirmation__error">
+            {this.state.submitListingError}
           </div>
         )}
         <div className="exchange-submit-confirmation__details">
