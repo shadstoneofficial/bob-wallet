@@ -21,6 +21,7 @@ import PlaceListingModal from './PlaceListingModal.js';
 import * as logger from '../../utils/logClient.js';
 import {
   cancelExchangeLock, finalizeCancelExchangeLock,
+  createPrivateSaleProof,
   FULFILLMENT_STATUS,
   getExchangeFullfillments,
   getExchangeListings,
@@ -53,6 +54,8 @@ const analytics = aClientStub(() => require('electron').ipcRenderer);
 const shakedex = sClientStub(() => require('electron').ipcRenderer);
 const MARKET_STATUS_REFRESH_INTERVAL = 60000;
 const ENABLE_SPV_SELLER_BETA = process.env.BOB_SHAKEDEX_SPV_SELLER_BETA !== 'false';
+const PRIVATE_SALE_DURATION_OPTS = [7, 14, 30, 90, 180, 365];
+const DEFAULT_PRIVATE_SALE_DURATION_DAYS = 30;
 
 function getAuctionExpiryTime(auction) {
   if (!auction) {
@@ -130,6 +133,7 @@ class Exchange extends Component {
     this.state = {
       placingAuction: null,
       placingCurrentBid: null,
+      placingAuctionSource: null,
       isPlacingListing: false,
       isUploadingFile: false,
       isGeneratingListing: false,
@@ -157,6 +161,11 @@ class Exchange extends Component {
       bulkGeneratingNames: [],
       preparingSubmitNames: [],
       bulkGenerateNotice: null,
+      privateSaleListing: null,
+      privateSalePrice: '',
+      privateSaleDurationIdx: PRIVATE_SALE_DURATION_OPTS.indexOf(DEFAULT_PRIVATE_SALE_DURATION_DAYS),
+      privateSaleError: '',
+      isCreatingPrivateProof: false,
     };
 
     this.marketStatusTimer = null;
@@ -495,6 +504,9 @@ class Exchange extends Component {
     try {
       this.props.clearDeeplinkParams();
       const auction = fromAuctionJSON(JSON.parse(presignJSONString));
+      if (isAuctionExpired(auction)) {
+        throw new Error(this.context.t('shakedexListingExpired'));
+      }
       const currentBid = getBuyableBid(auction, await getCurrentBid(auction));
 
       if (!currentBid) {
@@ -509,6 +521,7 @@ class Exchange extends Component {
       this.setState({
         placingAuction: auction,
         placingCurrentBid: currentBid,
+        placingAuctionSource: 'deeplink',
         isUploadingFile: false,
       });
     } catch (e) {
@@ -547,6 +560,9 @@ class Exchange extends Component {
 
       const auctionJSON = JSON.parse(content);
       const auction = fromAuctionJSON(auctionJSON);
+      if (isAuctionExpired(auction)) {
+        throw new Error(this.context.t('shakedexListingExpired'));
+      }
       const currentBid = getBuyableBid(auction, await getCurrentBid(auction));
 
       if (currentBid === null) {
@@ -556,6 +572,7 @@ class Exchange extends Component {
       this.setState({
         placingAuction: auction,
         placingCurrentBid: currentBid,
+        placingAuctionSource: 'file',
         isUploadingFile: false,
       });
     } catch (e) {
@@ -587,6 +604,81 @@ class Exchange extends Component {
         throw e;
       }, 0);
     }
+  };
+
+  openPrivateSaleModal = (listing) => {
+    this.setState({
+      privateSaleListing: listing,
+      privateSalePrice: '',
+      privateSaleDurationIdx: PRIVATE_SALE_DURATION_OPTS.indexOf(DEFAULT_PRIVATE_SALE_DURATION_DAYS),
+      privateSaleError: '',
+    });
+  };
+
+  closePrivateSaleModal = () => {
+    if (this.state.isCreatingPrivateProof) {
+      return;
+    }
+
+    this.setState({
+      privateSaleListing: null,
+      privateSalePrice: '',
+      privateSaleError: '',
+    });
+  };
+
+  onCreatePrivateSaleProof = async () => {
+    const listing = this.state.privateSaleListing;
+    if (!listing) {
+      return;
+    }
+
+    try {
+      this.setState({
+        isCreatingPrivateProof: true,
+        privateSaleError: '',
+      });
+
+      const privateProof = await this.props.createPrivateSaleProof(
+        listing.nameLock,
+        {
+          mode: 'fixed',
+          price: Math.round(Number(this.state.privateSalePrice) * 1e6),
+          durationDays: PRIVATE_SALE_DURATION_OPTS[this.state.privateSaleDurationIdx],
+        },
+      );
+
+      if (privateProof && privateProof.auction) {
+        this.downloadPrivateProof(privateProof, listing.nameLock.name);
+      }
+
+      this.setState({
+        privateSaleListing: null,
+        privateSalePrice: '',
+      });
+    } catch (e) {
+      this.setState({
+        privateSaleError: e.message,
+      });
+    } finally {
+      this.setState({
+        isCreatingPrivateProof: false,
+      });
+    }
+  };
+
+  downloadPrivateProof = (privateProof, name) => {
+    const safeName = (name || privateProof?.auction?.name || 'shakedex')
+      .replace(/[^a-z0-9_-]/gi, '-');
+    const content = JSON.stringify(privateProof.auction);
+    const data = `data:text/plain;charset=utf-8,${content}\r\n`;
+    const encodedUri = encodeURI(data);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `${safeName}-private-sale-proof-${privateProof.createdAt || Date.now()}.json`);
+    document.body.appendChild(link); // Required for FF
+    link.click();
+    link.remove();
   };
 
   onClickDownload = async (auction) => {
@@ -746,6 +838,94 @@ class Exchange extends Component {
           >
             {this.state.isSubmittingListingProof ? t('submitting') : t('submit')}
           </button>
+        </div>
+      </MiniModal>
+    );
+  }
+
+  renderPrivateSaleModal() {
+    const listing = this.state.privateSaleListing;
+    if (!listing) {
+      return null;
+    }
+
+    const {t} = this.context;
+    const isValid = String(this.state.privateSalePrice).length
+      && Number(this.state.privateSalePrice) > 0;
+    const publicPrice = listing.params && listing.params.mode === 'fixed'
+      ? Number(listing.params.price || 0)
+      : null;
+    const privatePrice = Math.round(Number(this.state.privateSalePrice || 0) * 1e6);
+    const isLowerThanPublic = publicPrice && privatePrice > 0 && privatePrice < publicPrice;
+
+    return (
+      <MiniModal title={t('privateShakedexSale')} onClose={this.closePrivateSaleModal}>
+        <div className="exchange__place-listing-modal">
+          <p>
+            {t('privateSaleProofIntro')}
+          </p>
+          <div className="exchange-submit-confirmation__warning">
+            {t('privateSaleProofNotBuyerRestricted')}
+          </div>
+          <div className="exchange-submit-confirmation__warning">
+            {t('privateSaleProofRaceWarning')}
+          </div>
+          {isLowerThanPublic && (
+            <div className="exchange-submit-confirmation__warning">
+              {t('privateSaleLowerThanPublicWarning')}
+            </div>
+          )}
+          {this.state.privateSaleError && (
+            <div className="exchange-submit-confirmation__error">
+              {this.state.privateSaleError}
+            </div>
+          )}
+
+          <label className="exchange__label">{`${t('listingName')}:`}</label>
+          <div className="exchange__input">
+            {formatName(listing.nameLock.name)}
+          </div>
+
+          <label className="exchange__label">{`${t('privateSalePrice')}:`}</label>
+          <div className="exchange__input send__input">
+            <input
+              type="number"
+              value={this.state.privateSalePrice}
+              onChange={(e) => this.setState({
+                privateSalePrice: e.target.value,
+                privateSaleError: '',
+              })}
+            />
+          </div>
+
+          <label className="exchange__label">{`${t('duration')}:`}</label>
+          <Dropdown
+            items={PRIVATE_SALE_DURATION_OPTS.map(d => ({
+              label: `${d} ${t('days')}`,
+            }))}
+            onChange={(privateSaleDurationIdx) => this.setState({
+              privateSaleDurationIdx,
+              privateSaleError: '',
+            })}
+            currentIndex={this.state.privateSaleDurationIdx}
+          />
+
+          <div className="place-bid-modal__buttons">
+            <button
+              className="place-bid-modal__cancel"
+              onClick={this.closePrivateSaleModal}
+              disabled={this.state.isCreatingPrivateProof}
+            >
+              {t('cancel')}
+            </button>
+            <button
+              className="place-bid-modal__send"
+              onClick={this.onCreatePrivateSaleProof}
+              disabled={!isValid || this.state.isCreatingPrivateProof}
+            >
+              {this.state.isCreatingPrivateProof ? t('generating') : t('generatePrivateProof')}
+            </button>
+          </div>
         </div>
       </MiniModal>
     );
@@ -1011,6 +1191,12 @@ class Exchange extends Component {
               >
                 {t('loadAuctionFile')}
               </button>
+              <button
+                className="exchange__button-header-button exchange__button-header-button--secondary"
+                onClick={this.onUploadPresigns}
+              >
+                {t('loadPrivateSaleProof')}
+              </button>
             </div>
             <Table className="exchange-table">
               <HeaderRow>
@@ -1056,7 +1242,9 @@ class Exchange extends Component {
             onClose={() => this.setState({
               placingAuction: null,
               placingCurrentBid: null,
+              placingAuctionSource: null,
             })}
+            isPrivateProof={this.state.placingAuctionSource === 'file'}
           />
         )}
         {this.state.isPlacingListing && (
@@ -1091,6 +1279,7 @@ class Exchange extends Component {
           />
         )}
         {this.renderSubmitConfirmationModal()}
+        {this.renderPrivateSaleModal()}
       </div>
     );
   }
@@ -1326,6 +1515,28 @@ class Exchange extends Component {
     );
   }
 
+  renderPrivateProofActions(listing) {
+    const privateProofs = Array.isArray(listing.privateProofs)
+      ? listing.privateProofs
+      : [];
+
+    if (!privateProofs.length) {
+      return null;
+    }
+
+    return privateProofs.map((privateProof, i) => (
+      <div
+        key={`${privateProof.createdAt || i}`}
+        className="bid-action__link"
+        title={this.context.t('downloadPrivateProofHelp')}
+        aria-label={this.context.t('downloadPrivateProofHelp')}
+        onClick={() => this.downloadPrivateProof(privateProof, listing.nameLock.name)}
+      >
+        {`${this.context.t('downloadPrivateProof')} ${displayBalance(privateProof.price, true)}`}
+      </div>
+    ));
+  }
+
   renderListingRow = (l, idx) => {
     const { auction, deprecated, lowestDeprecatedPrice } = l;
     const listingMode = l.params.mode || 'reverse';
@@ -1437,6 +1648,15 @@ class Exchange extends Component {
                 t('submit'),
                 'Available after you generate the listing proof.'
               )}
+              <div
+                className="bid-action__link"
+                title={t('createPrivateSaleProofHelp')}
+                aria-label={t('createPrivateSaleProofHelp')}
+                onClick={() => this.openPrivateSaleModal(l)}
+              >
+                {t('createPrivateSaleProof')}
+              </div>
+              {this.renderPrivateProofActions(l)}
             </div>
           )}
           {!isPreparingSubmit && l.status === LISTING_STATUS.FINALIZE_CONFIRMING && (
@@ -1490,6 +1710,15 @@ class Exchange extends Component {
               >
                 {t('download')}
               </div>
+              <div
+                className="bid-action__link"
+                title={t('createPrivateSaleProofHelp')}
+                aria-label={t('createPrivateSaleProofHelp')}
+                onClick={() => this.openPrivateSaleModal(l)}
+              >
+                {t('createPrivateSaleProof')}
+              </div>
+              {this.renderPrivateProofActions(l)}
               {this.props.network === 'main' && !l.marketSubmission && (
                 l.deprecated ?
                   <div
@@ -1588,6 +1817,7 @@ class Exchange extends Component {
                     this.setState({
                       placingAuction: auction,
                       placingCurrentBid: buyableBid,
+                      placingAuctionSource: 'market',
                     });
                   }}
                 >
@@ -1764,6 +1994,7 @@ export default connect(
     finalizeCancelExchangeLock: (nameLock) => dispatch(finalizeCancelExchangeLock(nameLock)),
     launchExchangeAuction: (nameLock) => dispatch(launchExchangeAuction(nameLock)),
     launchExchangeAuctionsBulk: (listings) => dispatch(launchExchangeAuctionsBulk(listings)),
+    createPrivateSaleProof: (nameLock, params) => dispatch(createPrivateSaleProof(nameLock, params)),
     submitToShakedex: (auction) => dispatch(submitToShakedex(auction)),
     showError: (errorMessage) => dispatch(showError(errorMessage)),
     clearDeeplinkParams: () => dispatch(clearDeeplinkParams()),

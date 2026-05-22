@@ -52,6 +52,9 @@ export const LAUNCH_EXCHANGE_AUCTION_ERR = 'LAUNCH_EXCHANGE_AUCTION/ERR';
 export const LAUNCH_EXCHANGE_AUCTIONS_BULK = 'LAUNCH_EXCHANGE_AUCTIONS_BULK';
 export const LAUNCH_EXCHANGE_AUCTIONS_BULK_OK = 'LAUNCH_EXCHANGE_AUCTIONS_BULK/OK';
 export const LAUNCH_EXCHANGE_AUCTIONS_BULK_ERR = 'LAUNCH_EXCHANGE_AUCTIONS_BULK/ERR';
+export const CREATE_PRIVATE_SALE_PROOF = 'CREATE_PRIVATE_SALE_PROOF';
+export const CREATE_PRIVATE_SALE_PROOF_OK = 'CREATE_PRIVATE_SALE_PROOF/OK';
+export const CREATE_PRIVATE_SALE_PROOF_ERR = 'CREATE_PRIVATE_SALE_PROOF/ERR';
 
 export const SET_AUCTIONS_PAGE = 'SET_AUCTION_PAGE';
 
@@ -576,6 +579,31 @@ export const launchExchangeAuction = (nameLock, overrideParams) => async (dispat
   dispatch(showSuccess('Listing proof generated locally. No on-chain transaction was sent. Click Submit to confirm the listing on the Shakedex channel, or Download to save a backup copy.'));
 };
 
+export const createPrivateSaleProof = (nameLock, params) => async (dispatch) => {
+  dispatch({
+    type: CREATE_PRIVATE_SALE_PROOF,
+  });
+
+  let privateProof;
+  try {
+    const passphrase = await new Promise((resolve, reject) => dispatch(getPassphrase(resolve, reject)));
+    privateProof = await shakedex.createPrivateAuction(nameLock, passphrase, params);
+  } catch (e) {
+    dispatch({
+      type: CREATE_PRIVATE_SALE_PROOF_ERR,
+    });
+    dispatch(showError(`Failed to generate private sale proof: ${e.message || 'Please try again.'}`));
+    throw e;
+  }
+
+  await dispatch(getExchangeListings());
+  dispatch({
+    type: CREATE_PRIVATE_SALE_PROOF_OK,
+  });
+  dispatch(showSuccess('Private sale proof generated locally. It was not published to the Shakedex channel. Share the downloaded proof only with buyers you trust.'));
+  return privateProof;
+};
+
 function getListingOverrideParams(listing) {
   const params = listing.params || {};
 
@@ -845,12 +873,15 @@ export default function (state = getInitialState(), action) {
       };
     }
     case LAUNCH_EXCHANGE_AUCTIONS_BULK:
+    case CREATE_PRIVATE_SALE_PROOF:
       return {
         ...state,
         isLoading: true,
       };
     case LAUNCH_EXCHANGE_AUCTIONS_BULK_ERR:
     case LAUNCH_EXCHANGE_AUCTIONS_BULK_OK:
+    case CREATE_PRIVATE_SALE_PROOF_ERR:
+    case CREATE_PRIVATE_SALE_PROOF_OK:
       return {
         ...state,
         isLoading: false,

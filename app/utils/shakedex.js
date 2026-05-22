@@ -246,8 +246,11 @@ export function fromAuctionJSON(json) {
     lockingOutputIdx: json.lockingOutputIdx,
     publicKey: json.publicKey,
     paymentAddr: json.paymentAddr,
+    feeAddr: json.feeAddr,
+    expiresAt: json.expiresAt,
     bids: json.data.map(p => ({
       price: p.price,
+      fee: p.fee || 0,
       lockTime: p.lockTime,
       signature: p.signature,
     })),

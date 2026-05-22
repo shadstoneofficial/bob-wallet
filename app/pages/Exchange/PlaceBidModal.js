@@ -40,6 +40,13 @@ export class PlaceBidModal extends Component {
           <p>
             {t('marketplaceBuyWarning')}
           </p>
+          {this.props.isPrivateProof && (
+            <Alert
+              className="place-bid-modal__alert"
+              type="warning"
+              message={t('privateSaleBuyerWarning')}
+            />
+          )}
           {!hasEnoughBalance && (
             <Alert
               className="place-bid-modal__alert"

@@ -788,6 +788,7 @@ export async function fulfillSwap(auction, bid, passphrase) {
     paymentAddr: auction.paymentAddr,
     price: bid.price,
     fee: bid.fee,
+    feeAddr: auction.feeAddr,
     lockTime: bid.lockTime,
     signature: bid.signature,
   });
@@ -1175,6 +1176,76 @@ export async function launchAuction(nameLock, passphrase, paramsOverride, persis
   return auctionJSON;
 }
 
+export async function createPrivateAuction(nameLock, passphrase, params) {
+  const context = getContext();
+  const key = `${listingPrefix()}/${nameLock.name}/${nameLock.transferTxHash}`;
+  const listing = await get(key);
+
+  if (!listing) {
+    throw new Error(`Listing for ${nameLock.name} was not found.`);
+  }
+
+  const price = Math.round(Number(params && params.price || 0));
+  const durationDays = Math.round(Number(params && params.durationDays || 0)) || 30;
+  const feeRate = Number(params && params.feeRate || 0);
+  const feeAddr = params && params.feeAddr;
+
+  if (!Number.isFinite(price) || price <= 0) {
+    throw new Error('Private sale price must be greater than zero.');
+  }
+
+  const {
+    tx: finalizeTx,
+    coin: finalizeCoin,
+    outputIdx: finalizeOutputIdx,
+  } = await getFinalizeFromTransferTx(
+    listing.nameLock.transferTxHash,
+    listing.nameLock.name,
+    nodeService,
+  );
+
+  if (!finalizeCoin) throw new Error('cannot find finalize coin');
+
+  const mtp = await nodeService.getMTP();
+  const lockFinalize = new NameLockFinalize({
+    ...listing.nameLock,
+    finalizeTxHash: finalizeTx.hash,
+    finalizeOutputIdx: finalizeCoin.index ?? finalizeOutputIdx,
+    privateKey: decrypt(listing.nameLock.encryptedPrivateKey, passphrase),
+  });
+  attachSellerLockCoinFallback(context, lockFinalize, finalizeCoin);
+
+  const privateAuction = await createFixedPriceAuction({
+    context,
+    lockFinalize,
+    price,
+    lockTime: mtp >>> 0,
+    feeRate,
+    feeAddr,
+  });
+  const auctionJSON = privateAuction.toJSON(context);
+  auctionJSON.expiresAt = (mtp + durationDays * 24 * 60 * 60) >>> 0;
+
+  const privateProof = {
+    createdAt: Date.now(),
+    price,
+    durationDays,
+    expiresAt: auctionJSON.expiresAt,
+    auction: auctionJSON,
+  };
+
+  const out = {
+    ...listing,
+    privateProofs: [
+      ...(Array.isArray(listing.privateProofs) ? listing.privateProofs : []),
+      privateProof,
+    ],
+  };
+
+  await put(key, out);
+  return privateProof;
+}
+
 async function createFixedPriceAuction(options) {
   const {
     context,
@@ -1315,6 +1386,7 @@ const methods = {
   transferCancel,
   getListings,
   launchAuction,
+  createPrivateAuction,
   downloadProofs,
   restoreOneListing,
   restoreOneFill,
