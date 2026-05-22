@@ -31,7 +31,7 @@
     "protocols": {
       "name": "bob-wallet",
       "schemes": [
-        "bob"
+        "bob-learnhns"
       ]
     },
     "files": [

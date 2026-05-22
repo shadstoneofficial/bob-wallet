@@ -12,6 +12,7 @@ import {
   getExchangeAuctions,
   finalizeExchangeBid,
   finalizeExchangeLock,
+  launchExchangeAuctionsBulk,
   launchExchangeAuction,
 } from '../../ducks/exchange.js';
 import { displayBalance } from '../../utils/balances.js';
@@ -20,6 +21,7 @@ import PlaceListingModal from './PlaceListingModal.js';
 import * as logger from '../../utils/logClient.js';
 import {
   cancelExchangeLock, finalizeCancelExchangeLock,
+  createPrivateSaleProof,
   FULFILLMENT_STATUS,
   getExchangeFullfillments,
   getExchangeListings,
@@ -40,6 +42,7 @@ import Dropdown from "../../components/Dropdown";
 import ShakedexDeprecated from '../../components/ShakedexDeprecated/index.js';
 import SpinnerSVG from '../../assets/images/brick-loader.svg';
 import ConfirmFeeModal from './ConfirmFeeModal.js';
+import MiniModal from '../../components/Modal/MiniModal.js';
 import {I18nContext} from "../../utils/i18n";
 import { Auction } from 'shakedex/src/auction.js';
 import {
@@ -51,12 +54,23 @@ const analytics = aClientStub(() => require('electron').ipcRenderer);
 const shakedex = sClientStub(() => require('electron').ipcRenderer);
 const MARKET_STATUS_REFRESH_INTERVAL = 60000;
 const ENABLE_SPV_SELLER_BETA = process.env.BOB_SHAKEDEX_SPV_SELLER_BETA !== 'false';
+const PRIVATE_SALE_DURATION_OPTS = [7, 14, 30, 90, 180, 365];
+const DEFAULT_PRIVATE_SALE_DURATION_DAYS = 30;
 
 function getAuctionExpiryTime(auction) {
+  if (!auction) {
+    return null;
+  }
+
   if (auction.expiresAt) {
-    const expiresAt = Date.parse(auction.expiresAt);
-    if (!Number.isNaN(expiresAt)) {
-      return expiresAt;
+    const expiresAt = Number(auction.expiresAt);
+    if (Number.isFinite(expiresAt)) {
+      return expiresAt * 1000;
+    }
+
+    const parsedExpiresAt = Date.parse(auction.expiresAt);
+    if (!Number.isNaN(parsedExpiresAt)) {
+      return parsedExpiresAt;
     }
   }
 
@@ -74,6 +88,25 @@ function getAuctionExpiryTime(auction) {
 function isAuctionExpired(auction) {
   const expiryTime = getAuctionExpiryTime(auction);
   return Boolean(expiryTime && expiryTime <= Date.now());
+}
+
+function getAuctionExpiryLabel(auction) {
+  const expiryTime = getAuctionExpiryTime(auction);
+  if (!expiryTime) {
+    return 'Not generated';
+  }
+
+  const daysLeft = Math.max(0, Math.ceil((expiryTime - Date.now()) / (24 * 60 * 60 * 1000)));
+  return `${moment(expiryTime).utc().format('YYYY-MM-DD')} (${daysLeft}d)`;
+}
+
+function isShortFixedListingProof(listing) {
+  const expiryTime = getAuctionExpiryTime(listing?.auction);
+  if (!expiryTime || (listing?.params?.mode || 'reverse') !== 'fixed') {
+    return false;
+  }
+
+  return expiryTime - Date.now() < 30 * 24 * 60 * 60 * 1000;
 }
 
 class Exchange extends Component {
@@ -100,13 +133,19 @@ class Exchange extends Component {
     this.state = {
       placingAuction: null,
       placingCurrentBid: null,
+      placingAuctionSource: null,
       isPlacingListing: false,
       isUploadingFile: false,
       isGeneratingListing: false,
+      isGeneratingReadyListings: false,
       isShowingFeeConfirmationFor: false,
+      submitConfirmationListing: null,
+      isSubmittingListingProof: false,
+      submitListingError: '',
       feeInfo: null,
       generatingListing: null,
       isLoading: true,
+      isLoadingLocalListings: true,
       shakedexDeprecatedToggle: false,
       currentBidsMap: new Map(),
       marketStatus: null,
@@ -118,6 +157,15 @@ class Exchange extends Component {
       marketplaceModeFilter: 'all',
       marketplaceSort: 'name',
       isHandlingFulfillAuctionDeeplink: false,
+      deeplinkAuctionName: '',
+      bulkGeneratingNames: [],
+      preparingSubmitNames: [],
+      bulkGenerateNotice: null,
+      privateSaleListing: null,
+      privateSalePrice: '',
+      privateSaleDurationIdx: PRIVATE_SALE_DURATION_OPTS.indexOf(DEFAULT_PRIVATE_SALE_DURATION_DAYS),
+      privateSaleError: '',
+      isCreatingPrivateProof: false,
     };
 
     this.marketStatusTimer = null;
@@ -156,6 +204,24 @@ class Exchange extends Component {
 
     if (this.props.deeplinkParams !== prevProps.deeplinkParams) {
       this.handleFulfillAuctionDeeplink();
+    }
+
+    if (
+      this.state.preparingSubmitNames.length
+      && this.props.listings !== prevProps.listings
+    ) {
+      const activeNames = new Set(
+        this.props.listings
+          .filter(listing => listing.status === LISTING_STATUS.ACTIVE)
+          .map(listing => listing.nameLock && listing.nameLock.name)
+          .filter(Boolean),
+      );
+      const preparingSubmitNames = this.state.preparingSubmitNames
+        .filter(name => !activeNames.has(name));
+
+      if (preparingSubmitNames.length !== this.state.preparingSubmitNames.length) {
+        this.setState({ preparingSubmitNames });
+      }
     }
   }
 
@@ -259,9 +325,70 @@ class Exchange extends Component {
     ]);
   }
 
-  refreshLocalListings = () => {
-    this.props.getExchangeFullfillments();
-    this.props.getExchangeListings();
+  refreshLocalListings = async () => {
+    this.setState({ isLoadingLocalListings: true });
+
+    await Promise.all([
+      this.props.getExchangeFullfillments(),
+      this.props.getExchangeListings(),
+    ]);
+
+    this.setState({
+      isLoadingLocalListings: false,
+    });
+  }
+
+  getReadyToGenerateListings() {
+    return this.props.listings.filter(l => l.status === LISTING_STATUS.FINALIZE_CONFIRMED);
+  }
+
+  generateReadyListings = async () => {
+    const readyListings = this.getReadyToGenerateListings();
+
+    if (!readyListings.length || this.state.isGeneratingReadyListings) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `${this.context.t('generateReadyListingsConfirm')} ${readyListings.map(l => formatName(l.nameLock.name)).join(', ')}`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    const generatingNames = readyListings.map(l => l.nameLock && l.nameLock.name).filter(Boolean);
+
+    this.setState({
+      isGeneratingReadyListings: true,
+      bulkGeneratingNames: generatingNames,
+      bulkGenerateNotice: null,
+    });
+
+    try {
+      const result = await this.props.launchExchangeAuctionsBulk(readyListings);
+      await this.refreshLocalListings();
+      if (result) {
+        const succeeded = result.succeeded || [];
+        const failures = result.failures || [];
+        const remainingCount = this.getReadyToGenerateListings().length;
+        this.setState({
+          bulkGenerateNotice: {
+            type: failures.length ? 'warning' : 'success',
+            message: [
+              succeeded.length ? `Proof ready: ${succeeded.map(formatName).join(', ')}. Use Submit to confirm each listing on Shakedex.` : null,
+              failures.length ? `Failed: ${failures.map(f => formatName(f.name)).join(', ')}` : null,
+              remainingCount ? `${remainingCount} listing${remainingCount === 1 ? '' : 's'} still ready to generate.` : null,
+            ].filter(Boolean).join(' '),
+          },
+        });
+      }
+    } finally {
+      this.setState({
+        isGeneratingReadyListings: false,
+        bulkGeneratingNames: [],
+      });
+    }
   }
 
   getDownloadableListingProofs() {
@@ -372,16 +499,22 @@ class Exchange extends Component {
       return;
     }
 
-    const { presignJSONString } = this.props.deeplinkParams || {};
+    const { presignJSONString, name } = this.props.deeplinkParams || {};
     if (!presignJSONString) {
       return;
     }
 
-    this.setState({ isHandlingFulfillAuctionDeeplink: true });
+    this.setState({
+      isHandlingFulfillAuctionDeeplink: true,
+      deeplinkAuctionName: name || '',
+    });
 
     try {
       this.props.clearDeeplinkParams();
       const auction = fromAuctionJSON(JSON.parse(presignJSONString));
+      if (isAuctionExpired(auction)) {
+        throw new Error(this.context.t('shakedexListingExpired'));
+      }
       const currentBid = getBuyableBid(auction, await getCurrentBid(auction));
 
       if (!currentBid) {
@@ -396,13 +529,17 @@ class Exchange extends Component {
       this.setState({
         placingAuction: auction,
         placingCurrentBid: currentBid,
+        placingAuctionSource: 'deeplink',
         isUploadingFile: false,
       });
     } catch (e) {
       this.props.clearDeeplinkParams();
       this.props.showError(e.message);
     } finally {
-      this.setState({ isHandlingFulfillAuctionDeeplink: false });
+      this.setState({
+        isHandlingFulfillAuctionDeeplink: false,
+        deeplinkAuctionName: '',
+      });
     }
   };
 
@@ -431,6 +568,9 @@ class Exchange extends Component {
 
       const auctionJSON = JSON.parse(content);
       const auction = fromAuctionJSON(auctionJSON);
+      if (isAuctionExpired(auction)) {
+        throw new Error(this.context.t('shakedexListingExpired'));
+      }
       const currentBid = getBuyableBid(auction, await getCurrentBid(auction));
 
       if (currentBid === null) {
@@ -440,6 +580,7 @@ class Exchange extends Component {
       this.setState({
         placingAuction: auction,
         placingCurrentBid: currentBid,
+        placingAuctionSource: 'file',
         isUploadingFile: false,
       });
     } catch (e) {
@@ -500,6 +641,76 @@ class Exchange extends Component {
     URL.revokeObjectURL(url);
   };
 
+  openPrivateSaleModal = (listing) => {
+    this.setState({
+      privateSaleListing: listing,
+      privateSalePrice: '',
+      privateSaleDurationIdx: PRIVATE_SALE_DURATION_OPTS.indexOf(DEFAULT_PRIVATE_SALE_DURATION_DAYS),
+      privateSaleError: '',
+    });
+  };
+
+  closePrivateSaleModal = () => {
+    if (this.state.isCreatingPrivateProof) {
+      return;
+    }
+
+    this.setState({
+      privateSaleListing: null,
+      privateSalePrice: '',
+      privateSaleError: '',
+    });
+  };
+
+  onCreatePrivateSaleProof = async () => {
+    const listing = this.state.privateSaleListing;
+    if (!listing) {
+      return;
+    }
+
+    try {
+      this.setState({
+        isCreatingPrivateProof: true,
+        privateSaleError: '',
+      });
+
+      const privateProof = await this.props.createPrivateSaleProof(
+        listing.nameLock,
+        {
+          mode: 'fixed',
+          price: Math.round(Number(this.state.privateSalePrice) * 1e6),
+          durationDays: PRIVATE_SALE_DURATION_OPTS[this.state.privateSaleDurationIdx],
+        },
+      );
+
+      if (privateProof && privateProof.auction) {
+        this.downloadPrivateProof(privateProof, listing.nameLock.name);
+      }
+
+      this.setState({
+        privateSaleListing: null,
+        privateSalePrice: '',
+      });
+    } catch (e) {
+      this.setState({
+        privateSaleError: e.message,
+      });
+    } finally {
+      this.setState({
+        isCreatingPrivateProof: false,
+      });
+    }
+  };
+
+  downloadPrivateProof = (privateProof, name) => {
+    const safeName = (name || privateProof?.auction?.name || 'shakedex')
+      .replace(/[^a-z0-9_-]/gi, '-');
+    this.downloadJSON(
+      `${safeName}-private-sale-proof-${privateProof.createdAt || Date.now()}.json`,
+      JSON.stringify(privateProof.auction),
+    );
+  };
+
   onClickDownload = async (auction) => {
     try {
       const submission = {
@@ -528,17 +739,224 @@ class Exchange extends Component {
   };
 
   onClickSubmitShakedex = async (listing) => {
-    const feeInfo = await shakedex.getFeeInfo();
+    this.setState({
+      submitConfirmationListing: listing,
+      submitListingError: '',
+    });
+  };
 
-    if (feeInfo.rate === 0) {
-      return this.props.submitToShakedex(listing.auction);
+  submitConfirmedListing = async () => {
+    const listing = this.state.submitConfirmationListing;
+    if (!listing) {
+      return;
     }
 
     this.setState({
-      isShowingFeeConfirmationFor: listing,
-      feeInfo,
+      isSubmittingListingProof: true,
+      submitListingError: '',
     });
+
+    try {
+      const feeInfo = await shakedex.getFeeInfo();
+
+      if (feeInfo.rate === 0) {
+        await this.props.submitToShakedex(listing.auction);
+        this.setState({
+          submitConfirmationListing: null,
+          isSubmittingListingProof: false,
+        });
+        return;
+      }
+
+      this.setState({
+        submitConfirmationListing: null,
+        isSubmittingListingProof: false,
+        isShowingFeeConfirmationFor: listing,
+        feeInfo,
+      });
+    } catch (e) {
+      this.setState({
+        isSubmittingListingProof: false,
+        submitListingError: e.message || 'The listing proof could not be submitted. Please try again.',
+      });
+    }
   };
+
+  renderSubmitConfirmationModal() {
+    const listing = this.state.submitConfirmationListing;
+    if (!listing) {
+      return null;
+    }
+
+    const {t} = this.context;
+    const expiryTime = getAuctionExpiryTime(listing.auction);
+    const listingMode = listing.params.mode || 'reverse';
+    const isFixedPrice = listingMode === 'fixed';
+    const isShortProof = isShortFixedListingProof(listing);
+
+    return (
+      <MiniModal
+        title="Submit Listing Proof"
+        onClose={() => {
+          if (!this.state.isSubmittingListingProof) {
+            this.setState({submitConfirmationListing: null});
+          }
+        }}
+      >
+        <p>
+          This publishes your locally generated proof to the Shakedex channel so buyers can see and buy the listing.
+        </p>
+        {this.state.isSubmittingListingProof && (
+          <div className="exchange-submit-confirmation__processing">
+            {t('submittingListingProof')}
+          </div>
+        )}
+        {this.state.submitListingError && (
+          <div className="exchange-submit-confirmation__error">
+            {this.state.submitListingError}
+          </div>
+        )}
+        <div className="exchange-submit-confirmation__details">
+          <div>
+            <strong>Domain</strong>
+            <span>{formatName(listing.nameLock.name)}</span>
+          </div>
+          <div>
+            <strong>Listing Type</strong>
+            <span>{isFixedPrice ? t('buyNow') : t('reverseAuction')}</span>
+          </div>
+          <div>
+            <strong>{isFixedPrice ? 'Buy Now Price' : 'Price Range'}</strong>
+            <span>
+              {isFixedPrice
+                ? `${displayBalance(listing.params.price)} HNS`
+                : `${displayBalance(listing.params.startPrice)} -> ${displayBalance(listing.params.endPrice)} HNS`}
+            </span>
+          </div>
+          <div>
+            <strong>Buyable Until</strong>
+            <span>{expiryTime ? moment(expiryTime).utc().format('YYYY-MM-DD HH:mm [UTC]') : 'Unknown'}</span>
+          </div>
+        </div>
+        <p className="exchange-submit-confirmation__note">
+          No on-chain transaction is sent by this step. You can still Download the proof as a backup.
+        </p>
+        {isShortProof && (
+          <div className="exchange-submit-confirmation__warning">
+            This proof expires in less than 30 days. To make a longer fixed-price listing, click Cancel, then Regenerate and choose a longer listing length before submitting.
+          </div>
+        )}
+        <div className="place-bid-modal__buttons">
+          <button
+            className="place-bid-modal__cancel"
+            onClick={() => this.setState({submitConfirmationListing: null})}
+            disabled={this.state.isSubmittingListingProof}
+          >
+            {t('cancel')}
+          </button>
+          <button
+            className="place-bid-modal__send"
+            onClick={this.submitConfirmedListing}
+            disabled={this.state.isSubmittingListingProof}
+          >
+            {this.state.isSubmittingListingProof ? t('submitting') : t('submit')}
+          </button>
+        </div>
+      </MiniModal>
+    );
+  }
+
+  renderPrivateSaleModal() {
+    const listing = this.state.privateSaleListing;
+    if (!listing) {
+      return null;
+    }
+
+    const {t} = this.context;
+    const isValid = String(this.state.privateSalePrice).length
+      && Number(this.state.privateSalePrice) > 0;
+    const publicPrice = listing.params && listing.params.mode === 'fixed'
+      ? Number(listing.params.price || 0)
+      : null;
+    const privatePrice = Math.round(Number(this.state.privateSalePrice || 0) * 1e6);
+    const isLowerThanPublic = publicPrice && privatePrice > 0 && privatePrice < publicPrice;
+
+    return (
+      <MiniModal
+        title={t('privateShakedexSale')}
+        onClose={this.closePrivateSaleModal}
+        className="exchange__create-listing-modal exchange__private-sale-modal"
+      >
+        <div className="exchange__place-listing-modal">
+          <p>
+            {t('privateSaleProofIntro')}
+          </p>
+          <div className="exchange-submit-confirmation__warning">
+            {t('privateSaleProofNotBuyerRestricted')}
+          </div>
+          <div className="exchange-submit-confirmation__warning">
+            {t('privateSaleProofRaceWarning')}
+          </div>
+          {isLowerThanPublic && (
+            <div className="exchange-submit-confirmation__warning">
+              {t('privateSaleLowerThanPublicWarning')}
+            </div>
+          )}
+          {this.state.privateSaleError && (
+            <div className="exchange-submit-confirmation__error">
+              {this.state.privateSaleError}
+            </div>
+          )}
+
+          <label className="exchange__label">{`${t('listingName')}:`}</label>
+          <div className="exchange__input">
+            {formatName(listing.nameLock.name)}
+          </div>
+
+          <label className="exchange__label">{`${t('privateSalePrice')}:`}</label>
+          <div className="exchange__input send__input">
+            <input
+              type="number"
+              value={this.state.privateSalePrice}
+              onChange={(e) => this.setState({
+                privateSalePrice: e.target.value,
+                privateSaleError: '',
+              })}
+            />
+          </div>
+
+          <label className="exchange__label">{`${t('duration')}:`}</label>
+          <Dropdown
+            items={PRIVATE_SALE_DURATION_OPTS.map(d => ({
+              label: `${d} ${t('days')}`,
+            }))}
+            onChange={(privateSaleDurationIdx) => this.setState({
+              privateSaleDurationIdx,
+              privateSaleError: '',
+            })}
+            currentIndex={this.state.privateSaleDurationIdx}
+          />
+
+          <div className="place-bid-modal__buttons">
+            <button
+              className="place-bid-modal__cancel"
+              onClick={this.closePrivateSaleModal}
+              disabled={this.state.isCreatingPrivateProof}
+            >
+              {t('cancel')}
+            </button>
+            <button
+              className="place-bid-modal__send"
+              onClick={this.onCreatePrivateSaleProof}
+              disabled={!isValid || this.state.isCreatingPrivateProof}
+            >
+              {this.state.isCreatingPrivateProof ? t('generating') : t('generatePrivateProof')}
+            </button>
+          </div>
+        </div>
+      </MiniModal>
+    );
+  }
 
   renderListingStatus(status, listing = {}) {
     let statusText = status;
@@ -553,6 +971,12 @@ class Exchange extends Component {
       statusText = `${statusText} (${listing.blocksUntilFinalize} ${t('blocks')})`;
     }
 
+    if (status === LISTING_STATUS.ACTIVE) {
+      statusText = listing.marketSubmission
+        ? t('listedOnShakedex')
+        : t('proofReady');
+    }
+
     return (
       <div className={classNames('exchange-table__listing-status', {
         'exchange-table__listing-status--active': status === LISTING_STATUS.ACTIVE,
@@ -564,6 +988,7 @@ class Exchange extends Component {
           LISTING_STATUS.TRANSFER_CONFIRMING,
           LISTING_STATUS.CANCEL_CONFIRMING,
           LISTING_STATUS.FINALIZE_CANCEL_CONFIRMING,
+          LISTING_STATUS.SALE_PENDING,
         ].includes(status),
         'exchange-table__listing-status--sold': [
           LISTING_STATUS.SOLD,
@@ -638,9 +1063,19 @@ class Exchange extends Component {
     const activeChannelText = this.state.marketChannelHost;
     const marketBaseUrl = getShakedexChannelBaseUrl({host: this.state.marketChannelHost});
     const downloadableListingProofs = this.getDownloadableListingProofs();
+    const readyToGenerateListings = this.getReadyToGenerateListings();
 
     return (
       <div className="exchange">
+        {this.state.isHandlingFulfillAuctionDeeplink && (
+          <div className="exchange-deeplink-loading">
+            <div className="loader" style={{ backgroundImage: `url(${SpinnerSVG})`}} />
+            <div>
+              <strong>Opening Shakedex buy{this.state.deeplinkAuctionName ? ` for ${formatName(this.state.deeplinkAuctionName)}` : ''}...</strong>
+              <span>Bob is reading the listing proof and preparing the confirmation modal.</span>
+            </div>
+          </div>
+        )}
         {this.isMarketplaceVisible() && this.renderReadinessPanel()}
         {this.isMarketplaceVisible() ? <>
           <div className="exchange-marketplace-header">
@@ -701,9 +1136,20 @@ class Exchange extends Component {
             <div className="exchange__button-header">
               <h2>{t('yourListings')}</h2>
               <div className="exchange__button-header-actions">
+                {!!readyToGenerateListings.length && (
+                  <button
+                    className="exchange__button-header-button exchange__button-header-button--secondary"
+                    disabled={this.state.isGeneratingReadyListings}
+                    onClick={this.generateReadyListings}
+                  >
+                    {this.state.isGeneratingReadyListings
+                      ? `${t('generating')} ${this.state.bulkGeneratingNames.length} proof${this.state.bulkGeneratingNames.length === 1 ? '' : 's'}...`
+                      : `${t('generateReadyListings')} (${readyToGenerateListings.length})`}
+                  </button>
+                )}
                 <button
                   className="exchange__button-header-button exchange__button-header-button--secondary"
-                  disabled={!downloadableListingProofs.length}
+                  disabled={this.state.isLoadingLocalListings || !downloadableListingProofs.length}
                   title={t('downloadAllListingProofsHelp')}
                   aria-label={t('downloadAllListingProofsHelp')}
                   onClick={this.onDownloadAllListingProofs}
@@ -714,7 +1160,7 @@ class Exchange extends Component {
                   className="exchange__button-header-button exchange__button-header-button--secondary"
                   onClick={this.refreshLocalListings}
                 >
-                  {t('refresh')}
+                  {this.state.isLoadingLocalListings ? `${t('refreshing')}...` : t('refresh')}
                 </button>
                 <button
                   className="exchange__button-header-button extension_cta_button"
@@ -730,24 +1176,44 @@ class Exchange extends Component {
             <ShakedexDeprecated toggle={this.state.shakedexDeprecatedToggle} />
             <div className="exchange__button-header__sub">
               {t('sdBackupReminder', '')}
-              <Link to="/settings/exchange/backup">Settings/Marketplace</Link>
+              <Link className="exchange__backup-link" to="/settings/exchange/backup">
+                {t('marketplaceBackupSettings')}
+              </Link>
             </div>
-            <Table className="exchange-table">
+            {this.state.bulkGenerateNotice && (
+              <div className={`exchange-bulk-generate-notice exchange-bulk-generate-notice--${this.state.bulkGenerateNotice.type}`}>
+                {this.state.bulkGenerateNotice.message}
+              </div>
+            )}
+            <Table className="exchange-table exchange-table--listings">
               <HeaderRow>
                 <HeaderItem>{t('domain')}</HeaderItem>
                 <HeaderItem>{t('status')}</HeaderItem>
                 <HeaderItem>{t('listingType')}</HeaderItem>
                 <HeaderItem>{t('price')}</HeaderItem>
+                <HeaderItem>Expires</HeaderItem>
                 <HeaderItem />
               </HeaderRow>
-              {!this.props.listings.length && (
+              {this.state.isLoadingLocalListings && (
                 <TableRow>
                   <TableItem>
-                    {t('noListingFound')}
+                    <div className="exchange-table__empty-note">
+                      {t('checkingLocalListings')}
+                    </div>
                   </TableItem>
                 </TableRow>
               )}
-              {!!this.props.listings.length && this.props.listings.map((l, i) => this.renderListingRow(l, i))}
+              {!this.state.isLoadingLocalListings && !this.props.listings.length && (
+                <TableRow>
+                  <TableItem>
+                    <div className="exchange-table__empty-note">
+                      <strong>{t('noLocalListingsLoaded')}</strong>
+                      <span>{t('noLocalListingsLoadedHelp')}</span>
+                    </div>
+                  </TableItem>
+                </TableRow>
+              )}
+              {!this.state.isLoadingLocalListings && !!this.props.listings.length && this.props.listings.map((l, i) => this.renderListingRow(l, i))}
             </Table>
           </>
         )}
@@ -760,6 +1226,12 @@ class Exchange extends Component {
                 onClick={this.onUploadPresigns}
               >
                 {t('loadAuctionFile')}
+              </button>
+              <button
+                className="exchange__button-header-button exchange__button-header-button--secondary"
+                onClick={this.onUploadPresigns}
+              >
+                {t('loadPrivateSaleProof')}
               </button>
             </div>
             <Table className="exchange-table">
@@ -806,7 +1278,9 @@ class Exchange extends Component {
             onClose={() => this.setState({
               placingAuction: null,
               placingCurrentBid: null,
+              placingAuctionSource: null,
             })}
+            isPrivateProof={this.state.placingAuctionSource === 'file'}
           />
         )}
         {this.state.isPlacingListing && (
@@ -819,6 +1293,11 @@ class Exchange extends Component {
         {this.state.isGeneratingListing && (
           <GenerateListingModal
             listing={this.state.generatingListing}
+            onProofGenerated={(name) => this.setState(prevState => ({
+              preparingSubmitNames: prevState.preparingSubmitNames.includes(name)
+                ? prevState.preparingSubmitNames
+                : [...prevState.preparingSubmitNames, name],
+            }))}
             onClose={() => this.setState({
               isGeneratingListing: false,
               generatingListing: null,
@@ -835,6 +1314,8 @@ class Exchange extends Component {
             })}
           />
         )}
+        {this.renderSubmitConfirmationModal()}
+        {this.renderPrivateSaleModal()}
       </div>
     );
   }
@@ -1058,6 +1539,40 @@ class Exchange extends Component {
     );
   }
 
+  renderDisabledListingAction(label, title) {
+    return (
+      <div
+        className="bid-action__link bid-action__link--disabled"
+        title={title}
+        aria-disabled="true"
+      >
+        {label}
+      </div>
+    );
+  }
+
+  renderPrivateProofActions(listing) {
+    const privateProofs = Array.isArray(listing.privateProofs)
+      ? listing.privateProofs
+      : [];
+
+    if (!privateProofs.length) {
+      return null;
+    }
+
+    return privateProofs.map((privateProof, i) => (
+      <div
+        key={`${privateProof.createdAt || i}`}
+        className="bid-action__link"
+        title={this.context.t('downloadPrivateProofHelp')}
+        aria-label={this.context.t('downloadPrivateProofHelp')}
+        onClick={() => this.downloadPrivateProof(privateProof, listing.nameLock.name)}
+      >
+        {`${this.context.t('downloadPrivateProof')} ${displayBalance(privateProof.price, true)}`}
+      </div>
+    ));
+  }
+
   renderListingRow = (l, idx) => {
     const { auction, deprecated, lowestDeprecatedPrice } = l;
     const listingMode = l.params.mode || 'reverse';
@@ -1066,6 +1581,9 @@ class Exchange extends Component {
     const { lockTime = 0 } = lastBid || {}
     const now = Date.now();
     const hasLastBidReleased = now > lockTime * 1000;
+    const isBulkGenerating = this.state.bulkGeneratingNames.includes(l.nameLock.name);
+    const isPreparingSubmit = this.state.preparingSubmitNames.includes(l.nameLock.name);
+    const expiryLabel = getAuctionExpiryLabel(l.auction);
     const {t} = this.context;
 
     return (
@@ -1096,7 +1614,41 @@ class Exchange extends Component {
             : `${displayBalance(l.params.startPrice)} -> ${displayBalance(l.params.endPrice)}`}
         </TableItem>
         <TableItem>
-          {l.status === LISTING_STATUS.TRANSFER_CONFIRMED && (
+          <span
+            className={classNames('exchange-listing-expiry', {
+              'exchange-listing-expiry--short': isShortFixedListingProof(l),
+            })}
+            title={l.auction ? `Buyable until ${expiryLabel}` : 'Generate a proof to set the listing length.'}
+          >
+            {expiryLabel}
+          </span>
+        </TableItem>
+        <TableItem className="exchange-table__actions-cell">
+          {isPreparingSubmit && (
+            <div className="bid-action">
+              {this.renderDisabledListingAction(
+                `${t('preparingSubmit')}...`,
+                t('preparingSubmitHelp'),
+              )}
+              {this.renderDisabledListingAction(
+                t('download'),
+                t('preparingSubmitHelp'),
+              )}
+              {this.renderDisabledListingAction(
+                t('submit'),
+                t('preparingSubmitHelp'),
+              )}
+            </div>
+          )}
+          {!isPreparingSubmit && l.status === LISTING_STATUS.SALE_PENDING && (
+            <div className="bid-action">
+              {this.renderDisabledListingAction(
+                t('salePending'),
+                t('salePendingHelp'),
+              )}
+            </div>
+          )}
+          {!isPreparingSubmit && l.status === LISTING_STATUS.TRANSFER_CONFIRMED && (
             <div className="bid-action">
               <div
                 className="bid-action__link"
@@ -1108,20 +1660,58 @@ class Exchange extends Component {
               </div>
             </div>
           )}
-          {l.status === LISTING_STATUS.FINALIZE_CONFIRMED && (
+          {!isPreparingSubmit && l.status === LISTING_STATUS.FINALIZE_CONFIRMED && (
             <div className="bid-action">
+              {isBulkGenerating
+                ? this.renderDisabledListingAction(`${t('generating')}...`, 'Generating this listing proof now.')
+                : (
+                  <div
+                    className="bid-action__link"
+                    onClick={() => this.setState({
+                      isGeneratingListing: true,
+                      generatingListing: l,
+                    })}
+                  >
+                    {t('generate')}
+                  </div>
+                )
+              }
+              {this.renderDisabledListingAction(
+                t('download'),
+                'Available after you generate the listing proof.'
+              )}
+              {this.renderDisabledListingAction(
+                t('submit'),
+                'Available after you generate the listing proof.'
+              )}
               <div
-                className="bid-action__link"
-                onClick={() => this.setState({
-                  isGeneratingListing: true,
-                  generatingListing: l,
-                })}
+                className="bid-action__link bid-action__link--private-proof"
+                title={t('createPrivateSaleProofHelp')}
+                aria-label={t('createPrivateSaleProofHelp')}
+                onClick={() => this.openPrivateSaleModal(l)}
               >
-                {t('generate')}
+                {t('createPrivateSaleProofAction')}
               </div>
+              {this.renderPrivateProofActions(l)}
             </div>
           )}
-          {l.status === LISTING_STATUS.CANCEL_CONFIRMED && (
+          {!isPreparingSubmit && l.status === LISTING_STATUS.FINALIZE_CONFIRMING && (
+            <div className="bid-action">
+              {this.renderDisabledListingAction(
+                t('generate'),
+                'Available after the finalize transaction confirms on-chain.'
+              )}
+              {this.renderDisabledListingAction(
+                t('download'),
+                'Available after you generate the listing proof.'
+              )}
+              {this.renderDisabledListingAction(
+                t('submit'),
+                'Available after you generate the listing proof.'
+              )}
+            </div>
+          )}
+          {!isPreparingSubmit && l.status === LISTING_STATUS.CANCEL_CONFIRMED && (
             <div className="bid-action">
               <div
                 className="bid-action__link"
@@ -1133,10 +1723,10 @@ class Exchange extends Component {
               </div>
             </div>
           )}
-          {l.status === LISTING_STATUS.ACTIVE && (
+          {!isPreparingSubmit && l.status === LISTING_STATUS.ACTIVE && (
             <div className="bid-action">
               {
-                (!auction && hasLastBidReleased) && (
+                hasLastBidReleased && (
                   <div
                     className="bid-action__link"
                     onClick={() => this.setState({
@@ -1150,11 +1740,22 @@ class Exchange extends Component {
               }
               <div
                 className="bid-action__link"
+                title={t('downloadListingProofHelp')}
+                aria-label={t('downloadListingProofHelp')}
                 onClick={() => this.onDownloadPresigns(l)}
               >
                 {t('download')}
               </div>
-              {this.props.network === 'main' && (
+              <div
+                className="bid-action__link bid-action__link--private-proof"
+                title={t('createPrivateSaleProofHelp')}
+                aria-label={t('createPrivateSaleProofHelp')}
+                onClick={() => this.openPrivateSaleModal(l)}
+              >
+                {t('createPrivateSaleProofAction')}
+              </div>
+              {this.renderPrivateProofActions(l)}
+              {this.props.network === 'main' && !l.marketSubmission && (
                 l.deprecated ?
                   <div
                     className="bid-action__link"
@@ -1167,6 +1768,8 @@ class Exchange extends Component {
                   </div>
                   : <div
                     className="bid-action__link"
+                    title={t('submitListingProofHelp')}
+                    aria-label={t('submitListingProofHelp')}
                     onClick={() => this.canUseMarketplaceActions()
                       ? this.onClickSubmitShakedex(l)
                       : this.showMarketplaceNotReady()}
@@ -1174,9 +1777,20 @@ class Exchange extends Component {
                     {t('submit')}
                   </div>
               )}
+              {l.marketSubmission && (
+                <div
+                  className="bid-action__hint"
+                  title={t('listedOnShakedexHelp')}
+                  aria-label={t('listedOnShakedexHelp')}
+                >
+                  {t('submitted')}
+                </div>
+              )}
 
               <div
                 className="bid-action__link"
+                title={t('cancelListingHelp')}
+                aria-label={t('cancelListingHelp')}
                 onClick={() => this.canUseMarketplaceActions()
                   ? this.props.cancelExchangeLock(l.nameLock)
                   : this.showMarketplaceNotReady()}
@@ -1239,6 +1853,7 @@ class Exchange extends Component {
                     this.setState({
                       placingAuction: auction,
                       placingCurrentBid: buyableBid,
+                      placingAuctionSource: 'market',
                     });
                   }}
                 >
@@ -1414,6 +2029,8 @@ export default connect(
     cancelExchangeLock: (nameLock) => dispatch(cancelExchangeLock(nameLock)),
     finalizeCancelExchangeLock: (nameLock) => dispatch(finalizeCancelExchangeLock(nameLock)),
     launchExchangeAuction: (nameLock) => dispatch(launchExchangeAuction(nameLock)),
+    launchExchangeAuctionsBulk: (listings) => dispatch(launchExchangeAuctionsBulk(listings)),
+    createPrivateSaleProof: (nameLock, params) => dispatch(createPrivateSaleProof(nameLock, params)),
     submitToShakedex: (auction) => dispatch(submitToShakedex(auction)),
     showError: (errorMessage) => dispatch(showError(errorMessage)),
     clearDeeplinkParams: () => dispatch(clearDeeplinkParams()),

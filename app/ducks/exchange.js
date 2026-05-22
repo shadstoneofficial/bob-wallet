@@ -49,6 +49,12 @@ export const FINALIZE_EXCHANGE_LOCK_ERR = 'FINALIZE_EXCHANGE_LOCK/ERR';
 export const LAUNCH_EXCHANGE_AUCTION = 'LAUNCH_EXCHANGE_AUCTION';
 export const LAUNCH_EXCHANGE_AUCTION_OK = 'LAUNCH_EXCHANGE_AUCTION/OK';
 export const LAUNCH_EXCHANGE_AUCTION_ERR = 'LAUNCH_EXCHANGE_AUCTION/ERR';
+export const LAUNCH_EXCHANGE_AUCTIONS_BULK = 'LAUNCH_EXCHANGE_AUCTIONS_BULK';
+export const LAUNCH_EXCHANGE_AUCTIONS_BULK_OK = 'LAUNCH_EXCHANGE_AUCTIONS_BULK/OK';
+export const LAUNCH_EXCHANGE_AUCTIONS_BULK_ERR = 'LAUNCH_EXCHANGE_AUCTIONS_BULK/ERR';
+export const CREATE_PRIVATE_SALE_PROOF = 'CREATE_PRIVATE_SALE_PROOF';
+export const CREATE_PRIVATE_SALE_PROOF_OK = 'CREATE_PRIVATE_SALE_PROOF/OK';
+export const CREATE_PRIVATE_SALE_PROOF_ERR = 'CREATE_PRIVATE_SALE_PROOF/ERR';
 
 export const SET_AUCTIONS_PAGE = 'SET_AUCTION_PAGE';
 
@@ -334,6 +340,27 @@ export const getExchangeListings = (page = 1) => async (dispatch, getState) => {
     listing.status = LISTING_STATUS.SOLD;
   }
 
+  try {
+    const marketSales = await shakedex.getExchangeSales();
+    const salePendingByName = new Map(
+      marketSales
+        .filter(sale => sale && sale.status === 'sale-pending')
+        .map(sale => [String(sale.name).toLowerCase(), sale])
+    );
+
+    for (const listing of listings) {
+      const name = String(listing.nameLock && listing.nameLock.name || '').toLowerCase();
+      const salePending = salePendingByName.get(name);
+
+      if (salePending) {
+        listing.marketSale = salePending;
+        listing.status = LISTING_STATUS.SALE_PENDING;
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to load Shakedex channel sale state:', e);
+  }
+
   if (walletId !== getState().wallet.wid) {
     return;
   }
@@ -427,7 +454,7 @@ export const transferExchangeLock = (name, params) => async (dispatch) => {
     throw e;
   }
 
-  dispatch(getExchangeListings());
+  await dispatch(getExchangeListings());
   dispatch({
     type: PLACE_EXCHANGE_LISTING_OK,
   });
@@ -540,8 +567,8 @@ export const launchExchangeAuction = (nameLock, overrideParams) => async (dispat
     dispatch({
       type: LAUNCH_EXCHANGE_AUCTION_ERR,
     });
-    dispatch(showError('Failed to generate presigns. Please try again.'));
-    return;
+    dispatch(showError(`Failed to generate listing proof: ${e.message || 'Please try again.'}`));
+    throw e;
   }
 
   dispatch(getExchangeListings());
@@ -549,21 +576,153 @@ export const launchExchangeAuction = (nameLock, overrideParams) => async (dispat
     type: LAUNCH_EXCHANGE_AUCTION_OK,
   });
 
-  dispatch(showSuccess('Successfully generated proof. Submit it to a Shakedex channel or download a backup copy.'));
+  dispatch(showSuccess('Listing proof generated locally. No on-chain transaction was sent. Click Submit to confirm the listing on the Shakedex channel, or Download to save a backup copy.'));
+};
+
+export const createPrivateSaleProof = (nameLock, params) => async (dispatch) => {
+  dispatch({
+    type: CREATE_PRIVATE_SALE_PROOF,
+  });
+
+  let privateProof;
+  try {
+    const passphrase = await new Promise((resolve, reject) => dispatch(getPassphrase(resolve, reject)));
+    privateProof = await shakedex.createPrivateAuction(nameLock, passphrase, params);
+  } catch (e) {
+    dispatch({
+      type: CREATE_PRIVATE_SALE_PROOF_ERR,
+    });
+    dispatch(showError(`Failed to generate private sale proof: ${e.message || 'Please try again.'}`));
+    throw e;
+  }
+
+  await dispatch(getExchangeListings());
+  dispatch({
+    type: CREATE_PRIVATE_SALE_PROOF_OK,
+  });
+  dispatch(showSuccess('Private sale proof generated locally. It was not published to the Shakedex channel. Share the downloaded proof only with buyers you trust.'));
+  return privateProof;
+};
+
+function getListingOverrideParams(listing) {
+  const params = listing.params || {};
+
+  if (params.mode === 'fixed') {
+    return {
+      mode: 'fixed',
+      price: Math.round(Number(params.price || 0)),
+      durationDays: Math.max(Number(params.durationDays || 0), 365),
+    };
+  }
+
+  const overrideParams = {
+    mode: 'reverse',
+    startPrice: Math.round(Number(params.startPrice || 0)),
+    endPrice: Math.round(Number(params.endPrice || 0)),
+    durationDays: params.durationDays || 7,
+  };
+
+  if (listing.lowestDeprecatedPrice) {
+    overrideParams.lowestDeprecatedPrice = listing.lowestDeprecatedPrice;
+  }
+
+  return overrideParams;
+}
+
+export const launchExchangeAuctionsBulk = (listings) => async (dispatch, getState) => {
+  dispatch({
+    type: LAUNCH_EXCHANGE_AUCTIONS_BULK,
+  });
+
+  const failures = [];
+  const succeeded = [];
+
+  try {
+    const passphrase = await new Promise((resolve, reject) => dispatch(getPassphrase(resolve, reject)));
+
+    for (const listing of listings) {
+      try {
+        await shakedex.launchAuction(
+          listing.nameLock,
+          passphrase,
+          getListingOverrideParams(listing),
+          true,
+        );
+        succeeded.push(listing.nameLock && listing.nameLock.name);
+      } catch (e) {
+        failures.push({
+          name: listing.nameLock && listing.nameLock.name,
+          message: e.message,
+        });
+      }
+    }
+  } catch (e) {
+    dispatch({
+      type: LAUNCH_EXCHANGE_AUCTIONS_BULK_ERR,
+    });
+    dispatch(showError(e.message || 'Failed to generate listing proofs. Please try again.'));
+    return {
+      total: listings.length,
+      succeeded,
+      failures: listings.map(listing => ({
+        name: listing.nameLock && listing.nameLock.name,
+        message: e.message,
+      })),
+    };
+  }
+
+  await dispatch(getExchangeListings());
+
+  if (failures.length) {
+    dispatch({
+      type: LAUNCH_EXCHANGE_AUCTIONS_BULK_ERR,
+    });
+    dispatch(showError(`Generated ${listings.length - failures.length} of ${listings.length} listing proofs. Failed: ${failures.map(f => f.name).join(', ')}`));
+    return {
+      total: listings.length,
+      succeeded,
+      failures,
+    };
+  }
+
+  dispatch({
+    type: LAUNCH_EXCHANGE_AUCTIONS_BULK_OK,
+  });
+  dispatch(showSuccess(`Generated ${listings.length} listing proof${listings.length === 1 ? '' : 's'} locally. No on-chain transaction was sent. Click Submit on each listing to confirm it on the Shakedex channel, or Download to save backups.`));
+  return {
+    total: listings.length,
+    succeeded,
+    failures,
+  };
 };
 
 export const submitToShakedex = (auction) => async dispatch => {
   try {
     const json = await shakedex.listAuction(auction);
     if (json.error) {
-      dispatch(showError(json.error.message));
-      return;
+      const err = new Error(json.error.message || 'The Shakedex channel rejected this listing proof.');
+      err.wasShown = true;
+      dispatch(showError(err.message));
+      throw err;
     }
 
-    dispatch(showSuccess('Your auction is now listed on the Shakedex channel'));
+    if (json.success === false) {
+      const err = new Error(json.message || 'The Shakedex channel did not accept this listing proof.');
+      err.wasShown = true;
+      dispatch(showError(err.message));
+      throw err;
+    }
+
+    await dispatch(getExchangeListings());
+    dispatch(showSuccess(`${auction.name}/ is now listed on the Shakedex channel.`));
+    return json;
   } catch (e) {
     console.error(e);
-    dispatch(showError('Failed to post to the Shakedex channel. You can still download your proofs and distribute them.'));
+    if (!e.wasShown) {
+      const message = `Failed to post to the Shakedex channel: ${e.message}. You can still download your proof as a backup.`;
+      dispatch(showError(message));
+    }
+    throw e;
   }
 };
 
@@ -713,6 +872,20 @@ export default function (state = getInitialState(), action) {
         finalizingName: null,
       };
     }
+    case LAUNCH_EXCHANGE_AUCTIONS_BULK:
+    case CREATE_PRIVATE_SALE_PROOF:
+      return {
+        ...state,
+        isLoading: true,
+      };
+    case LAUNCH_EXCHANGE_AUCTIONS_BULK_ERR:
+    case LAUNCH_EXCHANGE_AUCTIONS_BULK_OK:
+    case CREATE_PRIVATE_SALE_PROOF_ERR:
+    case CREATE_PRIVATE_SALE_PROOF_OK:
+      return {
+        ...state,
+        isLoading: false,
+      };
     case SET_AUCTIONS_PAGE:
       return {
         ...state,

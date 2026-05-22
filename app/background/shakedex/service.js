@@ -71,6 +71,27 @@ async function getMarketClient() {
   });
 }
 
+function buildProofUploadPayload(auction, proof) {
+  const boundary = `----BobLearnHNS${Date.now().toString(16)}`;
+  const filename = `${auction.name || 'shakedex-listing'}-proof.json`
+    .replace(/["\r\n]/g, '_');
+  const head = Buffer.from(
+    `--${boundary}\r\n`
+    + `Content-Disposition: form-data; name="proof"; filename="${filename}"\r\n`
+    + 'Content-Type: application/json\r\n\r\n',
+  );
+  const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
+  const body = Buffer.concat([head, Buffer.from(proof), tail]);
+
+  return {
+    body,
+    headers: {
+      'Content-Type': `multipart/form-data; boundary=${boundary}`,
+      'Content-Length': `${body.length}`,
+    },
+  };
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -160,17 +181,40 @@ export async function getExchangeAuctions(currentPage = 1) {
   }
 }
 
+export async function getExchangeSales() {
+  const marketClient = await getMarketClient();
+  const res = await marketClient.get('api/v2/sales');
+  return Array.isArray(res.sales) ? res.sales : [];
+}
+
 export async function listAuction(auction) {
-  const resp = await fetch(`${await getMarketApiBaseUrl()}/api/v2/auctions`, {
+  const proof = JSON.stringify(auction);
+  const {body, headers} = buildProofUploadPayload(auction, proof);
+
+  const resp = await fetch(`${await getMarketApiBaseUrl()}/api/upload-proof`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      auction,
-    }),
+    headers,
+    body,
   });
-  const json = await resp.json();
+
+  let json;
+  const text = await resp.text();
+  try {
+    json = text ? JSON.parse(text) : {};
+  } catch (e) {
+    json = {
+      error: {
+        message: text || `Shakedex channel returned HTTP ${resp.status}`,
+      },
+    };
+  }
+
+  if (!resp.ok && !json.error) {
+    json.error = {
+      message: `Shakedex channel returned HTTP ${resp.status}`,
+    };
+  }
+
   if (resp.ok && !json.error) {
     await saveMarketSubmission(auction, json);
   }
@@ -477,7 +521,7 @@ async function saveMarketSubmission(auction, response) {
     if (
       listingAuction.name === auction.name
       && listingAuction.lockingTxHash === auction.lockingTxHash
-      && listingAuction.lockingOutputIdx === auction.lockingOutputIdx
+      && Number(listingAuction.lockingOutputIdx || 0) === Number(auction.lockingOutputIdx || 0)
     ) {
       updates.push({
         key: key.toString('utf-8'),
@@ -744,6 +788,7 @@ export async function fulfillSwap(auction, bid, passphrase) {
     paymentAddr: auction.paymentAddr,
     price: bid.price,
     fee: bid.fee,
+    feeAddr: auction.feeAddr,
     lockTime: bid.lockTime,
     signature: bid.signature,
   });
@@ -1018,6 +1063,9 @@ export async function launchAuction(nameLock, passphrase, paramsOverride, persis
   }
 
   const effectiveMode = mode || LISTING_MODES.REVERSE;
+  const listingDurationDays = durationDays || (
+    effectiveMode === LISTING_MODES.FIXED ? 365 : 7
+  );
 
   if (effectiveMode === LISTING_MODES.FIXED) {
     const {
@@ -1049,8 +1097,10 @@ export async function launchAuction(nameLock, passphrase, paramsOverride, persis
       feeAddr,
     });
     const auctionJSON = fixedAuction.toJSON(context);
+    auctionJSON.expiresAt = (mtp + listingDurationDays * 24 * 60 * 60) >>> 0;
     if (persist) {
       listing.auction = auctionJSON;
+      delete listing.marketSubmission;
       await put(
         key,
         listing,
@@ -1060,7 +1110,7 @@ export async function launchAuction(nameLock, passphrase, paramsOverride, persis
   }
 
   let reductionTime;
-  switch (durationDays) {
+  switch (listingDurationDays) {
     case 1:
       reductionTime = 60 * 60;
       break;
@@ -1098,7 +1148,7 @@ export async function launchAuction(nameLock, passphrase, paramsOverride, persis
   const auctionFactory = new AuctionFactory({
     name: listing.nameLock.name,
     startTime: mtp >>> 0,
-    endTime: (mtp + durationDays * 24 * 60 * 60) >>> 0,
+    endTime: (mtp + listingDurationDays * 24 * 60 * 60) >>> 0,
     startPrice: startPrice,
     endPrice: endPrice,
     reductionTime,
@@ -1114,6 +1164,7 @@ export async function launchAuction(nameLock, passphrase, paramsOverride, persis
   const auctionJSON = auction.toJSON(context);
   if (persist) {
     listing.auction = auctionJSON;
+    delete listing.marketSubmission;
     if (lowestDeprecatedPrice) {
       listing.lowestDeprecatedPrice = lowestDeprecatedPrice;
     }
@@ -1123,6 +1174,76 @@ export async function launchAuction(nameLock, passphrase, paramsOverride, persis
     );
   }
   return auctionJSON;
+}
+
+export async function createPrivateAuction(nameLock, passphrase, params) {
+  const context = getContext();
+  const key = `${listingPrefix()}/${nameLock.name}/${nameLock.transferTxHash}`;
+  const listing = await get(key);
+
+  if (!listing) {
+    throw new Error(`Listing for ${nameLock.name} was not found.`);
+  }
+
+  const price = Math.round(Number(params && params.price || 0));
+  const durationDays = Math.round(Number(params && params.durationDays || 0)) || 30;
+  const feeRate = Number(params && params.feeRate || 0);
+  const feeAddr = params && params.feeAddr;
+
+  if (!Number.isFinite(price) || price <= 0) {
+    throw new Error('Private sale price must be greater than zero.');
+  }
+
+  const {
+    tx: finalizeTx,
+    coin: finalizeCoin,
+    outputIdx: finalizeOutputIdx,
+  } = await getFinalizeFromTransferTx(
+    listing.nameLock.transferTxHash,
+    listing.nameLock.name,
+    nodeService,
+  );
+
+  if (!finalizeCoin) throw new Error('cannot find finalize coin');
+
+  const mtp = await nodeService.getMTP();
+  const lockFinalize = new NameLockFinalize({
+    ...listing.nameLock,
+    finalizeTxHash: finalizeTx.hash,
+    finalizeOutputIdx: finalizeCoin.index ?? finalizeOutputIdx,
+    privateKey: decrypt(listing.nameLock.encryptedPrivateKey, passphrase),
+  });
+  attachSellerLockCoinFallback(context, lockFinalize, finalizeCoin);
+
+  const privateAuction = await createFixedPriceAuction({
+    context,
+    lockFinalize,
+    price,
+    lockTime: mtp >>> 0,
+    feeRate,
+    feeAddr,
+  });
+  const auctionJSON = privateAuction.toJSON(context);
+  auctionJSON.expiresAt = (mtp + durationDays * 24 * 60 * 60) >>> 0;
+
+  const privateProof = {
+    createdAt: Date.now(),
+    price,
+    durationDays,
+    expiresAt: auctionJSON.expiresAt,
+    auction: auctionJSON,
+  };
+
+  const out = {
+    ...listing,
+    privateProofs: [
+      ...(Array.isArray(listing.privateProofs) ? listing.privateProofs : []),
+      privateProof,
+    ],
+  };
+
+  await put(key, out);
+  return privateProof;
 }
 
 async function createFixedPriceAuction(options) {
@@ -1265,10 +1386,12 @@ const methods = {
   transferCancel,
   getListings,
   launchAuction,
+  createPrivateAuction,
   downloadProofs,
   restoreOneListing,
   restoreOneFill,
   getExchangeAuctions,
+  getExchangeSales,
   listAuction,
   getFeeInfo,
   getBestBid,

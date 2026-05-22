@@ -492,7 +492,15 @@ class WalletService {
     }
 
     const wallet = await this.node.wdb.get(this.name);
-    const txs = await wallet.getHistory('default');
+    const txsByHash = new Map();
+    const history = await wallet.getHistory('default');
+    const pending = await wallet.getPending('default');
+
+    for (const tx of [...history, ...pending]) {
+      txsByHash.set(tx.hash.toString('hex'), tx);
+    }
+
+    const txs = Array.from(txsByHash.values());
 
     common.sortTX(txs);
 

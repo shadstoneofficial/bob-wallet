@@ -10,17 +10,36 @@ import Dropdown from '../../components/Dropdown';
 import { withRouter } from 'react-router';
 import walletClient from "../../utils/walletClient";
 import {I18nContext} from "../../utils/i18n";
+import {clearDeeplink, setDeeplinkParams} from '../../ducks/app';
 
 @withRouter
 @connect(
   (state) => ({
     wallets: state.wallet.wallets,
     walletsDetails: state.wallet.walletsDetails,
+    pendingDeeplink: state.app.deeplink,
   }),
   dispatch => ({
     unlockWallet: (name, passphrase) => dispatch(walletActions.unlockWallet(name, passphrase)),
     verifyPhrase: (passphrase) => dispatch(walletActions.verifyPhrase(passphrase)),
     fetchWallet: () => dispatch(walletActions.fetchWallet()),
+    clearDeeplink: () => dispatch(clearDeeplink()),
+    openShakedexBuyDeeplink: (message) => {
+      const url = new URL(message);
+      const params = url.searchParams;
+      const presignJSONString = params.get('presign');
+      const name = params.get('name');
+
+      if (!presignJSONString) {
+        throw new Error('Shakedex buy link is missing its listing proof.');
+      }
+
+      dispatch(setDeeplinkParams({
+        presignJSONString,
+        name,
+        openedAt: Date.now(),
+      }));
+    },
   }),
 )
 export default class AccountLogin extends Component {
@@ -28,6 +47,8 @@ export default class AccountLogin extends Component {
     unlockWallet: PropTypes.func.isRequired,
     verifyPhrase: PropTypes.func.isRequired,
     fetchWallet: PropTypes.func.isRequired,
+    clearDeeplink: PropTypes.func.isRequired,
+    openShakedexBuyDeeplink: PropTypes.func.isRequired,
   };
 
   static defaultProps = {
@@ -53,7 +74,14 @@ export default class AccountLogin extends Component {
       );
       await this.props.fetchWallet();
       await this.props.verifyPhrase(passphrase);
-      this.props.history.push('/account');
+      if (this.props.pendingDeeplink) {
+        const pendingDeeplink = this.props.pendingDeeplink;
+        this.props.clearDeeplink();
+        this.props.openShakedexBuyDeeplink(pendingDeeplink);
+        this.props.history.push('/exchange');
+      } else {
+        this.props.history.push('/account');
+      }
       await walletClient.lock();
     } catch (error) {
       return this.setState({showError: true});

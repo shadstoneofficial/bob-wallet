@@ -246,8 +246,11 @@ export function fromAuctionJSON(json) {
     lockingOutputIdx: json.lockingOutputIdx,
     publicKey: json.publicKey,
     paymentAddr: json.paymentAddr,
+    feeAddr: json.feeAddr,
+    expiresAt: json.expiresAt,
     bids: json.data.map(p => ({
       price: p.price,
+      fee: p.fee || 0,
       lockTime: p.lockTime,
       signature: p.signature,
     })),
@@ -257,8 +260,46 @@ export function fromAuctionJSON(json) {
 export async function getFinalizeFromTransferTx(transferTxHash, name, nodeClient) {
   let finalizeTx, finalizeCoin, finalizeOutputIdx;
 
-  const { info: { nameHash }} = await nodeClient.getNameInfo(name);
+  const { info: nameInfo } = await nodeClient.getNameInfo(name);
+  const { nameHash } = nameInfo;
   const transferTx = await nodeClient.getTx(transferTxHash);
+
+  if (nameInfo.owner && nameInfo.owner.hash) {
+    try {
+      const ownerOutputIdx = Number(nameInfo.owner.index);
+      const ownerTx = await nodeClient.getTx(nameInfo.owner.hash);
+      const ownerOutput = ownerTx?.outputs?.[ownerOutputIdx];
+
+      if (
+        ownerOutput
+        && ownerOutput.covenant.action === 'FINALIZE'
+        && ownerOutput.covenant.items
+        && ownerOutput.covenant.items[0] === nameHash
+      ) {
+        let ownerCoin = null;
+        try {
+          ownerCoin = await nodeClient.getCoin(nameInfo.owner.hash, ownerOutputIdx);
+        } catch (e) {
+          ownerCoin = null;
+        }
+
+        return {
+          tx: ownerTx,
+          coin: ownerCoin || {
+            ...ownerOutput,
+            coinbase: false,
+            hash: ownerTx.hash,
+            height: ownerTx.height,
+            index: ownerOutputIdx,
+          },
+          outputIdx: ownerOutputIdx,
+        };
+      }
+    } catch (e) {
+      // Fall back to the older address-history lookup below.
+    }
+  }
+
   let prevoutIndex;
   const transferOutput = transferTx?.outputs.filter((output, i) => {
     if (output.covenant.action === 'TRANSFER'
@@ -269,7 +310,14 @@ export async function getFinalizeFromTransferTx(transferTxHash, name, nodeClient
     }
   })[0];
 
-  const transactions = transferOutput && await nodeClient.getTXByAddresses([transferOutput.address]);
+  let transactions = null;
+  if (transferOutput) {
+    try {
+      transactions = await nodeClient.getTXByAddresses([transferOutput.address]);
+    } catch (e) {
+      transactions = null;
+    }
+  }
 
   finalizeTx = transactions
     ? transactions.filter((transaction) => {
@@ -309,6 +357,7 @@ export function listingStatusToI18nKey(status) {
   return {
     [LISTING_STATUS.NOT_FOUND]: 'shakedexStatusNotFound',
     [LISTING_STATUS.SOLD]: 'shakedexStatusSold',
+    [LISTING_STATUS.SALE_PENDING]: 'shakedexStatusSalePending',
     [LISTING_STATUS.ACTIVE]: 'shakedexStatusActive',
     [LISTING_STATUS.TRANSFER_CONFIRMING]: 'shakedexStatusTransferConfirming',
     [LISTING_STATUS.TRANSFER_CONFIRMED]: 'shakedexStatusTransferConfirmed',

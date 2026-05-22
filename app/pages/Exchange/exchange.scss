@@ -25,6 +25,13 @@
   display: block;
 }
 
+.exchange__field-help {
+  color: $manatee-gray;
+  font-size: .75rem;
+  line-height: 1.15rem;
+  margin: -.25rem 0 .5rem;
+}
+
 .exchange__name-filter {
   margin-bottom: .5rem;
 
@@ -81,6 +88,18 @@
   background: transparent;
   border: 1px solid $azure-blue;
   color: $azure-blue;
+}
+
+.exchange__backup-link {
+  color: $azure-blue;
+  font-weight: 700;
+  margin-left: .25rem;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+
+  &:hover {
+    color: lighten($azure-blue, 10%);
+  }
 }
 
 .exchange-marketplace-header {
@@ -209,9 +228,90 @@
   display: flex;
 }
 
+.exchange-deeplink-loading {
+  display: flex;
+  align-items: center;
+  gap: .85rem;
+  margin-bottom: 1rem;
+  padding: .85rem 1rem;
+  border: 1px solid $azure-blue;
+  border-radius: 8px;
+  background: rgba(46, 133, 229, .08);
+  color: $dark-grey;
+
+  .loader {
+    position: static;
+    width: 2rem;
+    height: 2rem;
+    flex: 0 0 auto;
+  }
+
+  strong,
+  span {
+    display: block;
+  }
+
+  span {
+    margin-top: .2rem;
+    color: $manatee-gray;
+    font-size: .8rem;
+  }
+}
+
+.exchange-bulk-generate-notice {
+  margin: 0 0 1rem;
+  padding: .75rem 1rem;
+  border-radius: 8px;
+  font-size: .85rem;
+  line-height: 1.25rem;
+}
+
+.exchange-bulk-generate-notice--success {
+  border: 1px solid rgba($success-green, .35);
+  background: rgba($success-green, .08);
+  color: $dark-grey;
+}
+
+.exchange-bulk-generate-notice--warning {
+  border: 1px solid rgba($orange-red, .35);
+  background: rgba($orange-red, .08);
+  color: $dark-grey;
+}
+
 .bid-action__link--disabled {
   color: $manatee-gray;
   cursor: not-allowed;
+  opacity: .72;
+  pointer-events: none;
+}
+
+.bid-action {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: .3rem .65rem;
+  min-width: 0;
+}
+
+.bid-action__link {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.bid-action__link--private-proof {
+  line-height: 1.2;
+  max-width: 7rem;
+  text-align: right;
+  white-space: normal;
+}
+
+.bid-action__hint {
+  color: $manatee-gray;
+  flex: 0 0 auto;
+  font-size: .72rem;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .exchange-readiness {
@@ -374,6 +474,133 @@
   }
 }
 
+.exchange-table--listings {
+  &.table {
+    .table__header__item,
+    .table__row__item {
+      min-width: 0;
+
+      &:nth-of-type(3) {
+        flex-basis: 6.25rem;
+      }
+
+      &:nth-of-type(4) {
+        flex-basis: 6.5rem;
+      }
+
+      &:nth-of-type(5) {
+        flex-basis: 8rem;
+      }
+
+      &:nth-of-type(6) {
+        flex-basis: 12.75rem;
+        overflow: visible;
+        padding-left: .5rem;
+        white-space: normal;
+      }
+    }
+  }
+}
+
+.exchange-table__actions-cell {
+  overflow: visible;
+  white-space: normal;
+}
+
+.exchange-table__empty-note {
+  display: flex;
+  flex-direction: column;
+  gap: .25rem;
+  color: $manatee-gray;
+  font-size: .8rem;
+  line-height: 1.25rem;
+
+  strong {
+    color: $dark-grey;
+    font-weight: 600;
+  }
+}
+
+.exchange-submit-confirmation__details {
+  border: 1px solid rgba($white, .18);
+  border-radius: .5rem;
+  margin: 1rem 0;
+  overflow: hidden;
+
+  div {
+    align-items: center;
+    border-bottom: 1px solid rgba($white, .12);
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: .75rem 1rem;
+
+    &:last-child {
+      border-bottom: 0;
+    }
+  }
+
+  strong {
+    color: $manatee-gray;
+    font-size: .75rem;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+  }
+
+  span {
+    color: $white;
+    font-weight: 600;
+    text-align: right;
+  }
+}
+
+.exchange-submit-confirmation__processing {
+  border: 1px solid rgba($azure-blue, .65);
+  border-radius: .5rem;
+  color: $azure-blue;
+  font-size: .9rem;
+  line-height: 1.35rem;
+  margin: 1rem 0;
+  padding: .75rem 1rem;
+}
+
+.exchange-submit-confirmation__error {
+  border: 1px solid rgba($orange-red, .7);
+  border-radius: .5rem;
+  color: $orange-red;
+  font-size: .9rem;
+  line-height: 1.35rem;
+  margin: 1rem 0;
+  padding: .75rem 1rem;
+}
+
+.exchange-submit-confirmation__note {
+  color: $manatee-gray;
+  font-size: .9rem;
+  line-height: 1.35rem;
+}
+
+.exchange-submit-confirmation__warning {
+  border: 1px solid rgba($school-bus-yellow, .45);
+  border-radius: .5rem;
+  color: $school-bus-yellow;
+  font-size: .9rem;
+  line-height: 1.35rem;
+  margin-bottom: 1rem;
+  padding: .75rem 1rem;
+}
+
+.exchange-listing-expiry {
+  color: $dark-grey;
+  display: inline-block;
+  font-size: .85rem;
+  line-height: 1.2rem;
+}
+
+.exchange-listing-expiry--short {
+  color: $school-bus-yellow;
+}
+
 .exchange__place-listing-modal {
   p {
     &:nth-of-type(1) {
@@ -425,6 +652,13 @@ body.bob-theme-dark {
       background-color: #151b23;
       border-top-color: rgba(255, 255, 255, 0.12);
     }
+  }
+}
+
+.exchange__private-sale-modal {
+  .exchange-submit-confirmation__warning,
+  .exchange-submit-confirmation__error {
+    margin-bottom: .75rem;
   }
 }
 
