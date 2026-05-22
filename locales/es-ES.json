@@ -113,6 +113,8 @@
   "domainsPlural": "dominios",
   "done": "Hecho",
   "download": "Descargar",
+  "downloadAllListingProofs": "Descargar todas las pruebas",
+  "downloadAllListingProofsHelp": "Guarda un archivo JSON con todas las pruebas de listado generadas. Descargar no publica listados ni envía ninguna transacción on-chain.",
   "downloadMasterKey": "Descarga la clave maestra",
   "downloadProofs": "Descargar Pruebas",
   "duration": "Duración",

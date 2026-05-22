@@ -113,6 +113,8 @@
   "domainsPlural": "XXXXX",
   "done": "XXXXX",
   "download": "XXXXX",
+  "downloadAllListingProofs": "XXXXX",
+  "downloadAllListingProofsHelp": "XXXXX",
   "downloadMasterKey": "XXXXX",
   "downloadProofs": "XXXXX",
   "duration": "XXXXX",

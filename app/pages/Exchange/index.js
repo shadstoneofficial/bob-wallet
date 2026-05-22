@@ -264,6 +264,14 @@ class Exchange extends Component {
     this.props.getExchangeListings();
   }
 
+  getDownloadableListingProofs() {
+    return this.props.listings.filter(l => (
+      l
+      && l.status === LISTING_STATUS.ACTIVE
+      && l.auction
+    ));
+  }
+
   clearMarketplaceFilters = () => this.setState({
     marketplaceQuery: '',
     marketplaceAvailabilityFilter: 'all',
@@ -449,20 +457,47 @@ class Exchange extends Component {
     try {
       const submission = listing.auction;
       const content = JSON.stringify(submission);
-      const data = `data:text/plain;charset=utf-8,${content}\r\n`;
-      const encodedUri = encodeURI(data);
-      const link = document.createElement('a');
-      link.setAttribute('href', encodedUri);
-      link.setAttribute('download', `${submission.name}-presigns.json`);
-      document.body.appendChild(link); // Required for FF
-      link.click();
-      link.remove();
+      this.downloadJSON(`${submission.name}-presigns.json`, content);
     } catch (e) {
       logger.error(e.message);
       setTimeout(() => {
         throw e;
       }, 0);
     }
+  };
+
+  onDownloadAllListingProofs = async () => {
+    try {
+      const listings = this.getDownloadableListingProofs();
+      if (!listings.length) {
+        this.props.showError('No generated listing proofs are available to download.');
+        return;
+      }
+
+      const content = JSON.stringify({
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        proofs: listings.map(listing => listing.auction),
+      }, null, 2);
+      this.downloadJSON('bob-shakedex-listing-proofs.json', content);
+    } catch (e) {
+      logger.error(e.message);
+      setTimeout(() => {
+        throw e;
+      }, 0);
+    }
+  };
+
+  downloadJSON = (filename, content) => {
+    const blob = new Blob([`${content}\r\n`], {type: 'application/json;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', filename);
+    document.body.appendChild(link); // Required for FF
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
   };
 
   onClickDownload = async (auction) => {
@@ -483,14 +518,7 @@ class Exchange extends Component {
         })),
       };
       const content = JSON.stringify(submission);
-      const data = `data:text/plain;charset=utf-8,${content}\r\n`;
-      const encodedUri = encodeURI(data);
-      const link = document.createElement('a');
-      link.setAttribute('href', encodedUri);
-      link.setAttribute('download', `${submission.name}-presigns.json`);
-      document.body.appendChild(link); // Required for FF
-      link.click();
-      link.remove();
+      this.downloadJSON(`${submission.name}-presigns.json`, content);
     } catch (e) {
       logger.error(e.message);
       setTimeout(() => {
@@ -609,6 +637,7 @@ class Exchange extends Component {
     const marketplaceAuctions = this.getVisibleMarketplaceAuctions();
     const activeChannelText = this.state.marketChannelHost;
     const marketBaseUrl = getShakedexChannelBaseUrl({host: this.state.marketChannelHost});
+    const downloadableListingProofs = this.getDownloadableListingProofs();
 
     return (
       <div className="exchange">
@@ -672,6 +701,15 @@ class Exchange extends Component {
             <div className="exchange__button-header">
               <h2>{t('yourListings')}</h2>
               <div className="exchange__button-header-actions">
+                <button
+                  className="exchange__button-header-button exchange__button-header-button--secondary"
+                  disabled={!downloadableListingProofs.length}
+                  title={t('downloadAllListingProofsHelp')}
+                  aria-label={t('downloadAllListingProofsHelp')}
+                  onClick={this.onDownloadAllListingProofs}
+                >
+                  {`${t('downloadAllListingProofs')} (${downloadableListingProofs.length})`}
+                </button>
                 <button
                   className="exchange__button-header-button exchange__button-header-button--secondary"
                   onClick={this.refreshLocalListings}

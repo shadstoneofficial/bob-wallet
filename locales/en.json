@@ -120,6 +120,8 @@
   "domainsPlural": "domains",
   "done": "Done",
   "download": "Download",
+  "downloadAllListingProofs": "Download All Proofs",
+  "downloadAllListingProofsHelp": "Save one JSON file containing all generated listing proofs. Downloading does not publish listings and does not send an on-chain transaction.",
   "downloadMasterKey": "Download Master Key",
   "downloadProofs": "Download Proofs",
   "duration": "Duration",

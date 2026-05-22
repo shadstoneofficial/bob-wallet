@@ -113,6 +113,8 @@
   "domainsPlural": "dominis",  
   "done": "Fet",
   "download": "Descarregar",
+  "downloadAllListingProofs": "Descarregar totes les proves",
+  "downloadAllListingProofsHelp": "Desa un fitxer JSON amb totes les proves de llistat generades. La baixada no publica llistats ni envia cap transacció on-chain.",
   "downloadMasterKey": "Descarrega la clau mestra",
   "downloadProofs": "Descarregar Proves",
   "duration": "Duració",

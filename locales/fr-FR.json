@@ -113,6 +113,8 @@
   "domainsPlural": "domaines",
   "done": "Terminé",
   "download": "Télécharger",
+  "downloadAllListingProofs": "Télécharger toutes les preuves",
+  "downloadAllListingProofsHelp": "Enregistre un fichier JSON contenant toutes les preuves de listing générées. Le téléchargement ne publie pas de listings et n'envoie aucune transaction on-chain.",
   "downloadMasterKey": "Télécharger la clé maître",
   "downloadProofs": "Télécharger les preuves",
   "duration": "Durée",
