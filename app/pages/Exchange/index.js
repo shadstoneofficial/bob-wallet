@@ -859,7 +859,11 @@ class Exchange extends Component {
     const isLowerThanPublic = publicPrice && privatePrice > 0 && privatePrice < publicPrice;
 
     return (
-      <MiniModal title={t('privateShakedexSale')} onClose={this.closePrivateSaleModal}>
+      <MiniModal
+        title={t('privateShakedexSale')}
+        onClose={this.closePrivateSaleModal}
+        className="exchange__create-listing-modal exchange__private-sale-modal"
+      >
         <div className="exchange__place-listing-modal">
           <p>
             {t('privateSaleProofIntro')}
@@ -1649,12 +1653,12 @@ class Exchange extends Component {
                 'Available after you generate the listing proof.'
               )}
               <div
-                className="bid-action__link"
+                className="bid-action__link bid-action__link--private-proof"
                 title={t('createPrivateSaleProofHelp')}
                 aria-label={t('createPrivateSaleProofHelp')}
                 onClick={() => this.openPrivateSaleModal(l)}
               >
-                {t('createPrivateSaleProof')}
+                {t('createPrivateSaleProofAction')}
               </div>
               {this.renderPrivateProofActions(l)}
             </div>
@@ -1711,12 +1715,12 @@ class Exchange extends Component {
                 {t('download')}
               </div>
               <div
-                className="bid-action__link"
+                className="bid-action__link bid-action__link--private-proof"
                 title={t('createPrivateSaleProofHelp')}
                 aria-label={t('createPrivateSaleProofHelp')}
                 onClick={() => this.openPrivateSaleModal(l)}
               >
-                {t('createPrivateSaleProof')}
+                {t('createPrivateSaleProofAction')}
               </div>
               {this.renderPrivateProofActions(l)}
               {this.props.network === 'main' && !l.marketSubmission && (

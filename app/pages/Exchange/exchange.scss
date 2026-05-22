@@ -299,6 +299,13 @@
   white-space: nowrap;
 }
 
+.bid-action__link--private-proof {
+  line-height: 1.2;
+  max-width: 7rem;
+  text-align: right;
+  white-space: normal;
+}
+
 .bid-action__hint {
   color: $manatee-gray;
   flex: 0 0 auto;
@@ -645,6 +652,13 @@ body.bob-theme-dark {
       background-color: #151b23;
       border-top-color: rgba(255, 255, 255, 0.12);
     }
+  }
+}
+
+.exchange__private-sale-modal {
+  .exchange-submit-confirmation__warning,
+  .exchange-submit-confirmation__error {
+    margin-bottom: .75rem;
   }
 }
 

@@ -97,6 +97,7 @@
   "copyTxHex": "Copy Tx Hex",
   "createListing": "Create Listing",
   "createLearnHnsListing": "Create Shakedex Listing",
+  "createPrivateSaleProofAction": "Private Proof",
   "createPrivateSaleProof": "Create Private Sale Proof",
   "createPrivateSaleProofHelp": "Generate a fixed-price Shakedex proof for private sharing. It will not be published to the Shakedex channel.",
   "createNewTransaction": "Create New Transaction",
