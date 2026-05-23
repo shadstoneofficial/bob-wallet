@@ -1355,10 +1355,17 @@ class Exchange extends Component {
             </div>
             <ShakedexDeprecated toggle={this.state.shakedexDeprecatedToggle} />
             <div className="exchange__button-header__sub">
-              {t('sdBackupReminder', '')}
+              <span>{t('proofBackupWarning')}</span>
               <Link className="exchange__backup-link" to="/settings/exchange/backup">
                 {t('marketplaceBackupSettings')}
               </Link>
+              <button
+                className="exchange__backup-link exchange__backup-link--button"
+                type="button"
+                onClick={() => shell.openExternal('https://shakedex.org/docs#seller-backups')}
+              >
+                {t('proofBackupDocs')}
+              </button>
             </div>
             {this.state.bulkGenerateNotice && (
               <div className={`exchange-bulk-generate-notice exchange-bulk-generate-notice--${this.state.bulkGenerateNotice.type}`}>

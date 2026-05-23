@@ -91,9 +91,13 @@
 }
 
 .exchange__backup-link {
+  background: transparent;
+  border: 0;
   color: $azure-blue;
+  cursor: pointer;
   font-weight: 700;
   margin-left: .25rem;
+  padding: 0;
   text-decoration: underline;
   text-underline-offset: 2px;
 
