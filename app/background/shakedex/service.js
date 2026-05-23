@@ -170,7 +170,7 @@ export async function iteratePrefix(prefix, cb) {
 
 export async function getExchangeAuctions(currentPage = 1) {
   const marketClient = await getMarketClient();
-  const res = await marketClient.get(`api/v2/auctions?page=${currentPage}&per_page=20`);
+  const res = await marketClient.get('api/v2/auctions?page=1&per_page=100');
   const auctions = res.auctions.map(auction => {
     auction.bids.sort((a,b) => b.price - a.price);
     return auction;

@@ -712,8 +712,14 @@ body.bob-theme-dark {
   .transaction__party,
   .transaction__party__btn,
   .transaction__tx-timestamp,
+  .transaction__balance-after,
+  .transactions__balance-summary__label,
   .transaction__number--neutral {
     color: #c9d1d9;
+  }
+
+  .transactions__balance-summary__value {
+    color: #e6edf3;
   }
 
   .transaction__title--pending,

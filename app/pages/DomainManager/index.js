@@ -23,6 +23,9 @@ import {showError, showSuccess} from "../../ducks/notifications";
 import dbClient from "../../utils/dbClient";
 import BulkFinalizeWarningModal from "./BulkFinalizeWarningModal";
 import {I18nContext} from "../../utils/i18n";
+import {getExchangeListings} from "../../ducks/exchange";
+import {LISTING_STATUS} from "../../constants/exchange";
+import {listingStatusToI18nKey} from "../../utils/shakedex";
 
 const {dialog} = require('@electron/remote');
 
@@ -52,9 +55,11 @@ const SORT_DROPDOWN = [
 class DomainManager extends Component {
   static propTypes = {
     isFetching: PropTypes.bool.isRequired,
+    getExchangeListings: PropTypes.func.isRequired,
     getMyNames: PropTypes.func.isRequired,
     namesList: PropTypes.array.isRequired,
     names: PropTypes.object.isRequired,
+    shakedexListings: PropTypes.array.isRequired,
   };
 
   static contextType = I18nContext;
@@ -71,6 +76,7 @@ class DomainManager extends Component {
 
   shouldComponentUpdate(nextProps, nextState) {
     return this.props.namesList.join('') !== nextProps.namesList.join('')
+      || this.getShakedexListingsKey(this.props.shakedexListings) !== this.getShakedexListingsKey(nextProps.shakedexListings)
       || this.props.isFetching !== nextProps.isFetching
       || this.state.query !== nextState.query
       || this.state.isShowingNameClaimForPayment !== nextState.isShowingNameClaimForPayment
@@ -83,6 +89,7 @@ class DomainManager extends Component {
 
   async componentDidMount() {
     this.props.getMyNames();
+    this.props.getExchangeListings();
     const itemsPerPage = await dbClient.get(DM_ITEMS_PER_PAGE_KEY);
     const sortBy = await dbClient.get(DM_SORT_BY_KEY);
 
@@ -141,6 +148,61 @@ class DomainManager extends Component {
 
     return domain.renewal + network.names.renewalWindow;
   }
+
+  getShakedexListingsKey(listings = []) {
+    return listings
+      .map(listing => `${listing?.nameLock?.name || ''}:${listing?.status || ''}:${listing?.blocksUntilFinalize || ''}`)
+      .sort()
+      .join('|');
+  }
+
+  getShakedexListingMap() {
+    const listingMap = new Map();
+
+    for (const listing of this.props.shakedexListings || []) {
+      const name = listing?.nameLock?.name;
+      if (name) {
+        listingMap.set(name, listing);
+      }
+    }
+
+    return listingMap;
+  }
+
+  getShakedexStatusLabel(listing) {
+    const {t} = this.context;
+
+    if (!listing) {
+      return t('notApplicable');
+    }
+
+    if (listing.status === LISTING_STATUS.ACTIVE) {
+      return listing.marketSubmission ? t('listedOnShakedex') : t('proofReady');
+    }
+
+    const i18nKey = listingStatusToI18nKey(listing.status);
+    let statusText = i18nKey ? t(i18nKey) : listing.status;
+
+    if (listing.status === LISTING_STATUS.TRANSFER_CONFIRMED_LOCKUP && listing.blocksUntilFinalize > 0) {
+      statusText = `${statusText} (${listing.blocksUntilFinalize} ${t('blocks')})`;
+    }
+
+    return statusText;
+  }
+
+  isShakedexListed(listing) {
+    return Boolean(listing && listing.status !== LISTING_STATUS.FINALIZE_CANCEL_CONFIRMED);
+  }
+
+  listOnShakedex = (event, name) => {
+    event.stopPropagation();
+    this.props.history.push(`/exchange?createListing=1&name=${encodeURIComponent(name)}`);
+  };
+
+  openShakedex = (event) => {
+    event.stopPropagation();
+    this.props.history.push('/exchange');
+  };
 
   getSortDropdownItems() {
     const { t } = this.context;
@@ -348,6 +410,7 @@ class DomainManager extends Component {
     const start = i * n;
     const end = start + n;
     const sortItems = this.getSortDropdownItems();
+    const shakedexListingMap = this.getShakedexListingMap();
 
     return (
       <div className="domain-manager">
@@ -403,13 +466,21 @@ class DomainManager extends Component {
           <HeaderRow>
             <HeaderItem>{t('domain')}</HeaderItem>
             <HeaderItem>{t('expiresOn')}</HeaderItem>
+            <HeaderItem>{t('shakedex')}</HeaderItem>
             <HeaderItem>{t('hnsPaid')}</HeaderItem>
+            <HeaderItem />
           </HeaderRow>
           {namesList.length ? namesList.slice(start, end).map((name) => {
+            const shakedexListing = shakedexListingMap.get(name);
             return (
               <DomainRow
                 key={`${name}`}
                 name={name}
+                t={t}
+                shakedexStatusLabel={this.getShakedexStatusLabel(shakedexListing)}
+                isShakedexListed={this.isShakedexListed(shakedexListing)}
+                onListOnShakedex={(event) => this.listOnShakedex(event, name)}
+                onOpenShakedex={this.openShakedex}
                 onClick={() => history.push(`/domain_manager/${name}`)}
               />
             );
@@ -509,12 +580,14 @@ export default withRouter(
       names: state.myDomains.names,
       isFetching: state.myDomains.isFetching,
       namesList: Object.keys(state.myDomains.names),
+      shakedexListings: state.exchange.listings,
       height: state.node.chain.height,
       network: state.wallet.network,
       wid: state.wallet.wid,
     }),
     dispatch => ({
       getMyNames: () => dispatch(myDomainsActions.getMyNames()),
+      getExchangeListings: () => dispatch(getExchangeListings()),
       finalizeAll: () => dispatch(finalizeAll()),
       showSuccess: (message) => dispatch(showSuccess(message)),
       showError: (message) => dispatch(showError(message)),
@@ -531,18 +604,53 @@ const DomainRow = connect(
 )(_DomainRow);
 
 function _DomainRow(props) {
-  const { name, names, onClick, network } = props;
+  const {
+    name,
+    names,
+    onClick,
+    network,
+    t,
+    shakedexStatusLabel,
+    isShakedexListed,
+    onListOnShakedex,
+    onOpenShakedex,
+  } = props;
   return (
     <TableRow key={`${name}`} onClick={onClick}>
       <TableItem>{formatName(name)}</TableItem>
       <TableItem>
-        <Blocktime
-          height={names[name].renewal + networks[network].names.renewalWindow}
-          format="ll"
-          fromNow
-        />
+        {isShakedexListed ? (
+          <div className="domain-manager__shakedex-expiry-note">
+            <strong>{t('inShakedex')}</strong>
+            <span>{t('shakedexExpiryManaged')}</span>
+          </div>
+        ) : (
+          <Blocktime
+            height={names[name].renewal + networks[network].names.renewalWindow}
+            format="ll"
+            fromNow
+          />
+        )}
+      </TableItem>
+      <TableItem>
+        <span className={c('domain-manager__shakedex-badge', {
+          'domain-manager__shakedex-badge--active': isShakedexListed,
+        })}>
+          {shakedexStatusLabel}
+        </span>
       </TableItem>
       <TableItem>{displayBalance(names[name].highest, true)}</TableItem>
+      <TableItem>
+        {isShakedexListed ? (
+          <button className="domain-manager__row-action" onClick={onOpenShakedex}>
+            {t('openShakedex')}
+          </button>
+        ) : (
+          <button className="domain-manager__row-action" onClick={onListOnShakedex}>
+            {t('listOnShakedex')}
+          </button>
+        )}
+      </TableItem>
     </TableRow>
   );
 }

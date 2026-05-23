@@ -186,6 +186,11 @@ class Transaction extends Component {
         { (tx.type === TRANSFER && tx.value > 0) ? '+': '' }
         {displayBalance(tx.value)} HNS
       </div>
+      {typeof tx.balanceAfter === 'number' ? (
+        <div className="transaction__balance-after">
+          Spendable after {displayBalance(tx.balanceAfter)} HNS
+        </div>
+      ) : null}
     </div>
   );
 

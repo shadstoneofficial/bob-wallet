@@ -1116,15 +1116,35 @@ class WalletService {
     const wallet = await wdb.get(this.name);
     let mtx = MTX.decode(Buffer.from(txHex, 'hex'));
 
-    // Bob should verify all the data in the MTX to ensure everything is valid,
-    // but this is the minimum.
+    assert(mtx.inputs.length >= 1, 'Paid transfer payload is missing the transfer input.');
+    assert(mtx.outputs.length >= 2, 'Paid transfer payload is missing required outputs.');
+    const finalizeOutput = mtx.outputs[0];
+    const paymentOutput = mtx.outputs[1];
+    assert(finalizeOutput.covenant.type === types.FINALIZE, 'Paid transfer payload must finalize the name in output 0.');
+    assert(paymentOutput.covenant.type === types.NONE, 'Paid transfer payload payment output must be a plain HNS output.');
+    assert(paymentOutput.value > 0, 'Paid transfer payload must include a positive seller payment.');
+
     const input0 = mtx.input(0).clone(); // copy input with Alice's signature
+    const sellerSignature = input0.witness && input0.witness.items && input0.witness.items[0];
+    assert(sellerSignature && sellerSignature.length, 'Paid transfer payload is missing the seller signature.');
+    assert(
+      sellerSignature[sellerSignature.length - 1] === (Script.hashType.SINGLEREVERSE | Script.hashType.ANYONECANPAY),
+      'Paid transfer payload has an invalid seller signature type.',
+    );
+
     const prevoutJSON = input0.prevout.toJSON();
     const coinData = await this.nodeService.getCoin(prevoutJSON.hash, prevoutJSON.index);
-    assert(coinData); // ensures that coin exists and is still unspent
+    assert(coinData, 'Paid transfer coin was not found or has already been spent.');
     const coin = new Coin();
     coin.fromJSON(coinData, this.networkName);
-    assert(coin.covenant.type === types.TRANSFER);
+    assert(coin.covenant.type === types.TRANSFER, 'Paid transfer coin is not a TRANSFER covenant.');
+    assert(
+      finalizeOutput.covenant.items[0].equals(coin.covenant.items[0]),
+      'Paid transfer payload finalizes a different name than the transfer coin.',
+    );
+    assert(coin.height >= 0, 'Paid transfer coin is not confirmed yet.');
+    const blocksUntilFinalize = (coin.height + this.network.names.transferLockup) - this.lastKnownChainHeight;
+    assert(blocksUntilFinalize <= 0, `Transfer lockup is not complete. Try again in ${blocksUntilFinalize} block(s).`);
 
     // Fund the TX.
     // The hsd wallet is not designed to handle partially-signed TXs

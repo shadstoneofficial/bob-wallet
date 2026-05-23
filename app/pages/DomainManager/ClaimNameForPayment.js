@@ -8,7 +8,7 @@ import { showSuccess } from '../../ducks/notifications';
 import { claimPaidTransfer } from '../../ducks/names';
 import { waitForPassphrase, hasAddress } from '../../ducks/walletActions';
 import {I18nContext} from "../../utils/i18n";
-import { parseTxFile } from '../../utils/parsers';
+import { parsePaidNameTransferInput } from '../../utils/paidNameTransfer';
 
 const { dialog } = require('@electron/remote');
 
@@ -55,7 +55,7 @@ export default class ClaimNameForPayment extends Component {
 
     try {
       const fileContent = fs.readFileSync(filepath, 'utf-8');
-      const {txHex} = parseTxFile(fileContent);
+      const {txHex} = parsePaidNameTransferInput(fileContent);
 
       if (!txHex || typeof txHex !== 'string') {
         throw new Error(t('invalidTransactionFile'));
@@ -73,7 +73,8 @@ export default class ClaimNameForPayment extends Component {
 
     try {
       const {network, hasAddress} = this.props;
-      const mtx = MTX.decode(Buffer.from(hex || this.state.hex, 'hex'));
+      const {txHex} = parsePaidNameTransferInput(hex || this.state.hex);
+      const mtx = MTX.decode(Buffer.from(txHex, 'hex'));
       const firstOutput = mtx.outputs[0];
       const nameReceiveAddr = firstOutput.address.toString(network);
       const name = firstOutput.covenant.items[2].toString('ascii');
@@ -90,6 +91,7 @@ export default class ClaimNameForPayment extends Component {
       } else {
         this.setState({
           step: 1,
+          hex: txHex,
           name,
           nameReceiveAddr,
           fundingAddr,

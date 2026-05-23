@@ -412,7 +412,7 @@ export const claimPaidTransfer = (hex) => async (dispatch) => {
   await new Promise((resolve, reject) => {
     dispatch(getPassphrase(resolve, reject));
   });
-  await walletClient.claimPaidTransfer(hex);
+  return await walletClient.claimPaidTransfer(hex);
 };
 
 export const revokeName = (name) => async (dispatch) => {

@@ -14,6 +14,7 @@ import dbClient from "../../utils/dbClient";
 import walletClient from "../../utils/walletClient";
 import {I18nContext} from "../../utils/i18n";
 import { debounce } from '../../utils/throttle';
+import { displayBalance } from '../../utils/balances';
 
 const {dialog} = require('@electron/remote');
 
@@ -40,6 +41,7 @@ const TX_VIEW_ITEMS_PER_PAGE_KEY = 'main-tx-items-per-page';
   (state) => ({
     transactions: state.wallet.transactions,
     walletHeight: state.wallet.walletHeight,
+    spendableBalance: state.wallet.balance.spendable,
   }),
   (dispatch) => ({
     fetchTransactions: () => dispatch(fetchTransactions()),
@@ -49,6 +51,7 @@ export default class Transactions extends Component {
   static propTypes = {
     transactions: PropTypes.instanceOf(Map).isRequired,
     walletHeight: PropTypes.number.isRequired,
+    spendableBalance: PropTypes.number,
   };
 
   static contextType = I18nContext;
@@ -70,7 +73,10 @@ export default class Transactions extends Component {
       this.refreshTransactions();
     }
 
-    if (this.props.transactions.size !== prevProps.transactions.size) {
+    if (
+      this.props.transactions.size !== prevProps.transactions.size
+      || this.props.spendableBalance !== prevProps.spendableBalance
+    ) {
       this.fuse = null;
     }
   }
@@ -87,16 +93,17 @@ export default class Transactions extends Component {
   handleOnChange = e => this.setState({ query: e.target.value, currentPageIndex: 0 });
 
   onExport = async () => {
-    const headers = ['time', 'txhash', 'fee', 'type', 'value', 'domains'];
+    const headers = ['time', 'txhash', 'fee', 'type', 'value', 'spendable_balance_after', 'domains'];
     let csvData = headers.join(',') + '\n';
 
-    for (const [_, tx] of this.props.transactions) {
+    for (const tx of this.getTransactionsWithBalances()) {
       const row = {
         time: new Date(tx.date).toISOString(),
         txhash: tx.id,
         fee: tx.fee,
         type: tx.type,
-        value: (isNegativeValue(tx.type) ? -tx.value : tx.value) / 1e6,
+        value: getTransactionDelta(tx) / 1e6,
+        spendable_balance_after: typeof tx.balanceAfter === 'number' ? tx.balanceAfter / 1e6 : '',
         domains: tx.domains?.join(', ') || tx.meta.domain || '',
       }
       csvData += headers.map(key => `"${row[key]}"`).join(',') + '\n'
@@ -114,13 +121,28 @@ export default class Transactions extends Component {
     }
   }
 
+  getTransactionsWithBalances() {
+    const transactions = Array.from(this.props.transactions.values())
+      .sort((a, b) => b.date - a.date);
+
+    let runningBalance = Number(this.props.spendableBalance) || 0;
+    return transactions.map(tx => {
+      const txWithBalance = {
+        ...tx,
+        balanceAfter: runningBalance,
+      };
+      runningBalance -= getTransactionDelta(tx);
+      return txWithBalance;
+    });
+  }
+
   getTransactions() {
     const { sortBy, query } = this.state;
-    let transactions = Array.from(this.props.transactions.values());
+    let transactions = this.getTransactionsWithBalances();
 
     if (!this.fuse) {
       this.fuse = new Fuse(transactions, {
-        keys: ['id', 'meta.to', 'meta.from', 'type', 'meta.domain', 'value'],
+        keys: ['id', 'meta.to', 'meta.from', 'type', 'meta.domain', 'value', 'balanceAfter'],
         shouldSort: false,
         threshold: .3,
       });
@@ -168,6 +190,12 @@ export default class Transactions extends Component {
     return (
       <div className="transactions">
         <div className="transactions__header">
+          <div className="transactions__balance-summary">
+            <div className="transactions__balance-summary__label">Current spendable</div>
+            <div className="transactions__balance-summary__value">
+              {displayBalance(this.props.spendableBalance || 0)} HNS
+            </div>
+          </div>
           <BidSearchInput
             className="transactions__search"
             placeholder={t('txnsSearchPlaceholder')}
@@ -344,5 +372,22 @@ function isNegativeValue(type) {
     // Should not reach here
     default:
       return false;
+  }
+}
+
+function getTransactionDelta(tx) {
+  if (!tx) {
+    return 0;
+  }
+
+  switch (tx.type) {
+    case 'SEND':
+    case 'BID':
+      return -tx.value;
+    case 'FINALIZE':
+    case 'TRANSFER':
+      return tx.value;
+    default:
+      return isNegativeValue(tx.type) ? -tx.value : tx.value;
   }
 }

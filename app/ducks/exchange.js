@@ -244,7 +244,11 @@ export const getExchangeListings = (page = 1) => async (dispatch, getState) => {
         ? await nodeClient.getCoin(listing.cancelFinalize.finalizeTxHash, listing.cancelFinalize.finalizeOutputIdx)
         : null;
     } catch (e) {
-      listing.status = LISTING_STATUS.NOT_FOUND;
+      if (listing.nameLock && listing.nameLock.transferTxHash) {
+        listing.status = LISTING_STATUS.TRANSFER_CONFIRMING;
+      } else {
+        listing.status = LISTING_STATUS.NOT_FOUND;
+      }
       continue;
     }
 
@@ -270,11 +274,49 @@ export const getExchangeListings = (page = 1) => async (dispatch, getState) => {
       finalizeTx = finalize.tx;
       finalizeCoin = finalize.coin;
     } catch (e) {
+      try {
+        const nameInfo = await nodeClient.getNameInfo(listing.nameLock.name);
+        const owner = nameInfo && nameInfo.info && nameInfo.info.owner;
+        if (
+          owner
+          && owner.hash
+          && `${owner.hash}` !== `${listing.nameLock.transferTxHash}`
+        ) {
+          listing.status = LISTING_STATUS.SOLD;
+          listing.supersededByOwner = {
+            hash: owner.hash,
+            index: owner.index,
+          };
+          continue;
+        }
+      } catch (ownerCheckError) {
+        console.warn(`Failed to check current owner for Shakedex listing ${listing.nameLock.name}:`, ownerCheckError);
+      }
+
       listing.status = LISTING_STATUS.TRANSFER_CONFIRMED;
       continue;
     }
 
     if (!finalizeTx) {
+      try {
+        const nameInfo = await nodeClient.getNameInfo(listing.nameLock.name);
+        const owner = nameInfo && nameInfo.info && nameInfo.info.owner;
+        if (
+          owner
+          && owner.hash
+          && `${owner.hash}` !== `${listing.nameLock.transferTxHash}`
+        ) {
+          listing.status = LISTING_STATUS.SOLD;
+          listing.supersededByOwner = {
+            hash: owner.hash,
+            index: owner.index,
+          };
+          continue;
+        }
+      } catch (ownerCheckError) {
+        console.warn(`Failed to check current owner for Shakedex listing ${listing.nameLock.name}:`, ownerCheckError);
+      }
+
       listing.blocksUntilFinalize = 0;
       listing.status = LISTING_STATUS.TRANSFER_CONFIRMED;
       continue;
@@ -342,6 +384,11 @@ export const getExchangeListings = (page = 1) => async (dispatch, getState) => {
 
   try {
     const marketSales = await shakedex.getExchangeSales();
+    const soldByName = new Map(
+      marketSales
+        .filter(sale => sale && sale.status === 'sold')
+        .map(sale => [String(sale.name).toLowerCase(), sale])
+    );
     const salePendingByName = new Map(
       marketSales
         .filter(sale => sale && sale.status === 'sale-pending')
@@ -350,9 +397,22 @@ export const getExchangeListings = (page = 1) => async (dispatch, getState) => {
 
     for (const listing of listings) {
       const name = String(listing.nameLock && listing.nameLock.name || '').toLowerCase();
+      const sold = soldByName.get(name);
       const salePending = salePendingByName.get(name);
 
-      if (salePending) {
+      if (sold) {
+        listing.marketSale = sold;
+        listing.status = LISTING_STATUS.SOLD;
+        continue;
+      }
+
+      if (
+        salePending
+        && ![
+          LISTING_STATUS.SOLD,
+          LISTING_STATUS.FINALIZE_CANCEL_CONFIRMED,
+        ].includes(listing.status)
+      ) {
         listing.marketSale = salePending;
         listing.status = LISTING_STATUS.SALE_PENDING;
       }
@@ -454,11 +514,11 @@ export const transferExchangeLock = (name, params) => async (dispatch) => {
     throw e;
   }
 
-  await dispatch(getExchangeListings());
   dispatch({
     type: PLACE_EXCHANGE_LISTING_OK,
   });
   dispatch(showSuccess('Listing lock transfer submitted. Back up your Marketplace listings, then wait for the transfer lockup before finalizing.'));
+  dispatch(getExchangeListings());
 };
 
 

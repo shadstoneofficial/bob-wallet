@@ -156,6 +156,9 @@ class Exchange extends Component {
       marketplaceAvailabilityFilter: 'all',
       marketplaceModeFilter: 'all',
       marketplaceSort: 'name',
+      listingsQuery: '',
+      listingsStatusFilter: 'all',
+      listingsSort: 'name-asc',
       isHandlingFulfillAuctionDeeplink: false,
       deeplinkAuctionName: '',
       bulkGeneratingNames: [],
@@ -166,6 +169,7 @@ class Exchange extends Component {
       privateSaleDurationIdx: PRIVATE_SALE_DURATION_OPTS.indexOf(DEFAULT_PRIVATE_SALE_DURATION_DAYS),
       privateSaleError: '',
       isCreatingPrivateProof: false,
+      initialListingName: '',
     };
 
     this.marketStatusTimer = null;
@@ -174,6 +178,7 @@ class Exchange extends Component {
   componentDidMount() {
     analytics.screenView('Exchange');
     this.refreshLocalListings();
+    this.openCreateListingFromUrl();
     if (this.isMarketplaceVisible()) {
       this.fetchChannelSettings();
       this.fetchShakedex();
@@ -190,6 +195,18 @@ class Exchange extends Component {
     if (this.marketStatusTimer) {
       clearInterval(this.marketStatusTimer);
     }
+  }
+
+  openCreateListingFromUrl() {
+    const params = new URLSearchParams(window.location.search || '');
+    if (params.get('createListing') !== '1') {
+      return;
+    }
+
+    this.setState({
+      isPlacingListing: true,
+      initialListingName: params.get('name') || '',
+    });
   }
 
   async componentDidUpdate(prevProps, prevState) {
@@ -341,6 +358,130 @@ class Exchange extends Component {
   getReadyToGenerateListings() {
     return this.props.listings.filter(l => l.status === LISTING_STATUS.FINALIZE_CONFIRMED);
   }
+
+  getListingName(listing) {
+    return String(listing && listing.nameLock && listing.nameLock.name || '');
+  }
+
+  getListingSortPrice(listing) {
+    const mode = listing && listing.params && listing.params.mode || 'reverse';
+    if (mode === 'fixed') {
+      return Number(listing.params.price);
+    }
+
+    return Number(listing.params.startPrice);
+  }
+
+  getListingExpiryTime(listing) {
+    return getAuctionExpiryTime(listing && listing.auction) || Number.MAX_SAFE_INTEGER;
+  }
+
+  getListingsStatusItems() {
+    const { t } = this.context;
+
+    return [
+      { label: t('allSellerListings'), value: 'all' },
+      { label: t('sellerListingsNeedsAction'), value: 'needs-action' },
+      { label: t('sellerListingsListed'), value: LISTING_STATUS.ACTIVE },
+      { label: t('sellerListingsSalePending'), value: LISTING_STATUS.SALE_PENDING },
+      { label: t('sellerListingsSold'), value: LISTING_STATUS.SOLD },
+      { label: t('sellerListingsPreparing'), value: 'preparing' },
+      { label: t('sellerListingsCancelled'), value: 'cancelled' },
+    ];
+  }
+
+  getListingsSortItems() {
+    const { t } = this.context;
+
+    return [
+      { label: t('sortName'), value: 'name-asc' },
+      { label: t('sortNameDesc'), value: 'name-desc' },
+      { label: t('sellerListingsSortStatus'), value: 'status' },
+      { label: t('sellerListingsSortPriceLow'), value: 'price-asc' },
+      { label: t('sellerListingsSortPriceHigh'), value: 'price-desc' },
+      { label: t('sellerListingsSortExpiresSoon'), value: 'expires-asc' },
+      { label: t('sellerListingsSortExpiresLatest'), value: 'expires-desc' },
+    ];
+  }
+
+  getVisibleListings() {
+    const query = this.state.listingsQuery.trim().toLowerCase();
+    const statusFilter = this.state.listingsStatusFilter;
+    const sort = this.state.listingsSort;
+    const needsAction = new Set([
+      LISTING_STATUS.TRANSFER_CONFIRMED,
+      LISTING_STATUS.FINALIZE_CONFIRMED,
+      LISTING_STATUS.CANCEL_CONFIRMED,
+    ]);
+    const preparing = new Set([
+      LISTING_STATUS.TRANSFER_CONFIRMING,
+      LISTING_STATUS.TRANSFER_CONFIRMED_LOCKUP,
+      LISTING_STATUS.FINALIZE_CONFIRMING,
+    ]);
+    const cancelled = new Set([
+      LISTING_STATUS.CANCEL_CONFIRMING,
+      LISTING_STATUS.FINALIZE_CANCEL_CONFIRMING,
+      LISTING_STATUS.FINALIZE_CANCEL_CONFIRMED,
+    ]);
+
+    const filtered = this.props.listings.filter((listing) => {
+      const name = this.getListingName(listing).toLowerCase();
+      const matchesQuery = !query || name.includes(query);
+      let matchesStatus = statusFilter === 'all' || listing.status === statusFilter;
+
+      if (statusFilter === 'needs-action') {
+        matchesStatus = needsAction.has(listing.status);
+      }
+
+      if (statusFilter === 'preparing') {
+        matchesStatus = preparing.has(listing.status);
+      }
+
+      if (statusFilter === 'cancelled') {
+        matchesStatus = cancelled.has(listing.status);
+      }
+
+      return matchesQuery && matchesStatus;
+    });
+
+    return [...filtered].sort((a, b) => {
+      const nameCompare = this.getListingName(a).localeCompare(
+        this.getListingName(b),
+        undefined,
+        { numeric: true, sensitivity: 'base' },
+      );
+
+      if (sort === 'name-desc') return -nameCompare;
+      if (sort === 'status') {
+        const statusCompare = String(a.status).localeCompare(String(b.status));
+        return statusCompare || nameCompare;
+      }
+
+      if (sort === 'price-asc' || sort === 'price-desc') {
+        const aPrice = this.getListingSortPrice(a);
+        const bPrice = this.getListingSortPrice(b);
+        const priceCompare = aPrice - bPrice;
+        return sort === 'price-asc'
+          ? priceCompare || nameCompare
+          : -priceCompare || nameCompare;
+      }
+
+      if (sort === 'expires-asc' || sort === 'expires-desc') {
+        const expiryCompare = this.getListingExpiryTime(a) - this.getListingExpiryTime(b);
+        return sort === 'expires-asc'
+          ? expiryCompare || nameCompare
+          : -expiryCompare || nameCompare;
+      }
+
+      return nameCompare;
+    });
+  }
+
+  clearListingsFilters = () => this.setState({
+    listingsQuery: '',
+    listingsStatusFilter: 'all',
+    listingsSort: 'name-asc',
+  });
 
   generateReadyListings = async () => {
     const readyListings = this.getReadyToGenerateListings();
@@ -1064,6 +1205,9 @@ class Exchange extends Component {
     const marketBaseUrl = getShakedexChannelBaseUrl({host: this.state.marketChannelHost});
     const downloadableListingProofs = this.getDownloadableListingProofs();
     const readyToGenerateListings = this.getReadyToGenerateListings();
+    const visibleListings = this.getVisibleListings();
+    const listingStatusItems = this.getListingsStatusItems();
+    const listingSortItems = this.getListingsSortItems();
 
     return (
       <div className="exchange">
@@ -1185,6 +1329,45 @@ class Exchange extends Component {
                 {this.state.bulkGenerateNotice.message}
               </div>
             )}
+            <div className="exchange-listing-filters">
+              <div className="exchange-listing-filters__search">
+                <input
+                  type="text"
+                  value={this.state.listingsQuery}
+                  placeholder={t('filterSellerListings')}
+                  onChange={(e) => this.setState({ listingsQuery: e.target.value })}
+                />
+              </div>
+              <Dropdown
+                className="exchange-listing-filters__status"
+                items={listingStatusItems}
+                currentIndex={Math.max(
+                  listingStatusItems.findIndex(item => item.value === this.state.listingsStatusFilter),
+                  0,
+                )}
+                onChange={(listingsStatusFilter) => this.setState({ listingsStatusFilter })}
+              />
+              <Dropdown
+                className="exchange-listing-filters__sort"
+                items={listingSortItems}
+                currentIndex={Math.max(
+                  listingSortItems.findIndex(item => item.value === this.state.listingsSort),
+                  0,
+                )}
+                onChange={(listingsSort) => this.setState({ listingsSort })}
+              />
+              <div className="exchange-listing-filters__count">
+                {`${visibleListings.length} / ${this.props.listings.length} ${this.props.listings.length === 1 ? t('listing') : t('listings')}`}
+              </div>
+              {(this.state.listingsQuery || this.state.listingsStatusFilter !== 'all' || this.state.listingsSort !== 'name-asc') && (
+                <button
+                  className="exchange-listing-filters__clear"
+                  onClick={this.clearListingsFilters}
+                >
+                  {t('clearFilters')}
+                </button>
+              )}
+            </div>
             <Table className="exchange-table exchange-table--listings">
               <HeaderRow>
                 <HeaderItem>{t('domain')}</HeaderItem>
@@ -1204,8 +1387,8 @@ class Exchange extends Component {
                 </TableRow>
               )}
               {!this.state.isLoadingLocalListings && !this.props.listings.length && (
-                <TableRow>
-                  <TableItem>
+                <TableRow className="exchange-table__empty-row">
+                  <TableItem className="exchange-table__empty-cell">
                     <div className="exchange-table__empty-note">
                       <strong>{t('noLocalListingsLoaded')}</strong>
                       <span>{t('noLocalListingsLoadedHelp')}</span>
@@ -1213,7 +1396,17 @@ class Exchange extends Component {
                   </TableItem>
                 </TableRow>
               )}
-              {!this.state.isLoadingLocalListings && !!this.props.listings.length && this.props.listings.map((l, i) => this.renderListingRow(l, i))}
+              {!this.state.isLoadingLocalListings && !!this.props.listings.length && !visibleListings.length && (
+                <TableRow className="exchange-table__empty-row">
+                  <TableItem className="exchange-table__empty-cell">
+                    <div className="exchange-table__empty-note">
+                      <strong>{t('noSellerListingsMatch')}</strong>
+                      <span>{t('noSellerListingsMatchHelp')}</span>
+                    </div>
+                  </TableItem>
+                </TableRow>
+              )}
+              {!this.state.isLoadingLocalListings && !!visibleListings.length && visibleListings.map((l, i) => this.renderListingRow(l, i))}
             </Table>
           </>
         )}
@@ -1285,8 +1478,10 @@ class Exchange extends Component {
         )}
         {this.state.isPlacingListing && (
           <PlaceListingModal
+            initialName={this.state.initialListingName}
             onClose={() => this.setState({
               isPlacingListing: false,
+              initialListingName: '',
             })}
           />
         )}
@@ -1568,7 +1763,7 @@ class Exchange extends Component {
         aria-label={this.context.t('downloadPrivateProofHelp')}
         onClick={() => this.downloadPrivateProof(privateProof, listing.nameLock.name)}
       >
-        {`${this.context.t('downloadPrivateProof')} ${displayBalance(privateProof.price, true)}`}
+        {`${this.context.t('privateProof')} ${displayBalance(privateProof.price, true)}`}
       </div>
     ));
   }
@@ -1584,6 +1779,7 @@ class Exchange extends Component {
     const isBulkGenerating = this.state.bulkGeneratingNames.includes(l.nameLock.name);
     const isPreparingSubmit = this.state.preparingSubmitNames.includes(l.nameLock.name);
     const expiryLabel = getAuctionExpiryLabel(l.auction);
+    const isSold = l.status === LISTING_STATUS.SOLD;
     const {t} = this.context;
 
     return (
@@ -1617,10 +1813,15 @@ class Exchange extends Component {
           <span
             className={classNames('exchange-listing-expiry', {
               'exchange-listing-expiry--short': isShortFixedListingProof(l),
+              'exchange-listing-expiry--sold': isSold,
             })}
-            title={l.auction ? `Buyable until ${expiryLabel}` : 'Generate a proof to set the listing length.'}
+            title={isSold
+              ? t('soldListingNoExpiryHelp')
+              : l.auction
+                ? `Buyable until ${expiryLabel}`
+                : 'Generate a proof to set the listing length.'}
           >
-            {expiryLabel}
+            {isSold ? t('notApplicable') : expiryLabel}
           </span>
         </TableItem>
         <TableItem className="exchange-table__actions-cell">

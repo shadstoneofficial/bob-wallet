@@ -27,6 +27,14 @@ const ADDONS = [
     internal: true,
   },
   {
+    name: 'Send Name',
+    status: 'Available',
+    description: 'Send or sell a domain directly to another user with a paid claim payload.',
+    action: 'Open',
+    href: '/send?asset=name&mode=send',
+    internal: true,
+  },
+  {
     name: LIQUIDITY_ADDON_NAME,
     status: 'Public Preview',
     description: 'Human P2P coordination is available now. Atomic-swap tooling is the next build track and will need Bitcoin wallet integration research.',

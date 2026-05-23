@@ -120,6 +120,10 @@ class Sidebar extends Component {
           </NavLink>
           <NavLink
             to="/send"
+            isActive={(match, location) => (
+              location.pathname === '/send'
+              && !new URLSearchParams(location.search || '').get('asset')
+            )}
             className={isActive => `sidebar__action ${isActive ? "sidebar__action--selected" : ''}`}
           >
             {t('headingSend')}
@@ -172,6 +176,16 @@ class Sidebar extends Component {
             className={isActive => `sidebar__action ${isActive ? "sidebar__action--selected" : ''}`}
           >
             {t('headingMessages')}
+          </NavLink>
+          <NavLink
+            to="/send?asset=name&mode=send"
+            isActive={(match, location) => (
+              location.pathname === '/send'
+              && new URLSearchParams(location.search || '').get('asset') === 'name'
+            )}
+            className={isActive => `sidebar__action ${isActive ? "sidebar__action--selected" : ''}`}
+          >
+            Send Name
           </NavLink>
           <NavLink
             to="/liquidity-swap"

@@ -85,6 +85,7 @@
   &__tx-value {
     flex: 0 0 auto;
     margin-left: 1rem;
+    text-align: right;
   }
 
   &__title {
@@ -167,6 +168,13 @@
     &--neutral {
       color: $black;
     }
+  }
+
+  &__balance-after {
+    color: $manatee-gray;
+    font-size: .7rem;
+    line-height: 1rem;
+    white-space: nowrap;
   }
 }
 
@@ -260,6 +268,25 @@
     border-bottom: 1px solid $athens-gray;
     border-top: 1px solid $athens-gray;
     background-color: #f9f9f9;
+  }
+
+  &__balance-summary {
+    flex: 0 0 auto;
+    margin-right: 1rem;
+
+    &__label {
+      color: $manatee-gray;
+      font-size: .6rem;
+      line-height: .9rem;
+      text-transform: uppercase;
+    }
+
+    &__value {
+      color: $black;
+      font-size: .85rem;
+      font-weight: 500;
+      white-space: nowrap;
+    }
   }
 
   &__search {

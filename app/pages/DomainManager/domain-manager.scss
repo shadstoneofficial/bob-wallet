@@ -90,12 +90,21 @@
 
         &__item:nth-of-type(3) {
           text-align: left;
-          flex: 1 1 auto;
+          flex: 0 0 11rem;
         }
 
         &__item:nth-of-type(2) {
           text-align: left;
           flex: 0 0 6rem;
+        }
+
+        &__item:nth-of-type(4) {
+          text-align: left;
+          flex: 0 0 10rem;
+        }
+
+        &__item:nth-of-type(5) {
+          flex: 0 0 9rem;
         }
       }
 
@@ -118,12 +127,22 @@
 
         &__item:nth-of-type(3) {
           text-align: left;
-          flex: 1 1 auto;
+          flex: 0 0 11rem;
         }
 
         &__item:nth-of-type(2) {
           text-align: left;
           flex: 0 0 6rem;
+        }
+
+        &__item:nth-of-type(4) {
+          text-align: left;
+          flex: 0 0 10rem;
+        }
+
+        &__item:nth-of-type(5) {
+          flex: 0 0 9rem;
+          justify-content: flex-end;
         }
       }
 
@@ -133,6 +152,60 @@
         align-items: center;
         justify-content: center;
       }
+    }
+  }
+
+  &__shakedex-expiry-note {
+    @extend %col-nowrap;
+    gap: .12rem;
+
+    strong {
+      color: $school-bus-yellow;
+      font-size: .78rem;
+      font-weight: 700;
+    }
+
+    span {
+      color: $manatee-gray;
+      font-size: .62rem;
+      line-height: .85rem;
+    }
+  }
+
+  &__shakedex-badge {
+    border: 1px solid rgba($manatee-gray, .35);
+    border-radius: 999px;
+    color: $manatee-gray;
+    display: inline-flex;
+    font-size: .62rem;
+    font-weight: 700;
+    max-width: 10.5rem;
+    overflow: hidden;
+    padding: .18rem .45rem;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+    white-space: nowrap;
+
+    &--active {
+      border-color: rgba($school-bus-yellow, .45);
+      color: $school-bus-yellow;
+    }
+  }
+
+  &__row-action {
+    background: transparent;
+    border: 1px solid rgba($azure-blue, .5);
+    border-radius: 4px;
+    color: $azure-blue;
+    cursor: pointer;
+    font-size: .72rem;
+    font-weight: 700;
+    padding: .25rem .45rem;
+    white-space: nowrap;
+
+    &:hover {
+      border-color: $azure-blue;
+      color: lighten($azure-blue, 8%);
     }
   }
 

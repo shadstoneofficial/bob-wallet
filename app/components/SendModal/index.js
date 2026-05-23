@@ -2,6 +2,7 @@ import React, { Component } from 'react';
 import PropTypes from 'prop-types';
 import { BigNumber as bn } from 'bignumber.js';
 import { connect } from 'react-redux';
+import { withRouter } from 'react-router-dom';
 import c from 'classnames';
 import './send.scss';
 import { displayBalance } from '../../utils/balances';
@@ -15,6 +16,7 @@ import walletClient from '../../utils/walletClient';
 import { shell } from 'electron';
 import {I18nContext} from "../../utils/i18n";
 import LockSVG from '../../assets/images/lock.svg';
+import SendName from '../../pages/SendName';
 
 const analytics = aClientStub(() => require('electron').ipcRenderer);
 
@@ -64,6 +66,8 @@ class SendModal extends Component {
       addressError: false,
       feeAmount: 0,
       txSize: 0,
+      assetMode: this.getQueryParam('asset') === 'name' ? 'name' : 'hns',
+      nameMode: this.getQueryParam('mode') === 'claim' ? 'claim' : 'send',
     };
   }
 
@@ -75,6 +79,36 @@ class SendModal extends Component {
   componentDidMount = () => {
     analytics.screenView('Send');
   }
+
+  componentDidUpdate(prevProps) {
+    if (prevProps.location.search !== this.props.location.search) {
+      this.syncModeFromQuery();
+    }
+  }
+
+  getQueryParam(key) {
+    const search = this.props.location && this.props.location.search;
+    return new URLSearchParams(search || '').get(key);
+  }
+
+  syncModeFromQuery() {
+    const assetMode = this.getQueryParam('asset') === 'name' ? 'name' : 'hns';
+    const nameMode = this.getQueryParam('mode') === 'claim' ? 'claim' : 'send';
+    this.setState({assetMode, nameMode});
+  }
+
+  setAssetMode = (assetMode) => {
+    if (assetMode === 'name') {
+      this.props.history.push(`/send?asset=name&mode=${this.state.nameMode || 'send'}`);
+      return;
+    }
+
+    this.props.history.push('/send');
+  };
+
+  setNameMode = (nameMode) => {
+    this.props.history.push(`/send?asset=name&mode=${nameMode}`);
+  };
 
   updateAmount = e => this.setState({amount: e.target.value, errorMessage: ''});
 
@@ -397,6 +431,27 @@ class SendModal extends Component {
   }
 
   renderContent() {
+    if (!this.state.isConfirming && !this.state.transactionSent) {
+      if (this.state.assetMode === 'name') {
+        return (
+          <>
+            {this.renderAssetTabs()}
+            <SendName
+              mode={this.state.nameMode}
+              setMode={this.setNameMode}
+            />
+          </>
+        );
+      }
+
+      return (
+        <>
+          {this.renderAssetTabs()}
+          {this.renderSend()}
+        </>
+      );
+    }
+
     if (this.state.transactionSent) {
       return this.renderTransactionSent();
     }
@@ -404,6 +459,25 @@ class SendModal extends Component {
       return this.renderConfirm();
     }
     return this.renderSend();
+  }
+
+  renderAssetTabs() {
+    return (
+      <div className="send__asset-tabs">
+        <button
+          className={this.state.assetMode === 'hns' ? 'send__asset-tab send__asset-tab--active' : 'send__asset-tab'}
+          onClick={() => this.setAssetMode('hns')}
+        >
+          Send HNS
+        </button>
+        <button
+          className={this.state.assetMode === 'name' ? 'send__asset-tab send__asset-tab--active' : 'send__asset-tab'}
+          onClick={() => this.setAssetMode('name')}
+        >
+          Send Name
+        </button>
+      </div>
+    );
   }
 
   render() {
@@ -419,4 +493,4 @@ class SendModal extends Component {
   }
 }
 
-export default SendModal;
+export default withRouter(SendModal);

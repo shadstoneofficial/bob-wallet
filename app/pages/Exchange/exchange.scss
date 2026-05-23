@@ -188,6 +188,57 @@
   font-size: .75rem;
 }
 
+.exchange-listing-filters {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  margin: .75rem 0;
+}
+
+.exchange-listing-filters__search {
+  flex: 1 1 auto;
+  min-width: 12rem;
+
+  input {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid rgba($black, .1);
+    border-radius: .5rem;
+    outline: none;
+    padding: .7rem .85rem;
+    font-size: .85rem;
+    font-weight: 500;
+    transition: border-color 200ms ease-in-out;
+
+    &:focus {
+      border-color: rgba($azure-blue, .6);
+    }
+  }
+}
+
+.exchange-listing-filters__status {
+  flex: 0 0 12rem;
+}
+
+.exchange-listing-filters__sort {
+  flex: 0 0 12rem;
+}
+
+.exchange-listing-filters__count {
+  flex: 0 0 auto;
+  color: $manatee-gray;
+  font-size: .75rem;
+  font-weight: 600;
+}
+
+.exchange-listing-filters__clear {
+  @extend %btn-secondary;
+  flex: 0 0 auto;
+  width: auto;
+  padding: .55rem .75rem;
+  font-size: .75rem;
+}
+
 .place-bid-modal__table {
   margin-left: -3px;
 
@@ -290,12 +341,20 @@
   flex-wrap: wrap;
   justify-content: flex-end;
   align-items: center;
-  gap: .3rem .65rem;
+  gap: .28rem .45rem;
   min-width: 0;
+  line-height: 1.05rem;
 }
 
 .bid-action__link {
-  flex: 0 0 auto;
+  border: 1px solid rgba($azure-blue, .35);
+  border-radius: 4px;
+  flex: 0 1 auto;
+  font-size: .72rem;
+  max-width: 100%;
+  padding: .1rem .35rem;
+  text-align: center;
+  text-decoration: none;
   white-space: nowrap;
 }
 
@@ -307,10 +366,12 @@
 }
 
 .bid-action__hint {
+  border: 1px solid transparent;
   color: $manatee-gray;
   flex: 0 0 auto;
   font-size: .72rem;
   font-weight: 600;
+  padding: .1rem .35rem;
   white-space: nowrap;
 }
 
@@ -445,7 +506,7 @@
 
     &--not-found {
       &:before {
-        background-color: $orange-red;
+        background-color: $school-bus-yellow;
       }
     }
 
@@ -476,6 +537,12 @@
 
 .exchange-table--listings {
   &.table {
+    .exchange-table__listing-status {
+      overflow: visible;
+      text-overflow: clip;
+      white-space: normal;
+    }
+
     .table__header__item,
     .table__row__item {
       min-width: 0;
@@ -485,15 +552,15 @@
       }
 
       &:nth-of-type(4) {
-        flex-basis: 6.5rem;
+        flex-basis: 7rem;
       }
 
       &:nth-of-type(5) {
-        flex-basis: 8rem;
+        flex-basis: 6rem;
       }
 
       &:nth-of-type(6) {
-        flex-basis: 12.75rem;
+        flex-basis: 14.5rem;
         overflow: visible;
         padding-left: .5rem;
         white-space: normal;
@@ -505,6 +572,18 @@
 .exchange-table__actions-cell {
   overflow: visible;
   white-space: normal;
+}
+
+.exchange-table__empty-row {
+  .exchange-table__empty-cell {
+    flex: 1 1 100%;
+    padding-right: 1.5rem;
+    white-space: normal;
+  }
+}
+
+.exchange-listing-expiry--sold {
+  color: $manatee-gray;
 }
 
 .exchange-table__empty-note {

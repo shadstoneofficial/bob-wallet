@@ -27,3 +27,4 @@ configure({ adapter: new Adapter.default() });
 require('./app/pages/Auction/tests/RepairBid.spec');
 require('./app/pages/MyDomain/tests/Records.spec');
 require('./app/background/wallet/tests/liquidityHtlc.spec');
+require('./app/utils/tests/paidNameTransfer.spec');
