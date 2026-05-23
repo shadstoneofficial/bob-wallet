@@ -157,7 +157,14 @@ export default class Account extends Component {
       if (res !== null) {
         this.props.fetchTransactions();
         this._updateStatsAndBalance();
-        this.props.showSuccess(t('genericRequestSuccess'));
+        if (action === 'register' && res && res.txid) {
+          this.props.showSuccess(
+            `Register transaction submitted for ${res.names.join(', ')}. ` +
+            `Tx: ${res.txid}. It will show as registered after it confirms on-chain.`
+          );
+        } else {
+          this.props.showSuccess(t('genericRequestSuccess'));
+        }
       }
     } catch (e) {
       if (e.message === 'Could not resolve preferred inputs.') {

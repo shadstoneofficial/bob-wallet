@@ -709,9 +709,17 @@ class WalletService {
     }
 
     // Only call once now, see later about repeated calls
-    return this._walletProxy(
+    const mtx = await this._walletProxy(
       () => this._executeRPC('createbatch', [chunkedActions[0], {paths: true}]),
     );
+
+    if (!mtx)
+      return null;
+
+    return {
+      txid: mtx.txid(),
+      names: chunkedActions[0].map(([, name]) => name),
+    };
   };
 
   transferMany = async (names, address) => {

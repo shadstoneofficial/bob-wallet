@@ -517,7 +517,7 @@
   "registerAll": "Register All",
   "registerCardWarning": "that you’ve won and get back %s HNS",
   "registerMyDomain": "Register My Domain",
-  "registerSuccess": "Your register request is submitted! Please wait around 15 minutes for it to be confirmed.",
+  "registerSuccess": "Your register transaction was submitted. It will show as registered after it confirms on-chain.",
   "registering": "Registering",
   "remove": "Remove",
   "removeWalletAck1": "I have my recovery seed phrase backed up.",

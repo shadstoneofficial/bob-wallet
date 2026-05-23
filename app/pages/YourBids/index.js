@@ -80,7 +80,14 @@ class YourBids extends Component {
     try {
       const res = await sendRegisterAll();
       if (res !== null) {
-        showSuccess(this.context.t('registerSuccess'));
+        if (res && res.txid) {
+          showSuccess(
+            `Register transaction submitted for ${res.names.join(', ')}. ` +
+            `Tx: ${res.txid}. It will show as registered after it confirms on-chain.`
+          );
+        } else {
+          showSuccess(this.context.t('registerSuccess'));
+        }
       }
     } catch (e) {
       showError(e.message)
