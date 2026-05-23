@@ -184,7 +184,7 @@ class DomainManager extends Component {
     let statusText = i18nKey ? t(i18nKey) : listing.status;
 
     if (listing.status === LISTING_STATUS.TRANSFER_CONFIRMED_LOCKUP && listing.blocksUntilFinalize > 0) {
-      statusText = `${statusText} (${listing.blocksUntilFinalize} ${t('blocks')})`;
+      statusText = `${t('waitingForTransferShort')} ${listing.blocksUntilFinalize} ${t('blocks')}`;
     }
 
     return statusText;
@@ -642,12 +642,20 @@ function _DomainRow(props) {
       <TableItem>{displayBalance(names[name].highest, true)}</TableItem>
       <TableItem>
         {isShakedexListed ? (
-          <button className="domain-manager__row-action" onClick={onOpenShakedex}>
-            {t('openShakedex')}
+          <button
+            className="domain-manager__row-action"
+            title={t('openShakedex')}
+            onClick={onOpenShakedex}
+          >
+            {t('open')}
           </button>
         ) : (
-          <button className="domain-manager__row-action" onClick={onListOnShakedex}>
-            {t('listOnShakedex')}
+          <button
+            className="domain-manager__row-action"
+            title={t('listOnShakedex')}
+            onClick={onListOnShakedex}
+          >
+            {t('list')}
           </button>
         )}
       </TableItem>
