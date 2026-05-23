@@ -30,7 +30,7 @@ import {
 } from "../../ducks/exchange";
 import { LISTING_STATUS } from '../../constants/exchange.js';
 import {formatName} from "../../utils/nameHelpers";
-import {showError} from "../../ducks/notifications";
+import {showError, showSuccess} from "../../ducks/notifications";
 import {fromAuctionJSON, listingStatusToI18nKey, validateAuction} from "../../utils/shakedex";
 import './exchange.scss';
 import PropTypes from "prop-types";
@@ -138,6 +138,7 @@ class Exchange extends Component {
       isUploadingFile: false,
       isGeneratingListing: false,
       isGeneratingReadyListings: false,
+      isBackingUpMarketplaceData: false,
       isShowingFeeConfirmationFor: false,
       submitConfirmationListing: null,
       isSubmittingListingProof: false,
@@ -806,6 +807,38 @@ class Exchange extends Component {
     }
   };
 
+  onDownloadMarketplaceBackup = async () => {
+    const { t } = this.context;
+    this.setState({ isBackingUpMarketplaceData: true });
+
+    try {
+      const [storedListings, storedFills] = await Promise.all([
+        shakedex.getListings(),
+        shakedex.getFulfillments(),
+      ]);
+      const listings = storedListings.length ? storedListings : this.props.listings;
+      const fills = storedFills.length ? storedFills : this.props.fulfillments;
+      const data = JSON.stringify({listings, fills}, null, 2);
+      const date = moment().format('YYYY-MM-DD');
+      const savePath = dialog.showSaveDialogSync({
+        defaultPath: `bob-shakedex-marketplace-backup-${date}.json`,
+        filters: [{name: 'exchange-listing', extensions: ['json']}],
+      });
+
+      if (!savePath) {
+        return;
+      }
+
+      await fs.promises.writeFile(savePath, data);
+      this.props.showSuccess(t('backupMarketplaceDataSuccess'));
+    } catch (e) {
+      logger.error(e.message);
+      this.props.showError(e.message);
+    } finally {
+      this.setState({ isBackingUpMarketplaceData: false });
+    }
+  };
+
   downloadJSON = (filename, content) => {
     const blob = new Blob([`${content}\r\n`], {type: 'application/json;charset=utf-8'});
     const url = URL.createObjectURL(blob);
@@ -1327,6 +1360,17 @@ class Exchange extends Component {
                       : `${t('generateReadyListings')} (${readyToGenerateListings.length})`}
                   </button>
                 )}
+                <button
+                  className="exchange__button-header-button exchange__button-header-button--secondary"
+                  disabled={this.state.isBackingUpMarketplaceData}
+                  title={t('backupMarketplaceDataHelp')}
+                  aria-label={t('backupMarketplaceDataHelp')}
+                  onClick={this.onDownloadMarketplaceBackup}
+                >
+                  {this.state.isBackingUpMarketplaceData
+                    ? `${t('backingUp')}...`
+                    : t('backupMarketplaceData')}
+                </button>
                 <button
                   className="exchange__button-header-button exchange__button-header-button--secondary"
                   disabled={this.state.isLoadingLocalListings || !downloadableListingProofs.length}
@@ -2277,6 +2321,7 @@ export default connect(
     createPrivateSaleProof: (nameLock, params) => dispatch(createPrivateSaleProof(nameLock, params)),
     submitToShakedex: (auction) => dispatch(submitToShakedex(auction)),
     showError: (errorMessage) => dispatch(showError(errorMessage)),
+    showSuccess: (message) => dispatch(showSuccess(message)),
     clearDeeplinkParams: () => dispatch(clearDeeplinkParams()),
   }),
 )(Exchange);
