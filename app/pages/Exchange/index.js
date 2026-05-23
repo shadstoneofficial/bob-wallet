@@ -170,15 +170,17 @@ class Exchange extends Component {
       privateSaleError: '',
       isCreatingPrivateProof: false,
       initialListingName: '',
+      shouldScrollToSellerListings: false,
     };
 
     this.marketStatusTimer = null;
+    this.sellerListingsRef = React.createRef();
   }
 
   componentDidMount() {
     analytics.screenView('Exchange');
     this.refreshLocalListings();
-    this.openCreateListingFromUrl();
+    this.handleExchangeUrlParams();
     if (this.isMarketplaceVisible()) {
       this.fetchChannelSettings();
       this.fetchShakedex();
@@ -197,16 +199,38 @@ class Exchange extends Component {
     }
   }
 
-  openCreateListingFromUrl() {
-    const params = new URLSearchParams(window.location.search || '');
-    if (params.get('createListing') !== '1') {
+  getExchangeUrlParams() {
+    const search = window.location.search || '';
+    const hash = window.location.hash || '';
+    const hashQuery = hash.includes('?') ? hash.slice(hash.indexOf('?')) : '';
+
+    return new URLSearchParams(search || hashQuery);
+  }
+
+  handleExchangeUrlParams() {
+    const params = this.getExchangeUrlParams();
+    const name = params.get('name') || params.get('listing') || '';
+
+    if (!name) {
       return;
     }
 
-    this.setState({
-      isPlacingListing: true,
-      initialListingName: params.get('name') || '',
-    });
+    if (params.get('createListing') === '1') {
+      this.setState({
+        isPlacingListing: true,
+        initialListingName: name,
+      });
+      return;
+    }
+
+    if (params.get('listing')) {
+      this.setState({
+        listingsQuery: name,
+        listingsStatusFilter: 'all',
+        listingsSort: 'name-asc',
+        shouldScrollToSellerListings: true,
+      });
+    }
   }
 
   async componentDidUpdate(prevProps, prevState) {
@@ -221,6 +245,18 @@ class Exchange extends Component {
 
     if (this.props.deeplinkParams !== prevProps.deeplinkParams) {
       this.handleFulfillAuctionDeeplink();
+    }
+
+    if (
+      this.state.shouldScrollToSellerListings
+      && !this.state.isLoadingLocalListings
+      && this.sellerListingsRef.current
+    ) {
+      this.sellerListingsRef.current.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
+      this.setState({ shouldScrollToSellerListings: false });
     }
 
     if (
@@ -1277,7 +1313,7 @@ class Exchange extends Component {
         </> : null}
         {showSellerListings && (
           <>
-            <div className="exchange__button-header">
+            <div className="exchange__button-header" ref={this.sellerListingsRef}>
               <h2>{t('yourListings')}</h2>
               <div className="exchange__button-header-actions">
                 {!!readyToGenerateListings.length && (

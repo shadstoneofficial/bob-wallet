@@ -199,9 +199,9 @@ class DomainManager extends Component {
     this.props.history.push(`/exchange?createListing=1&name=${encodeURIComponent(name)}`);
   };
 
-  openShakedex = (event) => {
+  openShakedex = (event, name) => {
     event.stopPropagation();
-    this.props.history.push('/exchange');
+    this.props.history.push(`/exchange?listing=${encodeURIComponent(name)}`);
   };
 
   getSortDropdownItems() {
@@ -480,7 +480,7 @@ class DomainManager extends Component {
                 shakedexStatusLabel={this.getShakedexStatusLabel(shakedexListing)}
                 isShakedexListed={this.isShakedexListed(shakedexListing)}
                 onListOnShakedex={(event) => this.listOnShakedex(event, name)}
-                onOpenShakedex={this.openShakedex}
+                onOpenShakedex={(event) => this.openShakedex(event, name)}
                 onClick={() => history.push(`/domain_manager/${name}`)}
               />
             );
