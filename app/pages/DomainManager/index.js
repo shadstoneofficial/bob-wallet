@@ -55,6 +55,7 @@ const SORT_DROPDOWN = [
 class DomainManager extends Component {
   static propTypes = {
     isFetching: PropTypes.bool.isRequired,
+    isLoadingShakedexListings: PropTypes.bool.isRequired,
     getExchangeListings: PropTypes.func.isRequired,
     getMyNames: PropTypes.func.isRequired,
     namesList: PropTypes.array.isRequired,
@@ -78,6 +79,7 @@ class DomainManager extends Component {
     return this.props.namesList.join('') !== nextProps.namesList.join('')
       || this.getShakedexListingsKey(this.props.shakedexListings) !== this.getShakedexListingsKey(nextProps.shakedexListings)
       || this.props.isFetching !== nextProps.isFetching
+      || this.props.isLoadingShakedexListings !== nextProps.isLoadingShakedexListings
       || this.state.query !== nextState.query
       || this.state.isShowingNameClaimForPayment !== nextState.isShowingNameClaimForPayment
       || this.state.isShowingBulkTransfer !== nextState.isShowingBulkTransfer
@@ -411,6 +413,7 @@ class DomainManager extends Component {
     const end = start + n;
     const sortItems = this.getSortDropdownItems();
     const shakedexListingMap = this.getShakedexListingMap();
+    const isCheckingShakedexListings = this.props.isLoadingShakedexListings && !this.props.shakedexListings.length;
 
     return (
       <div className="domain-manager">
@@ -479,6 +482,7 @@ class DomainManager extends Component {
                 t={t}
                 shakedexStatusLabel={this.getShakedexStatusLabel(shakedexListing)}
                 isShakedexListed={this.isShakedexListed(shakedexListing)}
+                isCheckingShakedexListings={isCheckingShakedexListings}
                 onListOnShakedex={(event) => this.listOnShakedex(event, name)}
                 onOpenShakedex={(event) => this.openShakedex(event, name)}
                 onClick={() => history.push(`/domain_manager/${name}`)}
@@ -579,6 +583,7 @@ export default withRouter(
     state => ({
       names: state.myDomains.names,
       isFetching: state.myDomains.isFetching,
+      isLoadingShakedexListings: state.exchange.isLoadingListings,
       namesList: Object.keys(state.myDomains.names),
       shakedexListings: state.exchange.listings,
       height: state.node.chain.height,
@@ -612,6 +617,7 @@ function _DomainRow(props) {
     t,
     shakedexStatusLabel,
     isShakedexListed,
+    isCheckingShakedexListings,
     onListOnShakedex,
     onOpenShakedex,
   } = props;
@@ -619,7 +625,11 @@ function _DomainRow(props) {
     <TableRow key={`${name}`} onClick={onClick}>
       <TableItem>{formatName(name)}</TableItem>
       <TableItem>
-        {isShakedexListed ? (
+        {isCheckingShakedexListings ? (
+          <span className="domain-manager__shakedex-loading-text">
+            {t('loadingShakedexListings')}
+          </span>
+        ) : isShakedexListed ? (
           <div className="domain-manager__shakedex-expiry-note">
             <strong>{t('inShakedex')}</strong>
             <span>{t('shakedexExpiryManaged')}</span>
@@ -635,13 +645,22 @@ function _DomainRow(props) {
       <TableItem>
         <span className={c('domain-manager__shakedex-badge', {
           'domain-manager__shakedex-badge--active': isShakedexListed,
+          'domain-manager__shakedex-badge--loading': isCheckingShakedexListings,
         })}>
-          {shakedexStatusLabel}
+          {isCheckingShakedexListings ? t('loadingShakedex') : shakedexStatusLabel}
         </span>
       </TableItem>
       <TableItem>{displayBalance(names[name].highest, true)}</TableItem>
       <TableItem>
-        {isShakedexListed ? (
+        {isCheckingShakedexListings ? (
+          <button
+            className="domain-manager__row-action"
+            disabled
+            title={t('loadingShakedexListings')}
+          >
+            {t('checking')}
+          </button>
+        ) : isShakedexListed ? (
           <button
             className="domain-manager__row-action"
             title={t('openShakedex')}

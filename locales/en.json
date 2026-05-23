@@ -242,6 +242,8 @@
   "listedOnShakedexHelp": "This proof has been submitted to the Shakedex channel. Regenerate only if you want to change the proof, then submit again.",
   "list": "List",
   "listOnShakedex": "List on Shakedex",
+  "loadingShakedex": "Loading Shakedex...",
+  "loadingShakedexListings": "Checking local Shakedex listings...",
   "checkingLocalListings": "Checking local Shakedex listing records...",
   "ledgerModalConfirmText": "Confirm the transaction info on your ledger device.",
   "ledgerModalGenericError": "Error confirming on Ledger: %s",

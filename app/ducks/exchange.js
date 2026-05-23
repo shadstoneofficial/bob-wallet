@@ -77,6 +77,7 @@ function getInitialState() {
     total: 0,
     currentPage: 1,
     isLoading: false,
+    isLoadingListings: false,
     isError: false,
     isPlacingBid: false,
     isPlacingBidError: false,
@@ -794,6 +795,7 @@ export default function (state = getInitialState(), action) {
         listings: [],
         fulfillments: [],
         finalizingName: null,
+        isLoadingListings: false,
       };
 
     case GET_EXCHANGE_AUCTIONS:
@@ -842,10 +844,18 @@ export default function (state = getInitialState(), action) {
         isError: true,
       };
 
+    case GET_EXCHANGE_LISTINGS:
+      return {
+        ...state,
+        isLoadingListings: true,
+        isError: false,
+      };
+
     case GET_EXCHANGE_LISTINGS_OK:
       return {
         ...state,
         listings: action.payload.listings,
+        isLoadingListings: false,
         isLoading: false,
         isError: false,
       };
@@ -853,6 +863,7 @@ export default function (state = getInitialState(), action) {
     case GET_EXCHANGE_LISTINGS_ERR:
       return {
         ...state,
+        isLoadingListings: false,
         isLoading: false,
         isError: true,
       };

@@ -182,6 +182,12 @@
     }
   }
 
+  &__shakedex-loading-text {
+    color: $manatee-gray;
+    font-size: .62rem;
+    line-height: .85rem;
+  }
+
   &__shakedex-badge {
     border: 1px solid rgba($manatee-gray, .35);
     border-radius: 999px;
@@ -200,6 +206,11 @@
       border-color: rgba($school-bus-yellow, .45);
       color: $school-bus-yellow;
     }
+
+    &--loading {
+      border-color: rgba($azure-blue, .45);
+      color: lighten($azure-blue, 8%);
+    }
   }
 
   &__row-action {
@@ -216,6 +227,12 @@
     &:hover {
       border-color: $azure-blue;
       color: lighten($azure-blue, 8%);
+    }
+
+    &:disabled {
+      border-color: rgba($manatee-gray, .35);
+      color: $manatee-gray;
+      cursor: wait;
     }
   }
 
