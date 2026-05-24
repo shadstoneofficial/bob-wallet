@@ -297,11 +297,11 @@ export const sendRevealAll = () => async (dispatch) => {
 };
 
 export const sendRegisterAll = () => async (dispatch) => {
-  await new Promise((resolve, reject) => {
+  const passphrase = await new Promise((resolve, reject) => {
     dispatch(getPassphrase(resolve, reject));
   });
 
-  return await walletClient.sendRegisterAll();
+  return await walletClient.sendRegisterAll(passphrase);
 };
 
 export const sendRenewal = (name) => async (dispatch) => {

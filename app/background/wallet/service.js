@@ -691,7 +691,7 @@ class WalletService {
     () => this._executeRPC('createredeem', [name]),
   );
 
-  sendRegisterAll = async () => {
+  sendRegisterAll = async (passphrase) => {
     const {wdb} = this.node;
     const wallet = await wdb.get(this.name);
 
@@ -699,26 +699,29 @@ class WalletService {
     if (!names.length) {
       throw new Error('Nothing to do.');
     }
-    const actions = names.map(name => ['UPDATE', name, {records: []}]);
 
-    // Chunk into multiple batches to stay within consensus limits
-    const chunkedActions = [];
-    const chunkSize = consensus.MAX_BLOCK_RENEWALS / 6;
-    for(let i = 0; i < actions.length; i += chunkSize) {
-      chunkedActions.push(actions.slice(i, i + chunkSize));
+    const results = [];
+    for (const name of names) {
+      if (passphrase)
+        await this.unlock(this.name, passphrase);
+
+      const mtx = await this._walletProxy(
+        () => this._executeRPC('createupdate', [name, {records: []}]),
+      );
+
+      if (mtx) {
+        results.push({
+          name,
+          txid: mtx.txid(),
+        });
+      }
     }
 
-    // Only call once now, see later about repeated calls
-    const mtx = await this._walletProxy(
-      () => this._executeRPC('createbatch', [chunkedActions[0], {paths: true}]),
-    );
-
-    if (!mtx)
-      return null;
-
     return {
-      txid: mtx.txid(),
-      names: chunkedActions[0].map(([, name]) => name),
+      txid: results.map(result => result.txid).join(', '),
+      txids: results.map(result => result.txid),
+      names: results.map(result => result.name),
+      transactions: results,
     };
   };
 
