@@ -54,6 +54,7 @@ import {
   mergeLiquiditySpotChannels,
   normalizeLiquiditySpotHost,
 } from "../../constants/liquiditySpotChannels";
+import {walletFileLabel} from "../../utils/filenames";
 
 const analytics = aClientStub(() => require('electron').ipcRenderer);
 const shakedex = sClientStub(() => require('electron').ipcRenderer);
@@ -76,6 +77,7 @@ const settingClient = settingClientStub(() => require('electron').ipcRenderer);
     walletSync: state.wallet.walletSync,
     walletInitialized: state.wallet.initialized,
     wid: state.wallet.wid,
+    walletsDetails: state.wallet.walletsDetails,
     changeDepth: state.wallet.changeDepth,
     receiveDepth: state.wallet.receiveDepth,
     isRunning: state.node.isRunning,
@@ -111,6 +113,7 @@ export default class Settings extends Component {
     noDns: PropTypes.bool.isRequired,
     spv: PropTypes.bool.isRequired,
     wid: PropTypes.string.isRequired,
+    walletsDetails: PropTypes.object.isRequired,
     changeDepth: PropTypes.number.isRequired,
     receiveDepth: PropTypes.number.isRequired,
     walletApiKey: PropTypes.string.isRequired,
@@ -210,7 +213,10 @@ export default class Settings extends Component {
     const listings = await shakedex.getListings();
     const fills = await shakedex.getFulfillments();
     const data = JSON.stringify({listings, fills});
+    const date = new Date().toISOString().slice(0, 10);
+    const walletLabel = walletFileLabel(this.props.wid, this.props.walletsDetails);
     const savePath = dialog.showSaveDialogSync({
+      defaultPath: `bob-shakedex-marketplace-backup-${walletLabel}-${date}.json`,
       filters: [{name: 'exchange-listing', extensions: ['json']}],
     });
 

@@ -38,6 +38,7 @@ import {clearDeeplinkParams} from "../../ducks/app";
 import {Link} from "react-router-dom";
 import GenerateListingModal from "./GenerateListingModal";
 import {getPageIndices} from "../../utils/pageable";
+import {toSafeFilenamePart, walletFileLabel} from "../../utils/filenames";
 import Dropdown from "../../components/Dropdown";
 import ShakedexDeprecated from '../../components/ShakedexDeprecated/index.js';
 import SpinnerSVG from '../../assets/images/brick-loader.svg';
@@ -124,6 +125,7 @@ class Exchange extends Component {
     walletType: PropTypes.string.isRequired,
     walletWatchOnly: PropTypes.bool.isRequired,
     walletId: PropTypes.string.isRequired,
+    walletsDetails: PropTypes.object.isRequired,
   };
 
   static contextType = I18nContext;
@@ -796,9 +798,12 @@ class Exchange extends Component {
       const content = JSON.stringify({
         version: 1,
         exportedAt: new Date().toISOString(),
+        walletId: this.props.walletId,
         proofs: listings.map(listing => listing.auction),
       }, null, 2);
-      this.downloadJSON('bob-shakedex-listing-proofs.json', content);
+      const date = moment().format('YYYY-MM-DD');
+      const walletLabel = walletFileLabel(this.props.walletId, this.props.walletsDetails);
+      this.downloadJSON(`bob-shakedex-listing-proofs-${walletLabel}-${date}.json`, content);
     } catch (e) {
       logger.error(e.message);
       setTimeout(() => {
@@ -820,8 +825,9 @@ class Exchange extends Component {
       const fills = storedFills.length ? storedFills : this.props.fulfillments;
       const data = JSON.stringify({listings, fills}, null, 2);
       const date = moment().format('YYYY-MM-DD');
+      const walletLabel = walletFileLabel(this.props.walletId, this.props.walletsDetails);
       const savePath = dialog.showSaveDialogSync({
-        defaultPath: `bob-shakedex-marketplace-backup-${date}.json`,
+        defaultPath: `bob-shakedex-marketplace-backup-${walletLabel}-${date}.json`,
         filters: [{name: 'exchange-listing', extensions: ['json']}],
       });
 
@@ -913,10 +919,10 @@ class Exchange extends Component {
   };
 
   downloadPrivateProof = (privateProof, name) => {
-    const safeName = (name || privateProof?.auction?.name || 'shakedex')
-      .replace(/[^a-z0-9_-]/gi, '-');
+    const walletLabel = walletFileLabel(this.props.walletId, this.props.walletsDetails);
+    const safeName = toSafeFilenamePart(name || privateProof?.auction?.name || 'shakedex', 'shakedex');
     this.downloadJSON(
-      `${safeName}-private-sale-proof-${privateProof.createdAt || Date.now()}.json`,
+      `${safeName}-private-sale-proof-${walletLabel}-${privateProof.createdAt || Date.now()}.json`,
       JSON.stringify(privateProof.auction),
     );
   };
@@ -2298,6 +2304,7 @@ export default connect(
     walletType: state.wallet.type,
     walletWatchOnly: state.wallet.watchOnly,
     walletId: state.wallet.wid,
+    walletsDetails: state.wallet.walletsDetails,
     spv: state.node.spv,
     nodeProgress: state.node.chain.progress || 0,
     walletSync: state.wallet.walletSync,
