@@ -1,4 +1,8 @@
 const { states } = require("hsd/lib/covenants/namestate");
+const https = require("https");
+
+const MAINNET = "main";
+const nameValueCache = new Map();
 
 /** @param {import('hsd/lib/wallet/wallet')} wallet */
 async function fromBids(wallet) {
@@ -165,6 +169,7 @@ async function fromNames(wallet) {
   let renewableBlock = null;
   let registerableHNS = 0;
   let registerableNum = 0;
+  let registerableVerified = true;
 
   const names = await wallet.getNames();
 
@@ -190,7 +195,13 @@ async function fromNames(wallet) {
         height >= ownerCoin.height + network.coinbaseMaturity
       ) {
         if (ns.state(height, network) === states.CLOSED) {
-          registerableHNS += ns.highest - ns.value;
+          const verifiedValue = await getVerifiedNameValue(name, network);
+
+          if (verifiedValue === null) {
+            registerableVerified = false;
+          }
+
+          registerableHNS += ns.highest - (verifiedValue || ns.value);
           registerableNum++;
           continue;
         }
@@ -234,7 +245,11 @@ async function fromNames(wallet) {
   }
 
   return {
-    registerable: { HNS: registerableHNS, num: registerableNum },
+    registerable: {
+      HNS: registerableHNS,
+      num: registerableNum,
+      verified: registerableVerified,
+    },
     renewable: {
       domains: [...renewableDomains],
       block: renewableBlock,
@@ -245,6 +260,60 @@ async function fromNames(wallet) {
     },
     finalizable: { domains: [...finalizableDomains] },
   };
+}
+
+async function getVerifiedNameValue(name, network) {
+  if (network.type !== MAINNET) {
+    return null;
+  }
+
+  if (nameValueCache.has(name)) {
+    return nameValueCache.get(name);
+  }
+
+  try {
+    const html = await fetchShakeshiftNamePage(name);
+    const match = html.match(/<span>Name Value<\/span>\s*<span[^>]*data-value="(\d+)"/);
+    const value = match ? Number(match[1]) : null;
+    const safeValue = Number.isSafeInteger(value) && value > 0 ? value : null;
+
+    nameValueCache.set(name, safeValue);
+    return safeValue;
+  } catch (e) {
+    console.warn(`Could not verify final auction value for ${name}/ while calculating register estimate:`, e.message);
+    nameValueCache.set(name, null);
+    return null;
+  }
+}
+
+function fetchShakeshiftNamePage(name) {
+  return new Promise((resolve, reject) => {
+    const req = https.get(
+      `https://shakeshift.com/name/${encodeURIComponent(name)}`,
+      {timeout: 4000},
+      (res) => {
+        if (res.statusCode !== 200) {
+          res.resume();
+          reject(new Error(`Shakeshift returned HTTP ${res.statusCode}`));
+          return;
+        }
+
+        let body = '';
+        res.setEncoding('utf8');
+        res.on('data', (chunk) => {
+          body += chunk;
+          if (body.length > 500000)
+            req.destroy(new Error('Shakeshift response was too large.'));
+        });
+        res.on('end', () => resolve(body));
+      },
+    );
+
+    req.on('timeout', () => {
+      req.destroy(new Error('Timed out while verifying auction price.'));
+    });
+    req.on('error', reject);
+  });
 }
 
 /** @param {import('hsd/lib/wallet/wallet')} wallet */

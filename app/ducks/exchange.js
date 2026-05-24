@@ -9,6 +9,7 @@ import { SET_WALLET } from './walletReducer.js';
 
 const shakedex = shakedexClientStub(() => require('electron').ipcRenderer);
 const nodeClient = nodeClientStub(() => require('electron').ipcRenderer);
+const LISTING_STATUS_CONCURRENCY = 8;
 
 export const GET_EXCHANGE_AUCTIONS = 'GET/EXCHANGE_AUCTIONS';
 export const GET_EXCHANGE_AUCTIONS_OK = 'GET/EXCHANGE_AUCTIONS/OK';
@@ -217,9 +218,7 @@ export const getExchangeListings = (page = 1) => async (dispatch, getState) => {
   const info = await nodeClient.getInfo();
   const transferLockup = networks[info.network].names.transferLockup;
 
-  for (const listing of listings) {
-    console.log({ listing });
-
+  await mapWithConcurrency(listings, LISTING_STATUS_CONCURRENCY, async listing => {
     // deprecated: auction version 1
     listing.deprecated = false;
 
@@ -250,19 +249,19 @@ export const getExchangeListings = (page = 1) => async (dispatch, getState) => {
       } else {
         listing.status = LISTING_STATUS.NOT_FOUND;
       }
-      continue;
+      return;
     }
 
     if (!transferTx || transferTx.height === -1) {
       listing.status = LISTING_STATUS.TRANSFER_CONFIRMING;
-      continue;
+      return;
     }
 
     const blocksSinceTransfer = info.chain.height - transferTx.height;
     if (blocksSinceTransfer <= transferLockup) {
       listing.blocksUntilFinalize = Math.max(transferLockup - blocksSinceTransfer, 0);
       listing.status = LISTING_STATUS.TRANSFER_CONFIRMED_LOCKUP;
-      continue;
+      return;
     }
 
     try {
@@ -288,14 +287,14 @@ export const getExchangeListings = (page = 1) => async (dispatch, getState) => {
             hash: owner.hash,
             index: owner.index,
           };
-          continue;
+          return;
         }
       } catch (ownerCheckError) {
         console.warn(`Failed to check current owner for Shakedex listing ${listing.nameLock.name}:`, ownerCheckError);
       }
 
       listing.status = LISTING_STATUS.TRANSFER_CONFIRMED;
-      continue;
+      return;
     }
 
     if (!finalizeTx) {
@@ -312,7 +311,7 @@ export const getExchangeListings = (page = 1) => async (dispatch, getState) => {
             hash: owner.hash,
             index: owner.index,
           };
-          continue;
+          return;
         }
       } catch (ownerCheckError) {
         console.warn(`Failed to check current owner for Shakedex listing ${listing.nameLock.name}:`, ownerCheckError);
@@ -320,17 +319,17 @@ export const getExchangeListings = (page = 1) => async (dispatch, getState) => {
 
       listing.blocksUntilFinalize = 0;
       listing.status = LISTING_STATUS.TRANSFER_CONFIRMED;
-      continue;
+      return;
     }
 
     if (finalizeTx.height === -1) {
       listing.status = LISTING_STATUS.FINALIZE_CONFIRMING;
-      continue;
+      return;
     }
 
     if (!listing.auction) {
       listing.status = LISTING_STATUS.FINALIZE_CONFIRMED;
-      continue;
+      return;
     }
 
     const version = listing.auction.version || 1;
@@ -354,7 +353,7 @@ export const getExchangeListings = (page = 1) => async (dispatch, getState) => {
           listing.lowestDeprecatedPrice = Math.min(...futureBids.map(bid => bid.price));
         }
       }
-      continue;
+      return;
     }
 
     // Auction cancelled and name being transferred back
@@ -362,13 +361,13 @@ export const getExchangeListings = (page = 1) => async (dispatch, getState) => {
       listing.status = cancelTx.height > 0 && info.chain.height - cancelTx.height > transferLockup
         ? LISTING_STATUS.CANCEL_CONFIRMED
         : LISTING_STATUS.CANCEL_CONFIRMING;
-      continue;
+      return;
     }
 
     // Auction cancelled and name return transfer finalizing
     if (cancelFinalizeTx && cancelFinalizeTx.height === -1) {
       listing.status = LISTING_STATUS.FINALIZE_CANCEL_CONFIRMING;
-      continue;
+      return;
     }
 
     // At this point, the presigns no longer work
@@ -377,11 +376,11 @@ export const getExchangeListings = (page = 1) => async (dispatch, getState) => {
     // Auction cancelled and name return finalized
     if (cancelCoin) {
       listing.status = LISTING_STATUS.FINALIZE_CANCEL_CONFIRMED;
-      continue;
+      return;
     }
 
     listing.status = LISTING_STATUS.SOLD;
-  }
+  });
 
   try {
     const marketSales = await shakedex.getExchangeSales();
@@ -433,6 +432,24 @@ export const getExchangeListings = (page = 1) => async (dispatch, getState) => {
     },
   });
 };
+
+async function mapWithConcurrency(items, limit, iterator) {
+  const executing = new Set();
+
+  for (const item of items) {
+    const promise = Promise.resolve()
+      .then(() => iterator(item))
+      .finally(() => executing.delete(promise));
+
+    executing.add(promise);
+
+    if (executing.size >= limit) {
+      await Promise.race(executing);
+    }
+  }
+
+  await Promise.all(executing);
+}
 
 export const placeExchangeBid = (auction, bid) => async (dispatch, getState) => {
   dispatch({

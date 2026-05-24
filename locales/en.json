@@ -516,6 +516,7 @@
   "register": "Register",
   "registerAll": "Register All",
   "registerCardWarning": "that you’ve won and get back %s HNS",
+  "registerCardVerifyWarning": "that you’ve won. Bob will verify the final auction price before sending.",
   "registerMyDomain": "Register My Domain",
   "registerSuccess": "Your register transaction was submitted. It will show as registered after it confirms on-chain.",
   "registering": "Registering",

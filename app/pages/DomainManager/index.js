@@ -43,6 +43,7 @@ const ITEM_PER_DROPDOWN = [
 
 const DM_ITEMS_PER_PAGE_KEY = 'domain-manager-items-per-page';
 const DM_SORT_BY_KEY = 'domain-manager-sort-by';
+const DM_SHAKEDEX_STATUS_CACHE_KEY = 'domain-manager-shakedex-status-cache';
 const AVERAGE_BLOCK_TIME = 10 * 60 * 1000;
 
 const SORT_DROPDOWN = [
@@ -73,6 +74,7 @@ class DomainManager extends Component {
     currentPageIndex: 0,
     itemsPerPage: 10,
     sortBy: 'name-asc',
+    cachedShakedexListings: [],
   };
 
   shouldComponentUpdate(nextProps, nextState) {
@@ -80,6 +82,7 @@ class DomainManager extends Component {
       || this.getShakedexListingsKey(this.props.shakedexListings) !== this.getShakedexListingsKey(nextProps.shakedexListings)
       || this.props.isFetching !== nextProps.isFetching
       || this.props.isLoadingShakedexListings !== nextProps.isLoadingShakedexListings
+      || this.getShakedexListingsKey(this.state.cachedShakedexListings) !== this.getShakedexListingsKey(nextState.cachedShakedexListings)
       || this.state.query !== nextState.query
       || this.state.isShowingNameClaimForPayment !== nextState.isShowingNameClaimForPayment
       || this.state.isShowingBulkTransfer !== nextState.isShowingBulkTransfer
@@ -92,6 +95,7 @@ class DomainManager extends Component {
   async componentDidMount() {
     this.props.getMyNames();
     this.props.getExchangeListings();
+    this.loadCachedShakedexListings();
     const itemsPerPage = await dbClient.get(DM_ITEMS_PER_PAGE_KEY);
     const sortBy = await dbClient.get(DM_SORT_BY_KEY);
 
@@ -101,6 +105,20 @@ class DomainManager extends Component {
     });
 
     analytics.screenView('Domain Manager');
+  }
+
+  componentDidUpdate(prevProps) {
+    if (prevProps.wid !== this.props.wid) {
+      this.loadCachedShakedexListings();
+    }
+
+    if (
+      !this.props.isLoadingShakedexListings
+      && this.props.shakedexListings.length
+      && this.getShakedexListingsKey(prevProps.shakedexListings) !== this.getShakedexListingsKey(this.props.shakedexListings)
+    ) {
+      this.saveCachedShakedexListings(this.props.shakedexListings);
+    }
   }
 
   onChange = (name) => (e) => {
@@ -158,10 +176,42 @@ class DomainManager extends Component {
       .join('|');
   }
 
+  getShakedexStatusCacheKey() {
+    return `${DM_SHAKEDEX_STATUS_CACHE_KEY}:${this.props.wid || 'default'}`;
+  }
+
+  async loadCachedShakedexListings() {
+    const cachedShakedexListings = await dbClient.get(this.getShakedexStatusCacheKey());
+
+    if (Array.isArray(cachedShakedexListings)) {
+      this.setState({ cachedShakedexListings });
+    }
+  }
+
+  async saveCachedShakedexListings(listings) {
+    const cachedShakedexListings = listings.map(listing => ({
+      nameLock: {
+        name: listing?.nameLock?.name,
+        transferTxHash: listing?.nameLock?.transferTxHash,
+      },
+      status: listing?.status,
+      blocksUntilFinalize: listing?.blocksUntilFinalize,
+      marketSubmission: listing?.marketSubmission,
+      marketSale: listing?.marketSale,
+      supersededByOwner: listing?.supersededByOwner,
+    })).filter(listing => listing.nameLock.name);
+
+    await dbClient.put(this.getShakedexStatusCacheKey(), cachedShakedexListings);
+    this.setState({ cachedShakedexListings });
+  }
+
   getShakedexListingMap() {
     const listingMap = new Map();
+    const listings = this.props.shakedexListings.length
+      ? this.props.shakedexListings
+      : this.state.cachedShakedexListings;
 
-    for (const listing of this.props.shakedexListings || []) {
+    for (const listing of listings || []) {
       const name = listing?.nameLock?.name;
       if (name) {
         listingMap.set(name, listing);
@@ -413,7 +463,9 @@ class DomainManager extends Component {
     const end = start + n;
     const sortItems = this.getSortDropdownItems();
     const shakedexListingMap = this.getShakedexListingMap();
-    const isCheckingShakedexListings = this.props.isLoadingShakedexListings && !this.props.shakedexListings.length;
+    const isCheckingShakedexListings = this.props.isLoadingShakedexListings
+      && !this.props.shakedexListings.length
+      && !this.state.cachedShakedexListings.length;
 
     return (
       <div className="domain-manager">

@@ -411,7 +411,9 @@ export default class Account extends Component {
             }
             subtext={
               <Fragment>
-                {t('registerCardWarning', Math.round(registerable.HNS / 1e6))}
+                {registerable.verified
+                  ? t('registerCardWarning', Math.round(registerable.HNS / 1e6))
+                  : t('registerCardVerifyWarning')}
               </Fragment>
             }
             buttonAction={() => this.onCardButtonClick("register")}
