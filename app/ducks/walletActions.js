@@ -265,56 +265,58 @@ export const fetchTransactions = () => async (dispatch, getState) => {
   });
 
 
-  const txs = await walletClient.getTransactionHistory();
+  try {
+    const txs = await walletClient.getTransactionHistory();
 
-  let payload = new Map();
+    let payload = new Map();
 
-  for (let i = 0; i < txs.length; i++) {
-    const tx = txs[i];
-    const {time, block} = tx;
-    const existing = currentTXs.get(tx.hash);
+    for (let i = 0; i < txs.length; i++) {
+      const tx = txs[i];
+      const {time, block} = tx;
+      const existing = currentTXs.get(tx.hash);
 
-    if (existing) {
+      if (existing) {
+        const isPending = !block;
+        existing.date = isPending ? Date.now() : time * 1000;
+        existing.pending = isPending;
+
+        payload.set(existing.id, existing);
+        continue;
+      }
+
+      if (!(i % 100)) {
+        dispatch({
+          type: NEW_BLOCK_STATUS,
+          payload: `Processing TX: ${i}/${txs.length}`,
+        });
+      }
+
+      const ios = await parseInputsOutputs(net, tx);
       const isPending = !block;
-      existing.date = isPending ? Date.now() : time * 1000;
-      existing.pending = isPending;
+      const txData = {
+        id: tx.hash,
+        date: isPending ? Date.now() : time * 1000,
+        pending: isPending,
+        ...ios,
+      };
 
-      payload.set(existing.id, existing);
-      continue;
+      payload.set(tx.hash, txData);
     }
 
-    if (!(i % 100)) {
-      dispatch({
-        type: NEW_BLOCK_STATUS,
-        payload: `Processing TX: ${i}/${txs.length}`,
-      });
-    }
+    // Sort all TXs by date without losing the hash->tx mapping
+    payload = new Map([...payload.entries()].sort((a, b) => b[1].date - a[1].date));
 
-    const ios = await parseInputsOutputs(net, tx);
-    const isPending = !block;
-    const txData = {
-      id: tx.hash,
-      date: isPending ? Date.now() : time * 1000,
-      pending: isPending,
-      ...ios,
-    };
-
-    payload.set(tx.hash, txData);
+    dispatch({
+      type: SET_TRANSACTIONS,
+      payload,
+    });
+  } finally {
+    dispatch({type: NEW_BLOCK_STATUS, payload: ''});
+    dispatch({
+      type: SET_FETCHING,
+      payload: false,
+    });
   }
-  dispatch({type: NEW_BLOCK_STATUS, payload: ''});
-
-  // Sort all TXs by date without losing the hash->tx mapping
-  payload = new Map([...payload.entries()].sort((a, b) => b[1].date - a[1].date));
-
-  dispatch({
-    type: SET_FETCHING,
-    payload: false,
-  });
-
-  dispatch({
-    type: SET_TRANSACTIONS,
-    payload,
-  });
 };
 
 export const fetchPendingTransactions = () => async (dispatch, getState) => {

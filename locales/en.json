@@ -801,6 +801,7 @@
   "txViewSignedByNMembers": "Has been signed by %s members:",
   "txViewSignedByNobody": "No member has signed this transaction yet.",
   "txnsEmpty": "You do not have any transactions",
+  "txnsLoading": "Loading transaction history...",
   "txnsSearchPlaceholder": "Search your transaction history",
   "unavailable": "Unavailable",
   "unknown": "unknown",

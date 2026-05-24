@@ -42,6 +42,8 @@ const TX_VIEW_ITEMS_PER_PAGE_KEY = 'main-tx-items-per-page';
     transactions: state.wallet.transactions,
     walletHeight: state.wallet.walletHeight,
     spendableBalance: state.wallet.balance.spendable,
+    isFetching: state.wallet.isFetching,
+    transactionStatus: state.node.newBlockStatus,
   }),
   (dispatch) => ({
     fetchTransactions: () => dispatch(fetchTransactions()),
@@ -52,6 +54,8 @@ export default class Transactions extends Component {
     transactions: PropTypes.instanceOf(Map).isRequired,
     walletHeight: PropTypes.number.isRequired,
     spendableBalance: PropTypes.number,
+    isFetching: PropTypes.bool.isRequired,
+    transactionStatus: PropTypes.string,
   };
 
   static contextType = I18nContext;
@@ -171,7 +175,9 @@ export default class Transactions extends Component {
     if (!transactions.length) {
       result.push(
         <div key="empty" className="transactions__empty-list">
-          {t('txnsEmpty')}
+          {this.props.isFetching
+            ? (this.props.transactionStatus || t('txnsLoading'))
+            : t('txnsEmpty')}
         </div>
       );
     }
