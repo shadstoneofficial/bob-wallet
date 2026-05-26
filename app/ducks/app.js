@@ -10,6 +10,7 @@ const SET_CUSTOM_LOCALE = 'app/setCustomLocale';
 const SET_DEEPLINK_PARAMS = 'app/setDeeplinkParams';
 const SET_UPDATE_AVAILABLE = 'app/setUpdateAvailable';
 const SET_THEME = 'app/setTheme';
+const SET_SHOW_USD_VALUE = 'app/setShowUsdValue';
 
 const initialState = {
   deeplink: '',
@@ -17,6 +18,7 @@ const initialState = {
   locale: '',
   customLocale: null,
   theme: 'light',
+  showUsdValue: true,
   updateAvailable: null,
 };
 
@@ -63,6 +65,14 @@ export const fetchTheme = () => async dispatch => {
   });
 };
 
+export const fetchShowUsdValue = () => async dispatch => {
+  const showUsdValue = await settingsClient.getShowUsdValue();
+  dispatch({
+    type: SET_SHOW_USD_VALUE,
+    payload: showUsdValue,
+  });
+};
+
 export const setLocale = locale => async (dispatch) => {
   await settingsClient.setLocale(locale);
   dispatch({
@@ -96,6 +106,14 @@ export const setTheme = theme => async dispatch => {
   dispatch({
     type: SET_THEME,
     payload: nextTheme,
+  });
+};
+
+export const setShowUsdValue = showUsdValue => async dispatch => {
+  const nextShowUsdValue = await settingsClient.setShowUsdValue(showUsdValue);
+  dispatch({
+    type: SET_SHOW_USD_VALUE,
+    payload: nextShowUsdValue,
   });
 };
 
@@ -145,6 +163,11 @@ export default function appReducer(state = initialState, action) {
       return {
         ...state,
         theme: action.payload,
+      };
+    case SET_SHOW_USD_VALUE:
+      return {
+        ...state,
+        showUsdValue: action.payload,
       };
     case SET_UPDATE_AVAILABLE:
       return {

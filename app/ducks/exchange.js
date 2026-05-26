@@ -207,7 +207,7 @@ export const getExchangeListings = (page = 1) => async (dispatch, getState) => {
         message: e.message,
       },
     });
-    return;
+    return [];
   }
 
   if (walletId !== getState().wallet.wid) {
@@ -431,6 +431,8 @@ export const getExchangeListings = (page = 1) => async (dispatch, getState) => {
       listings,
     },
   });
+
+  return listings;
 };
 
 async function mapWithConcurrency(items, limit, iterator) {
@@ -649,12 +651,13 @@ export const launchExchangeAuction = (nameLock, overrideParams) => async (dispat
     throw e;
   }
 
-  dispatch(getExchangeListings());
+  const listings = await dispatch(getExchangeListings());
   dispatch({
     type: LAUNCH_EXCHANGE_AUCTION_OK,
   });
 
   dispatch(showSuccess('Listing proof generated locally. No on-chain transaction was sent. Click Submit to confirm the listing on the Shakedex channel, or Download to save a backup copy.'));
+  return listings;
 };
 
 export const createPrivateSaleProof = (nameLock, params) => async (dispatch) => {
@@ -749,7 +752,7 @@ export const launchExchangeAuctionsBulk = (listings) => async (dispatch, getStat
     };
   }
 
-  await dispatch(getExchangeListings());
+  const refreshedListings = await dispatch(getExchangeListings());
 
   if (failures.length) {
     dispatch({
@@ -760,6 +763,7 @@ export const launchExchangeAuctionsBulk = (listings) => async (dispatch, getStat
       total: listings.length,
       succeeded,
       failures,
+      listings: refreshedListings,
     };
   }
 
@@ -771,6 +775,7 @@ export const launchExchangeAuctionsBulk = (listings) => async (dispatch, getStat
     total: listings.length,
     succeeded,
     failures,
+    listings: refreshedListings,
   };
 };
 
@@ -799,6 +804,7 @@ export const submitToShakedex = (auction) => async dispatch => {
     if (!e.wasShown) {
       const message = `Failed to post to the Shakedex channel: ${e.message}. You can still download your proof as a backup.`;
       dispatch(showError(message));
+      e.wasShown = true;
     }
     throw e;
   }

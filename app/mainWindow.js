@@ -1,6 +1,7 @@
 import path from 'path';
 import * as electron from 'electron';
 import * as remoteMain from '@electron/remote/main';
+import traceDeeplink from './utils/deeplinkTrace';
 remoteMain.initialize();
 
 let mainWindow;
@@ -43,7 +44,9 @@ export default function showMainWindow() {
     }
 
     while (pendingDeeplinks.length) {
-      mainWindow.webContents.send('deeplink', pendingDeeplinks.shift());
+      const pendingDeeplink = pendingDeeplinks.shift();
+      traceDeeplink('main-window-flush-pending', {url: pendingDeeplink});
+      mainWindow.webContents.send('deeplink', pendingDeeplink);
     }
   });
 
@@ -73,10 +76,20 @@ export function sendDeeplinkToMainWindow(url) {
     return;
   }
 
+  if (electron.app.isReady()) {
+    showMainWindow();
+  }
+
   if (!mainWindow || !rendererReady) {
+    traceDeeplink('main-window-queue', {
+      url,
+      hasMainWindow: Boolean(mainWindow),
+      rendererReady,
+    });
     pendingDeeplinks.push(url);
     return;
   }
 
+  traceDeeplink('main-window-send', {url});
   mainWindow.webContents.send('deeplink', url);
 }

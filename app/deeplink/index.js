@@ -3,6 +3,7 @@ import { clientStub as aClientStub } from '../background/analytics/client';
 const analytics = aClientStub(() => require('electron').ipcRenderer);
 import { store } from '../store/configureStore';
 import * as methods from './methods';
+import traceDeeplink from '../utils/deeplinkTrace';
 
 export default function handleDeeplink(message) {
   const url = new URL(message);
@@ -15,9 +16,16 @@ export default function handleDeeplink(message) {
 
   const method = getDeeplinkMethod(url);
   const handler = methods[method];
+  traceDeeplink('renderer-handle-deeplink', {
+    url: message,
+    method,
+    isLocked,
+    hasHandler: typeof handler === 'function',
+  });
 
   if (typeof handler === 'function') {
-    if (isLocked) {
+    if (isLocked && method !== 'fulfillauction') {
+      traceDeeplink('renderer-store-pending-deeplink', {url: message, method});
       store.dispatch(setDeeplink(message));
       return;
     }
@@ -28,14 +36,22 @@ export default function handleDeeplink(message) {
   }
 }
 
-function getDeeplinkMethod(url) {
-  const pathnameMethod = url.pathname.replace(/^\/+/, '').split('/')[0];
+export function getDeeplinkMethod(url) {
+  const href = url.href || String(url);
+  const pathish = href
+    .replace(/^[a-z][a-z0-9+.-]*:/i, '')
+    .split(/[?#]/)[0]
+    .replace(/^\/+/, '');
+  const parts = pathish.split('/').filter(Boolean);
 
-  if (url.hostname === 'x' && pathnameMethod) {
-    return pathnameMethod.toLowerCase();
+  if (parts[0] === 'x' && parts[1]) {
+    return parts[1].toLowerCase();
   }
 
-  // Legacy Bob links encoded the method with a leading double slash in the
-  // path, which produced a pathname like "//fulfillauction".
-  return url.pathname.substr(2).split('/')[0].toLowerCase();
+  if (parts[0]) {
+    return parts[0].toLowerCase();
+  }
+
+  const pathnameMethod = url.pathname.replace(/^\/+/, '').split('/')[0];
+  return pathnameMethod.toLowerCase();
 }

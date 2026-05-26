@@ -346,7 +346,7 @@ export const finalizeMany = (names) => async (dispatch) => {
   await new Promise((resolve, reject) => {
     dispatch(getPassphrase(resolve, reject));
   });
-  await walletClient.finalizeMany(names);
+  return await walletClient.finalizeMany(names);
 };
 
 export const renewAll = () => async (dispatch) => {

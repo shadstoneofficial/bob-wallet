@@ -41,7 +41,7 @@ import SignMessage from "../SignMessage";
 import VerifyMessage from "../VerifyMessage";
 import Addons from '../Addons';
 import Messages from '../Messages';
-import {fetchLocale, fetchTheme, initHip2, checkForUpdates} from "../../ducks/app";
+import {fetchLocale, fetchTheme, fetchShowUsdValue, initHip2, checkForUpdates} from "../../ducks/app";
 import Multisig from "../Multisig";
 import {I18nContext} from "../../utils/i18n";
 import {EXPLORERS} from "../../constants/explorers";
@@ -59,6 +59,7 @@ const settingClient = sClientStub(() => require('electron').ipcRenderer);
     checkForUpdates: () => dispatch(checkForUpdates()),
     fetchLocale: () => dispatch(fetchLocale()),
     fetchTheme: () => dispatch(fetchTheme()),
+    fetchShowUsdValue: () => dispatch(fetchShowUsdValue()),
   }),
 )
 class App extends Component {
@@ -73,6 +74,7 @@ class App extends Component {
     setExplorer: PropTypes.func.isRequired,
     fetchLocale: PropTypes.func.isRequired,
     fetchTheme: PropTypes.func.isRequired,
+    fetchShowUsdValue: PropTypes.func.isRequired,
     isChangingNetworks: PropTypes.bool.isRequired,
   };
 
@@ -88,6 +90,7 @@ class App extends Component {
     this.setState({isLoading: true});
     this.props.fetchLocale();
     this.props.fetchTheme();
+    this.props.fetchShowUsdValue();
     this.props.checkForUpdates();
     await this.props.startNode();
     await this.props.initHip2();

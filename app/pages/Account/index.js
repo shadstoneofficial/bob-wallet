@@ -31,6 +31,7 @@ const analytics = aClientStub(() => require("electron").ipcRenderer);
     isFetching: state.wallet.isFetching,
     network: state.wallet.network,
     hnsPrice: state.node.hnsPrice,
+    showUsdValue: state.app.showUsdValue,
     walletInitialized: state.wallet.initialized,
     walletType: state.wallet.type,
   }),
@@ -41,6 +42,7 @@ const analytics = aClientStub(() => require("electron").ipcRenderer);
     sendRedeemAll: () => dispatch(nameActions.sendRedeemAll()),
     sendRegisterAll: () => dispatch(nameActions.sendRegisterAll()),
     finalizeAll: () => dispatch(nameActions.finalizeAll()),
+    finalizeMany: (names) => dispatch(nameActions.finalizeMany(names)),
     renewAll: () => dispatch(nameActions.renewAll()),
     showSuccess: (message) => dispatch(showSuccess(message)),
     showError: (message) => dispatch(showError(message)),
@@ -62,10 +64,12 @@ export default class Account extends Component {
     sendRedeemAll: PropTypes.func.isRequired,
     sendRegisterAll: PropTypes.func.isRequired,
     finalizeAll: PropTypes.func.isRequired,
+    finalizeMany: PropTypes.func.isRequired,
     renewAll: PropTypes.func.isRequired,
     history: PropTypes.object.isRequired,
     walletInitialized: PropTypes.bool.isRequired,
     walletType: PropTypes.string.isRequired,
+    showUsdValue: PropTypes.bool.isRequired,
   };
 
   static contextType = I18nContext;
@@ -148,7 +152,7 @@ export default class Account extends Component {
       reveal: this.props.sendRevealAll,
       redeem: this.props.sendRedeemAll,
       register: this.props.sendRegisterAll,
-      finalize: this.props.finalizeAll,
+      finalize: this.props.finalizeMany,
       renew: this.props.renewAll,
     }[action];
 
@@ -162,6 +166,14 @@ export default class Account extends Component {
           this.props.showSuccess(
             `Register transaction submitted for ${res.names.join(', ')}. ` +
             `${txLabel}: ${res.txid}. It will show as registered after it confirms on-chain.`
+          );
+        } else if (action === 'finalize' && res && (res.hash || res.txid)) {
+          const txid = res.hash || res.txid;
+          const names = Array.isArray(args) && args.length
+            ? ` for ${args.join(', ')}`
+            : '';
+          this.props.showSuccess(
+            `Finalize transaction submitted${names}. Tx: ${txid}. It will show as finalized after it confirms on-chain.`
           );
         } else {
           this.props.showSuccess(t('genericRequestSuccess'));
@@ -235,9 +247,11 @@ export default class Account extends Component {
           <p className="amount">
             {displayBalance(spendableBalance.HNS || 0, true, 2)}
           </p>
-          <span className="subtext">
-            ~${spendableBalance.converted || "0.00"} {spendableBalance.currency}
-          </span>
+          {this.props.showUsdValue && (
+            <span className="subtext">
+              ~${spendableBalance.converted || "0.00"} {spendableBalance.currency}
+            </span>
+          )}
         </div>
 
         {/* Locked Balance - In bids */}
@@ -437,7 +451,7 @@ export default class Account extends Component {
                 {t('transferCardWarning')}
               </Fragment>
             }
-            buttonAction={() => this.onCardButtonClick("finalize")}
+            buttonAction={() => this.onCardButtonClick("finalize", finalizable.domains)}
           />
         ) : (
           ""

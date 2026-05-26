@@ -370,3 +370,30 @@ export function listingStatusToI18nKey(status) {
     [LISTING_STATUS.FINALIZE_CANCEL_CONFIRMED]: 'shakedexStatusFinalizeCancelConfirmed',
   }[status];
 };
+
+const SELLER_LISTING_ACTION_STATUSES = new Set([
+  LISTING_STATUS.TRANSFER_CONFIRMED,
+  LISTING_STATUS.FINALIZE_CONFIRMED,
+  LISTING_STATUS.CANCEL_CONFIRMED,
+]);
+
+export function isListingProofReadyForSubmission(listing, network = 'main') {
+  return Boolean(
+    network === 'main'
+    && listing
+    && listing.status === LISTING_STATUS.ACTIVE
+    && listing.auction
+    && !listing.marketSubmission,
+  );
+}
+
+export function isSellerListingNeedsAction(listing, options = {}) {
+  const { network = 'main' } = options;
+
+  if (!listing) {
+    return false;
+  }
+
+  return SELLER_LISTING_ACTION_STATUSES.has(listing.status)
+    || isListingProofReadyForSubmission(listing, network);
+}

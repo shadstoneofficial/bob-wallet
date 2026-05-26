@@ -18,6 +18,7 @@ import {clearDeeplink, setDeeplinkParams} from '../../ducks/app';
     wallets: state.wallet.wallets,
     walletsDetails: state.wallet.walletsDetails,
     pendingDeeplink: state.app.deeplink,
+    deeplinkParams: state.app.deeplinkParams,
   }),
   dispatch => ({
     unlockWallet: (name, passphrase) => dispatch(walletActions.unlockWallet(name, passphrase)),
@@ -78,6 +79,8 @@ export default class AccountLogin extends Component {
         const pendingDeeplink = this.props.pendingDeeplink;
         this.props.clearDeeplink();
         this.props.openShakedexBuyDeeplink(pendingDeeplink);
+        this.props.history.push('/exchange');
+      } else if (this.props.deeplinkParams && this.props.deeplinkParams.presignJSONString) {
         this.props.history.push('/exchange');
       } else {
         this.props.history.push('/account');

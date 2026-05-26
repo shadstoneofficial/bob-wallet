@@ -9,6 +9,8 @@ export const clientStub = ipcRendererInjector => makeClient(ipcRendererInjector,
   'setCustomLocale',
   'getTheme',
   'setTheme',
+  'getShowUsdValue',
+  'setShowUsdValue',
   'getLatestRelease',
   'validateLiquidityChannelHost',
 ]);

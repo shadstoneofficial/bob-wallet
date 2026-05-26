@@ -31,10 +31,16 @@ import {
 import { LISTING_STATUS } from '../../constants/exchange.js';
 import {formatName} from "../../utils/nameHelpers";
 import {showError, showSuccess} from "../../ducks/notifications";
-import {fromAuctionJSON, listingStatusToI18nKey, validateAuction} from "../../utils/shakedex";
+import {
+  fromAuctionJSON,
+  isSellerListingNeedsAction,
+  listingStatusToI18nKey,
+  validateAuction,
+} from "../../utils/shakedex";
 import './exchange.scss';
 import PropTypes from "prop-types";
 import {clearDeeplinkParams} from "../../ducks/app";
+import traceDeeplink from '../../utils/deeplinkTrace';
 import {Link} from "react-router-dom";
 import GenerateListingModal from "./GenerateListingModal";
 import {getPageIndices} from "../../utils/pageable";
@@ -165,6 +171,7 @@ class Exchange extends Component {
       isHandlingFulfillAuctionDeeplink: false,
       deeplinkAuctionName: '',
       bulkGeneratingNames: [],
+      bulkSubmittingNames: [],
       preparingSubmitNames: [],
       bulkGenerateNotice: null,
       privateSaleListing: null,
@@ -384,7 +391,7 @@ class Exchange extends Component {
   refreshLocalListings = async () => {
     this.setState({ isLoadingLocalListings: true });
 
-    await Promise.all([
+    const results = await Promise.all([
       this.props.getExchangeFullfillments(),
       this.props.getExchangeListings(),
     ]);
@@ -392,6 +399,8 @@ class Exchange extends Component {
     this.setState({
       isLoadingLocalListings: false,
     });
+
+    return results[1] || [];
   }
 
   getReadyToGenerateListings() {
@@ -447,11 +456,6 @@ class Exchange extends Component {
     const query = this.state.listingsQuery.trim().toLowerCase();
     const statusFilter = this.state.listingsStatusFilter;
     const sort = this.state.listingsSort;
-    const needsAction = new Set([
-      LISTING_STATUS.TRANSFER_CONFIRMED,
-      LISTING_STATUS.FINALIZE_CONFIRMED,
-      LISTING_STATUS.CANCEL_CONFIRMED,
-    ]);
     const preparing = new Set([
       LISTING_STATUS.TRANSFER_CONFIRMING,
       LISTING_STATUS.TRANSFER_CONFIRMED_LOCKUP,
@@ -469,7 +473,9 @@ class Exchange extends Component {
       let matchesStatus = statusFilter === 'all' || listing.status === statusFilter;
 
       if (statusFilter === 'needs-action') {
-        matchesStatus = needsAction.has(listing.status);
+        matchesStatus = isSellerListingNeedsAction(listing, {
+          network: this.props.network,
+        });
       }
 
       if (statusFilter === 'preparing') {
@@ -522,6 +528,65 @@ class Exchange extends Component {
     listingsSort: 'name-asc',
   });
 
+  submitGeneratedBulkListings = async (succeededNames, refreshedListings) => {
+    const submitted = [];
+    const submitFailures = [];
+
+    if (
+      !succeededNames.length
+      || this.props.network !== 'main'
+      || !this.canUseMarketplaceActions()
+    ) {
+      return {
+        submitted,
+        submitFailures,
+      };
+    }
+
+    const feeInfo = await shakedex.getFeeInfo();
+    if (feeInfo.rate !== 0) {
+      return {
+        submitted,
+        submitFailures,
+        skippedReason: 'The Shakedex channel requires a fee confirmation. Use Submit on each generated proof to review and confirm the fee.',
+      };
+    }
+
+    const succeededNameSet = new Set(succeededNames);
+    const listingsToSubmit = (refreshedListings || [])
+      .filter(listing => (
+        listing
+        && listing.nameLock
+        && succeededNameSet.has(listing.nameLock.name)
+        && listing.status === LISTING_STATUS.ACTIVE
+        && listing.auction
+        && !listing.marketSubmission
+      ));
+
+    this.setState({
+      bulkSubmittingNames: listingsToSubmit
+        .map(listing => listing.nameLock && listing.nameLock.name)
+        .filter(Boolean),
+    });
+
+    for (const listing of listingsToSubmit) {
+      try {
+        await this.props.submitToShakedex(listing.auction);
+        submitted.push(listing.nameLock.name);
+      } catch (e) {
+        submitFailures.push({
+          name: listing.nameLock && listing.nameLock.name,
+          message: e.message,
+        });
+      }
+    }
+
+    return {
+      submitted,
+      submitFailures,
+    };
+  }
+
   generateReadyListings = async () => {
     const readyListings = this.getReadyToGenerateListings();
 
@@ -530,7 +595,7 @@ class Exchange extends Component {
     }
 
     const confirmed = window.confirm(
-      `${this.context.t('generateReadyListingsConfirm')} ${readyListings.map(l => formatName(l.nameLock.name)).join(', ')}`,
+      `${this.context.t(this.props.network === 'main' ? 'generateAndSubmitReadyListingsConfirm' : 'generateReadyListingsConfirm')} ${readyListings.map(l => formatName(l.nameLock.name)).join(', ')}`,
     );
 
     if (!confirmed) {
@@ -547,17 +612,36 @@ class Exchange extends Component {
 
     try {
       const result = await this.props.launchExchangeAuctionsBulk(readyListings);
-      await this.refreshLocalListings();
+      const refreshedListings = result && result.listings && result.listings.length
+        ? result.listings
+        : await this.refreshLocalListings();
       if (result) {
         const succeeded = result.succeeded || [];
         const failures = result.failures || [];
+        let submitted = [];
+        let submitFailures = [];
+        let skippedReason = '';
+
+        try {
+          const submitResult = await this.submitGeneratedBulkListings(succeeded, refreshedListings);
+          submitted = submitResult.submitted || [];
+          submitFailures = submitResult.submitFailures || [];
+          skippedReason = submitResult.skippedReason || '';
+        } catch (e) {
+          skippedReason = e.message || 'Generated proofs, but automatic submit could not start. Use Submit on each generated proof.';
+        }
+
+        await this.refreshLocalListings();
         const remainingCount = this.getReadyToGenerateListings().length;
         this.setState({
           bulkGenerateNotice: {
-            type: failures.length ? 'warning' : 'success',
+            type: failures.length || submitFailures.length || skippedReason ? 'warning' : 'success',
             message: [
-              succeeded.length ? `Proof ready: ${succeeded.map(formatName).join(', ')}. Use Submit to confirm each listing on Shakedex.` : null,
+              submitted.length ? `Listed on Shakedex: ${submitted.map(formatName).join(', ')}.` : null,
+              succeeded.length && !submitted.length ? `Proof ready: ${succeeded.map(formatName).join(', ')}. Use Submit to confirm each listing on Shakedex.` : null,
               failures.length ? `Failed: ${failures.map(f => formatName(f.name)).join(', ')}` : null,
+              submitFailures.length ? `Submit failed: ${submitFailures.map(f => formatName(f.name)).join(', ')}` : null,
+              skippedReason,
               remainingCount ? `${remainingCount} listing${remainingCount === 1 ? '' : 's'} still ready to generate.` : null,
             ].filter(Boolean).join(' '),
           },
@@ -567,6 +651,7 @@ class Exchange extends Component {
       this.setState({
         isGeneratingReadyListings: false,
         bulkGeneratingNames: [],
+        bulkSubmittingNames: [],
       });
     }
   }
@@ -676,13 +761,25 @@ class Exchange extends Component {
 
   handleFulfillAuctionDeeplink = async () => {
     if (this.state.isHandlingFulfillAuctionDeeplink) {
+      traceDeeplink('exchange-deeplink-skip-busy');
       return;
     }
 
     const { presignJSONString, name } = this.props.deeplinkParams || {};
     if (!presignJSONString) {
+      traceDeeplink('exchange-deeplink-no-presign', {
+        path: this.props.location && this.props.location.pathname,
+        paramsKeys: Object.keys(this.props.deeplinkParams || {}),
+      });
       return;
     }
+
+    traceDeeplink('exchange-deeplink-start', {
+      name,
+      presignLength: presignJSONString.length,
+      network: this.props.network,
+      isMarketplaceVisible: this.isMarketplaceVisible(),
+    });
 
     this.setState({
       isHandlingFulfillAuctionDeeplink: true,
@@ -698,6 +795,10 @@ class Exchange extends Component {
       const currentBid = getBuyableBid(auction, await getCurrentBid(auction));
 
       if (!currentBid) {
+        traceDeeplink('exchange-deeplink-no-current-bid', {
+          name,
+          expired: isAuctionExpired(auction),
+        });
         this.props.showError(
           isAuctionExpired(auction)
             ? this.context.t('shakedexListingExpired')
@@ -712,8 +813,17 @@ class Exchange extends Component {
         placingAuctionSource: 'deeplink',
         isUploadingFile: false,
       });
+      traceDeeplink('exchange-deeplink-modal-ready', {
+        name: auction.name,
+        bidPrice: currentBid.price,
+      });
     } catch (e) {
       this.props.clearDeeplinkParams();
+      traceDeeplink('exchange-deeplink-error', {
+        name,
+        message: e.message,
+        stack: e.stack,
+      });
       this.props.showError(e.message);
     } finally {
       this.setState({
@@ -961,8 +1071,7 @@ class Exchange extends Component {
     });
   };
 
-  submitConfirmedListing = async () => {
-    const listing = this.state.submitConfirmationListing;
+  submitListingProof = async (listing, {showInlineError = false} = {}) => {
     if (!listing) {
       return;
     }
@@ -991,11 +1100,60 @@ class Exchange extends Component {
         feeInfo,
       });
     } catch (e) {
+      if (!showInlineError && !e.wasShown) {
+        this.props.showError(e.message || 'The listing proof could not be submitted. Please try again.');
+      }
       this.setState({
         isSubmittingListingProof: false,
-        submitListingError: e.message || 'The listing proof could not be submitted. Please try again.',
+        submitListingError: showInlineError
+          ? e.message || 'The listing proof could not be submitted. Please try again.'
+          : '',
       });
     }
+  };
+
+  submitConfirmedListing = async () => {
+    await this.submitListingProof(this.state.submitConfirmationListing, {
+      showInlineError: true,
+    });
+  };
+
+  onListingProofGenerated = async (name, {
+    generatedListing,
+    submitAfterGenerate = false,
+  } = {}) => {
+    this.setState(prevState => ({
+      preparingSubmitNames: prevState.preparingSubmitNames.includes(name)
+        ? prevState.preparingSubmitNames
+        : [...prevState.preparingSubmitNames, name],
+    }));
+
+    if (!submitAfterGenerate) {
+      return;
+    }
+
+    if (this.props.network !== 'main') {
+      this.props.showSuccess('Listing proof generated. Submit is only automatic for mainnet Shakedex channel listings.');
+      return;
+    }
+
+    if (!this.canUseMarketplaceActions()) {
+      this.props.showError(`${this.getMarketplaceNotReadyMessage()} The proof is ready; use Submit after the marketplace is ready.`);
+      return;
+    }
+
+    const listing = generatedListing || this.props.listings.find(l => (
+      l
+      && l.nameLock
+      && l.nameLock.name === name
+    ));
+
+    if (!listing || !listing.auction) {
+      this.props.showError('Listing proof generated, but Bob could not find the refreshed proof to submit. Use Submit on the listing row after it refreshes.');
+      return;
+    }
+
+    await this.submitListingProof(listing);
   };
 
   renderSubmitConfirmationModal() {
@@ -1362,8 +1520,10 @@ class Exchange extends Component {
                     onClick={this.generateReadyListings}
                   >
                     {this.state.isGeneratingReadyListings
-                      ? `${t('generating')} ${this.state.bulkGeneratingNames.length} proof${this.state.bulkGeneratingNames.length === 1 ? '' : 's'}...`
-                      : `${t('generateReadyListings')} (${readyToGenerateListings.length})`}
+                      ? this.state.bulkSubmittingNames.length
+                        ? `${t('submitting')} ${this.state.bulkSubmittingNames.length} proof${this.state.bulkSubmittingNames.length === 1 ? '' : 's'}...`
+                        : `${t('generating')} ${this.state.bulkGeneratingNames.length} proof${this.state.bulkGeneratingNames.length === 1 ? '' : 's'}...`
+                      : `${t(this.props.network === 'main' ? 'generateAndSubmitReadyListings' : 'generateReadyListings')} (${readyToGenerateListings.length})`}
                   </button>
                 )}
                 <button
@@ -1581,11 +1741,8 @@ class Exchange extends Component {
         {this.state.isGeneratingListing && (
           <GenerateListingModal
             listing={this.state.generatingListing}
-            onProofGenerated={(name) => this.setState(prevState => ({
-              preparingSubmitNames: prevState.preparingSubmitNames.includes(name)
-                ? prevState.preparingSubmitNames
-                : [...prevState.preparingSubmitNames, name],
-            }))}
+            canSubmitAfterGenerate={this.props.network === 'main'}
+            onProofGenerated={this.onListingProofGenerated}
             onClose={() => this.setState({
               isGeneratingListing: false,
               generatingListing: null,

@@ -40,7 +40,7 @@ import {clientStub as cClientStub} from "../../background/connections/client";
 import {ConnectionTypes} from "../../background/connections/service";
 import Dropdown from "../../components/Dropdown";
 import {I18nContext, langs, languageDropdownItems} from "../../utils/i18n";
-import {setLocale, setCustomLocale, setTheme} from "../../ducks/app";
+import {setLocale, setCustomLocale, setTheme, setShowUsdValue} from "../../ducks/app";
 import {clientStub as settingClientStub} from "../../background/setting/client";
 import {
   DEFAULT_SHAKEDEX_CHANNEL_HOST,
@@ -67,6 +67,7 @@ const settingClient = settingClientStub(() => require('electron').ipcRenderer);
   (state) => ({
     locale: state.app.locale,
     theme: state.app.theme,
+    showUsdValue: state.app.showUsdValue,
     network: state.wallet.network,
     apiKey: state.node.apiKey,
     spv: state.node.spv,
@@ -100,6 +101,7 @@ const settingClient = settingClientStub(() => require('electron').ipcRenderer);
     setLocale: (locale) => dispatch(setLocale(locale)),
     setCustomLocale: (locale) => dispatch(setCustomLocale(locale)),
     setTheme: (theme) => dispatch(setTheme(theme)),
+    setShowUsdValue: (showUsdValue) => dispatch(setShowUsdValue(showUsdValue)),
   }),
 )
 export default class Settings extends Component {
@@ -108,6 +110,7 @@ export default class Settings extends Component {
     apiKey: PropTypes.string,
     locale: PropTypes.string.isRequired,
     theme: PropTypes.string.isRequired,
+    showUsdValue: PropTypes.bool.isRequired,
     rsPort: PropTypes.number.isRequired,
     nsPort: PropTypes.number.isRequired,
     noDns: PropTypes.bool.isRequired,
@@ -131,6 +134,7 @@ export default class Settings extends Component {
     setLocale: PropTypes.func.isRequired,
     setCustomLocale: PropTypes.func.isRequired,
     setTheme: PropTypes.func.isRequired,
+    setShowUsdValue: PropTypes.func.isRequired,
     setCustomRPCStatus: PropTypes.func.isRequired,
     transactions: PropTypes.object.isRequired,
     fetchWallet: PropTypes.func.isRequired,
@@ -1055,6 +1059,7 @@ export default class Settings extends Component {
       isCustomRPCConnected,
       locale,
       theme,
+      showUsdValue,
     } = this.props;
     const {t} = this.context;
 
@@ -1105,6 +1110,28 @@ export default class Settings extends Component {
                   : 'Use a darker interface for lower-light environments.',
                 theme === 'dark' ? 'Use Light Mode' : 'Use Dark Mode',
                 () => this.props.setTheme(theme === 'dark' ? 'light' : 'dark'),
+              )}
+              {this.renderSection(
+                'Show USD value',
+                showUsdValue
+                  ? 'The HNS balance includes its approximate USD value.'
+                  : 'The HNS balance is shown without an approximate USD value.',
+                null,
+                null,
+                <button
+                  type="button"
+                  className={c('settings__toggle', {
+                    'settings__toggle--enabled': showUsdValue,
+                  })}
+                  role="switch"
+                  aria-checked={showUsdValue}
+                  onClick={() => this.props.setShowUsdValue(!showUsdValue)}
+                >
+                  <span className="settings__toggle__knob" />
+                  <span className="settings__toggle__label">
+                    {showUsdValue ? 'On' : 'Off'}
+                  </span>
+                </button>,
               )}
             </>
           </Route>

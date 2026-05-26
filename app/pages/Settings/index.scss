@@ -186,6 +186,60 @@
     padding: .5rem 1rem;
   }
 
+  &__toggle {
+    @extend %row-nowrap;
+    position: relative;
+    align-items: center;
+    justify-content: flex-end;
+    gap: .5rem;
+    min-width: 5.5rem;
+    border: 0;
+    background: transparent;
+    color: $manatee-gray;
+    cursor: pointer;
+    font-weight: 600;
+    padding: .25rem 0;
+
+    &::before {
+      content: '';
+      display: block;
+      width: 2.75rem;
+      height: 1.5rem;
+      border-radius: 999px;
+      background-color: $grey;
+      transition: background-color 160ms ease-in-out;
+    }
+
+    &__knob {
+      position: absolute;
+      left: .1875rem;
+      top: .4375rem;
+      width: 1.125rem;
+      height: 1.125rem;
+      border-radius: 50%;
+      background-color: $white;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, .24);
+      transition: left 160ms ease-in-out;
+    }
+
+    &__label {
+      min-width: 1.75rem;
+      text-align: left;
+    }
+
+    &--enabled {
+      color: $azure-blue;
+
+      &::before {
+        background-color: $azure-blue;
+      }
+
+      .settings__toggle__knob {
+        left: 1.4375rem;
+      }
+    }
+  }
+
   &__channel-card {
     @extend %col-nowrap;
     align-items: flex-start;

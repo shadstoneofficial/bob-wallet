@@ -9,6 +9,7 @@ const EXPLORER = 'setting/explorer';
 const LOCALE = 'setting/locale';
 const CUSTOM_LOCALE = 'setting/customLocale';
 const THEME = 'setting/theme';
+const SHOW_USD_VALUE = 'setting/showUsdValue';
 const VALID_THEMES = new Set(['light', 'dark']);
 
 
@@ -52,6 +53,17 @@ export async function setTheme(theme) {
   const nextTheme = VALID_THEMES.has(theme) ? theme : 'light';
   await put(THEME, nextTheme);
   return nextTheme;
+}
+
+export async function getShowUsdValue() {
+  const showUsdValue = await get(SHOW_USD_VALUE);
+  return showUsdValue !== false;
+}
+
+export async function setShowUsdValue(showUsdValue) {
+  const nextShowUsdValue = Boolean(showUsdValue);
+  await put(SHOW_USD_VALUE, nextShowUsdValue);
+  return nextShowUsdValue;
 }
 
 export async function getLatestRelease() {
@@ -111,6 +123,8 @@ const methods = {
   setCustomLocale,
   getTheme,
   setTheme,
+  getShowUsdValue,
+  setShowUsdValue,
   getLatestRelease,
   validateLiquidityChannelHost,
 };

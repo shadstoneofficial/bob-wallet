@@ -43,6 +43,7 @@ export class GenerateListingModal extends Component {
       endPrice: Number(props.listing.params.endPrice) / 1e6,
       durationIdx: durationIdx >= 0 ? durationIdx : durationOpts.indexOf(defaultDurationDays),
       errorMessage: '',
+      isGenerating: false,
     };
   }
 
@@ -52,7 +53,12 @@ export class GenerateListingModal extends Component {
       : REVERSE_DURATION_OPTS;
   }
 
-  generateProofs = async () => {
+  generateProofs = async (submitAfterGenerate = false) => {
+    this.setState({
+      errorMessage: '',
+      isGenerating: true,
+    });
+
     try {
       const { launchExchangeAuction, listing } = this.props;
       const { listingMode, price, startPrice, endPrice, durationIdx } = this.state;
@@ -69,21 +75,33 @@ export class GenerateListingModal extends Component {
       if (listing.lowestDeprecatedPrice) {
         overrideParams.lowestDeprecatedPrice = listing.lowestDeprecatedPrice;
       }
-      await launchExchangeAuction(listing.nameLock, overrideParams);
+      const updatedListings = await launchExchangeAuction(listing.nameLock, overrideParams);
+      const generatedListing = Array.isArray(updatedListings)
+        ? updatedListings.find(updatedListing => (
+          updatedListing
+          && updatedListing.nameLock
+          && updatedListing.nameLock.name === listing.nameLock.name
+        ))
+        : null;
+
       if (this.props.onProofGenerated) {
-        this.props.onProofGenerated(listing.nameLock.name);
+        await this.props.onProofGenerated(listing.nameLock.name, {
+          generatedListing,
+          submitAfterGenerate,
+        });
       }
       this.props.onClose();
     } catch (e) {
       this.setState({
         errorMessage: e.message,
+        isGenerating: false,
       });
     }
 
   };
 
   render() {
-    const {onClose, listing} = this.props;
+    const {onClose, listing, canSubmitAfterGenerate} = this.props;
     const {t} = this.context;
 
     const isFixed = this.state.listingMode === 'fixed';
@@ -202,15 +220,27 @@ export class GenerateListingModal extends Component {
             <button
               className="place-bid-modal__cancel"
               onClick={onClose}
+              disabled={this.state.isGenerating}
             >
               {t('cancel')}
             </button>
+            {canSubmitAfterGenerate && (
+              <button
+                className="place-bid-modal__cancel"
+                onClick={() => this.generateProofs(false)}
+                disabled={!isValid || this.state.isGenerating}
+              >
+                {this.state.isGenerating ? t('generating') : t('generateProofs')}
+              </button>
+            )}
             <button
               className="place-bid-modal__send"
-              onClick={this.generateProofs}
-              disabled={!isValid}
+              onClick={() => this.generateProofs(canSubmitAfterGenerate)}
+              disabled={!isValid || this.state.isGenerating}
             >
-              {t('generateProofs')}
+              {this.state.isGenerating
+                ? t('generating')
+                : canSubmitAfterGenerate ? t('generateAndSubmit') : t('generateProofs')}
             </button>
           </div>
         </div>

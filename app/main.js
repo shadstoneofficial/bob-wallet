@@ -9,8 +9,10 @@ import MenuBuilder from './menu';
 import showMainWindow, {dispatchToMainWindow, sendDeeplinkToMainWindow} from './mainWindow';
 import path from 'path';
 import {encrypt} from "./utils/encrypt";
+import traceDeeplink from './utils/deeplinkTrace';
 
 const Sentry = require('@sentry/electron/main');
+const DEEPLINK_PROTOCOLS = new Set(['bob:', 'bob-learnhns:']);
 const appRuntimeHints = [
   app.getName(),
   process.execPath,
@@ -72,6 +74,7 @@ if (isLearnHnsForkBuild) {
 // Deeplink handler for osx
 app.on('open-url', function (event, url) {
   event.preventDefault();
+  traceDeeplink('main-open-url', {url});
   sendDeeplinkToMainWindow(url);
 });
 
@@ -79,6 +82,16 @@ app.on('open-url', function (event, url) {
 // https://stackoverflow.com/questions/38458857/electron-url-scheme-open-url-event
 let deeplinkingUrl;
 const isPrimaryInstance = app.requestSingleInstanceLock();
+
+function getProtocolDeeplinkFromArgv(argv) {
+  return [...argv].reverse().find((arg) => {
+    try {
+      return DEEPLINK_PROTOCOLS.has(new URL(arg).protocol);
+    } catch (e) {
+      return false;
+    }
+  });
+}
 
 if (isPrimaryInstance) {
   app.on('second-instance', (e, argv) => {
@@ -89,9 +102,13 @@ if (isPrimaryInstance) {
     // argv: An array of the second instance’s (command line / deep linked) arguments
     if (process.platform === 'win32' || process.platform === 'linux') {
       // Keep only command line / deep linked arguments
-      deeplinkingUrl = argv[argv.length - 1];
+      deeplinkingUrl = getProtocolDeeplinkFromArgv(argv);
     }
 
+    traceDeeplink('main-second-instance', {
+      argv,
+      deeplinkingUrl,
+    });
     sendDeeplinkToMainWindow(deeplinkingUrl);
   });
 

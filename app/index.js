@@ -10,6 +10,7 @@ import './global.scss';
 import { showError } from './ducks/notifications';
 import {ipcRenderer} from "electron";
 import handleDeeplink from './deeplink'
+import traceDeeplink from './utils/deeplinkTrace';
 
 window.addEventListener('error', (e) => {
   store.dispatch(showError(e.message));
@@ -22,6 +23,10 @@ ipcRenderer.on('ipcToRedux', (_, message) => {
 });
 
 ipcRenderer.on('deeplink', (_, message) => {
+  traceDeeplink('renderer-ipc-deeplink', {
+    url: message,
+    path: history.location && `${history.location.pathname}${history.location.search || ''}${history.location.hash || ''}`,
+  });
   handleDeeplink(message);
 });
 

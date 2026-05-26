@@ -93,3 +93,39 @@
     padding: 1.25rem 1.875rem 1.875rem 1.875rem;
   }
 }
+
+body.bob-theme-dark {
+  .select-node-mode {
+    background-color: #151b23;
+    color: #e6edf3;
+
+    &__header-text,
+    &__option-title {
+      color: #e6edf3;
+    }
+
+    &__body-text,
+    &__option-subtitle {
+      color: #9aa4af;
+    }
+
+    &__option {
+      background-color: #0d1117;
+      border-color: rgba(255, 255, 255, 0.14);
+      color: #e6edf3;
+
+      &:hover {
+        border-color: rgba($azure-blue, 0.65);
+      }
+
+      &--selected {
+        border-color: rgba($azure-blue, 0.9);
+        box-shadow: 0 0 0 1px rgba($azure-blue, 0.35);
+
+        .select-node-mode__option-check {
+          box-shadow: inset 0 0 0 4px #0d1117;
+        }
+      }
+    }
+  }
+}
