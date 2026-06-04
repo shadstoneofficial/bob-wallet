@@ -163,6 +163,7 @@ jobs:
             release/*.AppImage
             release/*.dmg
             release/*.msi
+            release/latest*.yml
             release/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
