@@ -1,0 +1,118 @@
+name: macOS signing test
+
+on:
+  workflow_dispatch:
+    inputs:
+      arch:
+        description: "macOS architecture to build first"
+        required: true
+        default: "x64"
+        type: choice
+        options:
+          - x64
+          - arm64
+
+permissions:
+  attestations: write
+  contents: read
+  id-token: write
+
+jobs:
+  macos-signing-test:
+    name: Sign, notarize, and staple macOS ${{ inputs.arch }}
+    runs-on: macos-latest
+    timeout-minutes: 300
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install dmg-license
+        run: npm i dmg-license --no-save
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build signed, notarized, and stapled macOS package
+        run: npm run package-mac-notarized
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          NOTARY_MAX_ATTEMPTS: "240"
+          NOTARY_SLEEP_SECONDS: "30"
+          MAC_ARCHES: ${{ inputs.arch }}
+          DEBUG: electron-builder
+
+      - name: Upload notarization diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bob-wallet-macos-${{ inputs.arch }}-notarization-diagnostics
+          path: |
+            release/notary/*.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Verify macOS code signature
+        shell: bash
+        run: |
+          app_path="$(find release -maxdepth 3 -name "Bob LearnHNS.app" -type d | sort | head -n 1)"
+          if [ -z "${app_path}" ]; then
+            echo "No macOS app bundle found in release" >&2
+            exit 1
+          fi
+
+          codesign --verify --deep --strict --verbose=2 "${app_path}"
+          spctl --assess --type execute --verbose "${app_path}"
+
+      - name: Generate checksums
+        shell: bash
+        run: |
+          cd release
+          node <<'NODE'
+          const fs = require('fs');
+          const crypto = require('crypto');
+
+          const skip = new Set(['builder-debug.yml', 'builder-effective-config.yaml', 'SHA256SUMS.txt']);
+          const files = fs.readdirSync('.')
+            .filter((file) => fs.statSync(file).isFile())
+            .filter((file) => !skip.has(file))
+            .sort();
+
+          const lines = files.map((file) => {
+            const hash = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+            return `${hash}  ${file}`;
+          });
+
+          fs.writeFileSync('SHA256SUMS.txt', `${lines.join('\n')}\n`);
+          NODE
+          cat SHA256SUMS.txt
+
+      - name: Upload signed macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bob-wallet-macos-${{ inputs.arch }}-signed-notarized
+          compression-level: 0
+          path: |
+            release/*.dmg
+            release/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Attest signed macOS artifact
+        continue-on-error: true
+        uses: actions/attest@v4
+        with:
+          subject-checksums: release/SHA256SUMS.txt

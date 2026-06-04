@@ -2,11 +2,42 @@
 
 ### MacOS
 
-1. uninstall gmp by running `brew uninstall gmp --ignore-dependencies`
-2. run `npm run package-mac` (see [README](./README.md) for cross-arch build)
-3. reinstall gmp by running `brew install gmp`
-4. notarize `Bob.dmg` by running `xcrun altool --notarize-app --primary-bundle-id "{bunde-id}" --username "{username}" --password "{password}" --asc-provider "{asc-provider-id}" --file ./release/Bob.dmg`
-5. you can check notarization status by running `xcrun altool --notarization-info "{notarization-id}" --username "{username} --password "{password}"`
+For unsigned local packaging, run:
+
+```sh
+npm run package-mac
+```
+
+For Developer ID signing, notarization, stapling, Gatekeeper verification, and DMG creation, run:
+
+```sh
+MAC_ARCHES=arm64 NOTARY_KEYCHAIN_PROFILE=skyinclude-notary-api npm run package-mac-notarized
+```
+
+Use `MAC_ARCHES=x64` for Intel, or `MAC_ARCHES="x64 arm64"` for both architectures.
+
+GitHub Actions release signing requires these repository or organization secrets:
+
+```text
+CSC_LINK
+CSC_KEY_PASSWORD
+APPLE_ID
+APPLE_APP_SPECIFIC_PASSWORD
+APPLE_TEAM_ID
+```
+
+The signing/notarization flow intentionally uses `xcrun notarytool`, not deprecated `altool`.
+
+Before publishing a macOS artifact, verify:
+
+```sh
+codesign --verify --deep --strict --verbose=2 "release/mac-arm64/Bob LearnHNS.app"
+spctl --assess --type execute --verbose "release/mac-arm64/Bob LearnHNS.app"
+xcrun stapler validate "release/Bob LearnHNS-<version>-arm64.dmg"
+spctl --assess --type open --context context:primary-signature --verbose "release/Bob LearnHNS-<version>-arm64.dmg"
+hdiutil verify "release/Bob LearnHNS-<version>-arm64.dmg"
+shasum -a 256 "release/Bob LearnHNS-<version>-arm64.dmg"
+```
 
 ### Windows
 

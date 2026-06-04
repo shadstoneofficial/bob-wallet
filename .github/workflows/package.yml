@@ -1,44 +1,61 @@
 name: Package for distribution
 
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
 
-env:
-  CSC_IDENTITY_AUTO_DISCOVERY: false
+permissions:
+  attestations: write
+  contents: read
+  id-token: write
 
 jobs:
   package:
+    name: Package ${{ matrix.platform.name }}
+    runs-on: ${{ matrix.platform.runner }}
+    timeout-minutes: 300
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-22.04, macos-latest]
-
-        # OS-specific commands/variables
-        include:
-          - os: ubuntu-22.04
-            cmd_package: npm run package-linux
-            out_filename: Bob-linux
-          - os: windows-latest
+        platform:
+          - name: macOS arm64
+            runner: macos-latest
+            cmd_package: npm run package-mac-notarized
+            artifact_name: Bob-macos-arm64
+            mac_arch: arm64
+            signed_macos: true
+          - name: macOS x64
+            runner: macos-latest
+            cmd_package: npm run package-mac-notarized
+            artifact_name: Bob-macos-x64
+            mac_arch: x64
+            signed_macos: true
+          - name: Windows
+            runner: windows-latest
             cmd_package: npm run package-win
-            out_filename: Bob-windows
-          - os: macos-latest
-            cmd_package: npm run package-mac
-            out_filename: Bob-macos-intel
-
-    runs-on: ${{matrix.os}}
+            artifact_name: Bob-windows
+            signed_macos: false
+          - name: Ubuntu
+            runner: ubuntu-22.04
+            cmd_package: npm run package-linux
+            artifact_name: Bob-linux
+            signed_macos: false
 
     steps:
-      - name: Checkout repository
+      - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Use Node.js
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: "18"
           cache: "npm"
 
       # https://github.com/actions/setup-node/issues/280#issuecomment-1139455898
-      - name: Update node-gyp (windows only)
-        if: startsWith(matrix.os, 'windows')
+      - name: Update node-gyp
+        if: startsWith(matrix.platform.runner, 'windows')
         run: |
           $WhereNode = Get-Command node | Select-Object -ExpandProperty Definition
           $NodeDirPath = Split-Path $WhereNode -Parent
@@ -46,25 +63,112 @@ jobs:
           cd $NodeModulesPath
           npm install node-gyp@10.3.1
 
-      - name: Install dependencies (linux only)
-        if: startsWith(matrix.os, 'ubuntu')
+      - name: Install Linux dependencies
+        if: startsWith(matrix.platform.runner, 'ubuntu')
         run: sudo apt update && sudo apt install libudev-dev libusb-1.0-0-dev -y
 
       - name: Install npm packages
-        run: npm i
+        run: npm ci
 
-      - name: Install dmg-license (macos only)
-        if: startsWith(matrix.os, 'macos')
+      - name: Install dmg-license
+        if: matrix.platform.signed_macos
         run: npm i dmg-license --no-save
 
-      - name: Generate Executable
-        run: ${{ matrix.cmd_package }}
+      - name: Run tests
+        run: npm test
 
-      - name: Store artifacts
+      - name: Build signed, notarized, and stapled macOS package
+        if: matrix.platform.signed_macos
+        run: ${{ matrix.platform.cmd_package }}
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          NOTARY_MAX_ATTEMPTS: "240"
+          NOTARY_SLEEP_SECONDS: "30"
+          MAC_ARCHES: ${{ matrix.platform.mac_arch }}
+          DEBUG: electron-builder
+
+      - name: Upload macOS notarization diagnostics
+        if: failure() && matrix.platform.signed_macos
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.out_filename }}
+          name: ${{ matrix.platform.artifact_name }}-notarization-diagnostics
+          path: |
+            release/notary/*.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Verify macOS code signature
+        if: matrix.platform.signed_macos
+        shell: bash
+        run: |
+          app_path="$(find release -maxdepth 3 -name "Bob LearnHNS.app" -type d | sort | head -n 1)"
+          if [ -z "${app_path}" ]; then
+            echo "No macOS app bundle found in release" >&2
+            exit 1
+          fi
+
+          codesign --verify --deep --strict --verbose=2 "${app_path}"
+          spctl --assess --type execute --verbose "${app_path}"
+
+          dmg_path="$(find release -maxdepth 1 -name "*.dmg" -type f | sort | head -n 1)"
+          if [ -z "${dmg_path}" ]; then
+            echo "No macOS DMG found in release" >&2
+            exit 1
+          fi
+
+          codesign --verify --verbose=2 "${dmg_path}"
+          xcrun stapler validate "${dmg_path}"
+          spctl --assess --type open --context context:primary-signature --verbose "${dmg_path}"
+          hdiutil verify "${dmg_path}"
+
+      - name: Build platform package
+        if: ${{ !matrix.platform.signed_macos }}
+        run: ${{ matrix.platform.cmd_package }}
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Generate checksums
+        shell: bash
+        run: |
+          cd release
+          node <<'NODE'
+          const fs = require('fs');
+          const crypto = require('crypto');
+
+          const skip = new Set(['builder-debug.yml', 'builder-effective-config.yaml', 'SHA256SUMS.txt']);
+          const files = fs.readdirSync('.')
+            .filter((file) => fs.statSync(file).isFile())
+            .filter((file) => !skip.has(file))
+            .sort();
+
+          const lines = files.map((file) => {
+            const hash = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+            return `${hash}  ${file}`;
+          });
+
+          fs.writeFileSync('SHA256SUMS.txt', `${lines.join('\n')}\n`);
+          NODE
+          cat SHA256SUMS.txt
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.platform.artifact_name }}
+          compression-level: 0
           path: |
             release/*.AppImage
-            release/*.msi
             release/*.dmg
+            release/*.msi
+            release/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Attest release artifacts
+        continue-on-error: true
+        uses: actions/attest@v4
+        with:
+          subject-checksums: release/SHA256SUMS.txt
