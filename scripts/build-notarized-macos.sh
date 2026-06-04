@@ -10,6 +10,8 @@ NOTARY_MAX_ATTEMPTS="${NOTARY_MAX_ATTEMPTS:-240}"
 NOTARY_SLEEP_SECONDS="${NOTARY_SLEEP_SECONDS:-30}"
 MAC_ARCHES_INPUT="${MAC_ARCHES:-x64 arm64}"
 IFS=' ' read -r -a MAC_ARCHES <<< "${MAC_ARCHES_INPUT}"
+DMG_KEYCHAIN=""
+DMG_KEYCHAIN_PASSWORD=""
 
 require_env() {
     local name="$1"
@@ -29,10 +31,57 @@ developer_id_identity() {
         | awk -F '"' '/Developer ID Application/ { print $2; exit }'
 }
 
+cleanup_dmg_keychain() {
+    if [[ -n "${DMG_KEYCHAIN}" && -f "${DMG_KEYCHAIN}" ]]; then
+        security delete-keychain "${DMG_KEYCHAIN}" >/dev/null 2>&1 || true
+    fi
+}
+
+setup_dmg_signing_keychain() {
+    if [[ -z "${CSC_LINK:-}" || -z "${CSC_KEY_PASSWORD:-}" ]]; then
+        return
+    fi
+
+    if [[ -n "$(developer_id_identity)" ]]; then
+        return
+    fi
+
+    echo "Importing Developer ID certificate for DMG signing"
+    local temp_dir
+    temp_dir="$(mktemp -d)"
+    local p12_path="${temp_dir}/developer-id.p12"
+    DMG_KEYCHAIN="${temp_dir}/dmg-signing.keychain"
+    DMG_KEYCHAIN_PASSWORD="$(uuidgen)"
+
+    node -e "
+const fs = require('fs');
+const value = process.env.CSC_LINK || '';
+const base64 = value.startsWith('data:') ? value.slice(value.indexOf(',') + 1) : value;
+fs.writeFileSync(process.argv[1], Buffer.from(base64, 'base64'));
+" "${p12_path}"
+
+    security create-keychain -p "${DMG_KEYCHAIN_PASSWORD}" "${DMG_KEYCHAIN}"
+    security unlock-keychain -p "${DMG_KEYCHAIN_PASSWORD}" "${DMG_KEYCHAIN}"
+    security set-keychain-settings -lut 21600 "${DMG_KEYCHAIN}"
+    security import "${p12_path}" \
+        -k "${DMG_KEYCHAIN}" \
+        -P "${CSC_KEY_PASSWORD}" \
+        -T /usr/bin/codesign
+    security set-key-partition-list \
+        -S apple-tool:,apple: \
+        -s \
+        -k "${DMG_KEYCHAIN_PASSWORD}" \
+        "${DMG_KEYCHAIN}"
+    security list-keychains -d user -s "${DMG_KEYCHAIN}" $(security list-keychains -d user | tr -d '"')
+    trap cleanup_dmg_keychain EXIT
+}
+
 if [[ "$(uname -s)" != "Darwin" ]]; then
     echo "macOS notarization must run on macOS." >&2
     exit 1
 fi
+
+setup_dmg_signing_keychain
 
 NOTARY_ARGS=()
 if [[ -n "${NOTARY_KEYCHAIN_PROFILE:-}" ]]; then
