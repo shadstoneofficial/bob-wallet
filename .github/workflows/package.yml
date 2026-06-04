@@ -2,93 +2,46 @@ name: Package for distribution
 
 on:
   workflow_dispatch:
-    inputs:
-      run_macos_signing_test:
-        description: "Run the Developer ID macOS signing/notarization test job"
-        required: true
-        default: false
-        type: boolean
-      mac_arch:
-        description: "macOS architecture for the signing test"
-        required: true
-        default: "arm64"
-        type: choice
-        options:
-          - arm64
-          - x64
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  attestations: write
+  contents: read
+  id-token: write
 
 jobs:
   package:
-    if: ${{ !inputs.run_macos_signing_test }}
+    name: Package ${{ matrix.platform.name }}
+    runs-on: ${{ matrix.platform.runner }}
+    timeout-minutes: 300
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-22.04, macos-latest]
-
-        # OS-specific commands/variables
-        include:
-          - os: ubuntu-22.04
-            cmd_package: npm run package-linux
-            out_filename: Bob-linux
-          - os: windows-latest
+        platform:
+          - name: macOS arm64
+            runner: macos-latest
+            cmd_package: npm run package-mac-notarized
+            artifact_name: Bob-macos-arm64
+            mac_arch: arm64
+            signed_macos: true
+          - name: macOS x64
+            runner: macos-latest
+            cmd_package: npm run package-mac-notarized
+            artifact_name: Bob-macos-x64
+            mac_arch: x64
+            signed_macos: true
+          - name: Windows
+            runner: windows-latest
             cmd_package: npm run package-win
-            out_filename: Bob-windows
-          - os: macos-latest
-            cmd_package: npm run package-mac
-            out_filename: Bob-macos-intel
-
-    runs-on: ${{matrix.os}}
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Use Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 18
-          cache: "npm"
-
-      # https://github.com/actions/setup-node/issues/280#issuecomment-1139455898
-      - name: Update node-gyp (windows only)
-        if: startsWith(matrix.os, 'windows')
-        run: |
-          $WhereNode = Get-Command node | Select-Object -ExpandProperty Definition
-          $NodeDirPath = Split-Path $WhereNode -Parent
-          $NodeModulesPath = $NodeDirPath + "\node_modules\npm\node_modules\@npmcli\run-script"
-          cd $NodeModulesPath
-          npm install node-gyp@10.3.1
-
-      - name: Install dependencies (linux only)
-        if: startsWith(matrix.os, 'ubuntu')
-        run: sudo apt update && sudo apt install libudev-dev libusb-1.0-0-dev -y
-
-      - name: Install npm packages
-        run: npm i
-
-      - name: Install dmg-license (macos only)
-        if: startsWith(matrix.os, 'macos')
-        run: npm i dmg-license --no-save
-
-      - name: Generate Executable
-        run: ${{ matrix.cmd_package }}
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: false
-
-      - name: Store artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.out_filename }}
-          path: |
-            release/*.AppImage
-            release/*.msi
-            release/*.dmg
-
-  macos-signing-test:
-    if: ${{ inputs.run_macos_signing_test }}
-    name: Sign, notarize, and staple macOS ${{ inputs.mac_arch }}
-    runs-on: macos-latest
-    timeout-minutes: 300
+            artifact_name: Bob-windows
+            signed_macos: false
+          - name: Ubuntu
+            runner: ubuntu-22.04
+            cmd_package: npm run package-linux
+            artifact_name: Bob-linux
+            signed_macos: false
 
     steps:
       - name: Check out repository
@@ -100,17 +53,33 @@ jobs:
           node-version: "18"
           cache: "npm"
 
-      - name: Install dependencies
+      # https://github.com/actions/setup-node/issues/280#issuecomment-1139455898
+      - name: Update node-gyp
+        if: startsWith(matrix.platform.runner, 'windows')
+        run: |
+          $WhereNode = Get-Command node | Select-Object -ExpandProperty Definition
+          $NodeDirPath = Split-Path $WhereNode -Parent
+          $NodeModulesPath = $NodeDirPath + "\node_modules\npm\node_modules\@npmcli\run-script"
+          cd $NodeModulesPath
+          npm install node-gyp@10.3.1
+
+      - name: Install Linux dependencies
+        if: startsWith(matrix.platform.runner, 'ubuntu')
+        run: sudo apt update && sudo apt install libudev-dev libusb-1.0-0-dev -y
+
+      - name: Install npm packages
         run: npm ci
 
       - name: Install dmg-license
+        if: matrix.platform.signed_macos
         run: npm i dmg-license --no-save
 
       - name: Run tests
         run: npm test
 
       - name: Build signed, notarized, and stapled macOS package
-        run: npm run package-mac-notarized
+        if: matrix.platform.signed_macos
+        run: ${{ matrix.platform.cmd_package }}
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
@@ -119,20 +88,21 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           NOTARY_MAX_ATTEMPTS: "240"
           NOTARY_SLEEP_SECONDS: "30"
-          MAC_ARCHES: ${{ inputs.mac_arch }}
+          MAC_ARCHES: ${{ matrix.platform.mac_arch }}
           DEBUG: electron-builder
 
-      - name: Upload notarization diagnostics
-        if: failure()
+      - name: Upload macOS notarization diagnostics
+        if: failure() && matrix.platform.signed_macos
         uses: actions/upload-artifact@v4
         with:
-          name: bob-wallet-macos-${{ inputs.mac_arch }}-notarization-diagnostics
+          name: ${{ matrix.platform.artifact_name }}-notarization-diagnostics
           path: |
             release/notary/*.json
           if-no-files-found: ignore
           retention-days: 14
 
       - name: Verify macOS code signature
+        if: matrix.platform.signed_macos
         shell: bash
         run: |
           app_path="$(find release -maxdepth 3 -name "Bob LearnHNS.app" -type d | sort | head -n 1)"
@@ -143,6 +113,23 @@ jobs:
 
           codesign --verify --deep --strict --verbose=2 "${app_path}"
           spctl --assess --type execute --verbose "${app_path}"
+
+          dmg_path="$(find release -maxdepth 1 -name "*.dmg" -type f | sort | head -n 1)"
+          if [ -z "${dmg_path}" ]; then
+            echo "No macOS DMG found in release" >&2
+            exit 1
+          fi
+
+          codesign --verify --verbose=2 "${dmg_path}"
+          xcrun stapler validate "${dmg_path}"
+          spctl --assess --type open --context context:primary-signature --verbose "${dmg_path}"
+          hdiutil verify "${dmg_path}"
+
+      - name: Build platform package
+        if: ${{ !matrix.platform.signed_macos }}
+        run: ${{ matrix.platform.cmd_package }}
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
       - name: Generate checksums
         shell: bash
@@ -167,18 +154,20 @@ jobs:
           NODE
           cat SHA256SUMS.txt
 
-      - name: Upload signed macOS artifact
+      - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: bob-wallet-macos-${{ inputs.mac_arch }}-signed-notarized
+          name: ${{ matrix.platform.artifact_name }}
           compression-level: 0
           path: |
+            release/*.AppImage
             release/*.dmg
+            release/*.msi
             release/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
 
-      - name: Attest signed macOS artifact
+      - name: Attest release artifacts
         continue-on-error: true
         uses: actions/attest@v4
         with:
