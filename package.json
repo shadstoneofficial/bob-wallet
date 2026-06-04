@@ -12,6 +12,7 @@
     "package-linux": "npm run build && electron-builder build --linux --publish never",
     "package-mac": "npm run build && electron-builder build --mac --publish never",
     "package-mac-intel": "npm run build && electron-builder build --mac --x64 --publish never",
+    "package-mac-notarized": "bash scripts/build-notarized-macos.sh",
     "package-win": "node ./scripts/package.js && electron-builder build --win --x64 --arm64=false",
     "prestart": "npm run build",
     "start": "cross-env NODE_ENV=production electron -r @babel/register ./app/main.js",
@@ -50,7 +51,11 @@
       "target": [
         "dmg"
       ],
-      "icon": "resources/icon.icns"
+      "icon": "resources/icon.icns",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "resources/entitlements.mac.plist",
+      "entitlementsInherit": "resources/entitlements.mac.inherit.plist"
     },
     "mas": {
       "hardenedRuntime": false,
