@@ -128,6 +128,7 @@ if (isPrimaryInstance) {
       await require('./background/hip2/service').start(server);
       await require('./background/claim/service').start(server);
       await require('./background/ledger/service').start(server);
+      await require('./background/hnsInvestments/service').start(server);
 
       await shakedexService.start(server);
     } catch (e) {
