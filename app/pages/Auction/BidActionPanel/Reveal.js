@@ -10,6 +10,7 @@ import {
 import Blocktime from '../../../components/Blocktime';
 import { displayBalance } from '../../../utils/balances';
 import * as logger from '../../../utils/logClient';
+import { formatTxHash } from '../../../utils/txHash';
 import * as nameActions from '../../../ducks/names';
 import { showError, showSuccess } from '../../../ducks/notifications';
 import { clientStub as aClientStub } from '../../../background/analytics/client';
@@ -20,6 +21,7 @@ const analytics = aClientStub(() => require('electron').ipcRenderer);
 class Reveal extends Component {
   static propTypes = {
     domain: PropTypes.object.isRequired,
+    name: PropTypes.string.isRequired,
     sendReveal: PropTypes.func.isRequired,
     showError: PropTypes.func.isRequired,
     showSuccess: PropTypes.func.isRequired,
@@ -31,6 +33,10 @@ class Reveal extends Component {
   };
 
   static contextType = I18nContext;
+
+  state = {
+    isSubmittingReveal: false,
+  };
 
   getTimeRemaining = () => {
     const {info} = this.props.domain || {};
@@ -54,17 +60,26 @@ class Reveal extends Component {
   };
 
   sendReveal = async () => {
-    const {sendReveal} = this.props;
+    if (this.state.isSubmittingReveal) {
+      return;
+    }
+
+    const {name, sendReveal} = this.props;
+
+    this.setState({isSubmittingReveal: true});
 
     try {
       const res = await sendReveal();
       if (res !== null) {
         this.props.showSuccess(this.context.t('revealSuccess'));
+        logger.info(`Auction reveal submitted for ${name}/: tx=${formatTxHash(res)}`);
         analytics.track('revealed bid');
       }
     } catch (e) {
       logger.error(`Error received from Reveal - sendReveal]\n\n${e.message}\n${e.stack}\n`);
       this.props.showError(this.context.t('revealFailure', e.message));
+    } finally {
+      this.setState({isSubmittingReveal: false});
     }
   };
 
@@ -140,6 +155,7 @@ class Reveal extends Component {
       hasPendingReveal,
       needsRepair,
     } = this.props;
+    const {isSubmittingReveal} = this.state;
     const {t} = this.context;
 
     let text = t('revealYourBids');
@@ -163,9 +179,9 @@ class Reveal extends Component {
         <button
           className={cname}
           onClick={this.sendReveal}
-          disabled={hasRevealed || hasPendingReveal || !hasRevealableBid || needsRepair}
+          disabled={isSubmittingReveal || hasRevealed || hasPendingReveal || !hasRevealableBid || needsRepair}
         >
-          {text}
+          {isSubmittingReveal ? t('submitting') : text}
         </button>
       </div>
     );

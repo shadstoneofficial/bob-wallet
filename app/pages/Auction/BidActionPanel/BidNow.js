@@ -17,6 +17,7 @@ import * as nameActions from '../../../ducks/names';
 import { showError, showSuccess } from '../../../ducks/notifications';
 import {displayBalance, toBaseUnits} from '../../../utils/balances';
 import * as logger from '../../../utils/logClient';
+import { formatTxHash } from '../../../utils/txHash';
 import walletClient from '../../../utils/walletClient';
 import * as walletActions from '../../../ducks/walletActions';
 import { clientStub as aClientStub } from '../../../background/analytics/client';
@@ -51,6 +52,8 @@ class BidNow extends Component {
     bidAmount: '',
     disguiseAmount: '',
     showSuccessModal: false,
+    isSubmittingBid: false,
+    isRescanningAuction: false,
   };
 
   getTimeRemaining = () => {
@@ -74,9 +77,15 @@ class BidNow extends Component {
   };
 
   sendBid = async () => {
+    if (this.state.isSubmittingBid) {
+      return;
+    }
+
     const {sendBid, domain} = this.props;
     const {bidAmount, disguiseAmount} = this.state;
     const lockup = Number(disguiseAmount) + Number(bidAmount);
+
+    this.setState({isSubmittingBid: true});
 
     try {
       let height = null;
@@ -89,6 +98,7 @@ class BidNow extends Component {
         isPlacingBid: false,
         showSuccessModal: true,
       });
+      logger.info(`Auction bid submitted for ${domain.name}/: tx=${formatTxHash(res)}, bid=${Number(bidAmount)} HNS, lockup=${lockup} HNS`);
       analytics.track('sent bid');
     } catch (e) {
       console.error(e);
@@ -97,14 +107,20 @@ class BidNow extends Component {
       this.setState({showSuccessModal: false});
       this.props.showError(`Failed to place bid: ${e.message}`);
     } finally {
+      this.setState({isSubmittingBid: false});
       await this.props.fetchPendingTransactions();
       await this.props.getNameInfo(domain.name);
     }
   };
 
   rescanAuction = async () => {
+    if (this.state.isRescanningAuction) {
+      return;
+    }
+
     try {
       const {domain} = this.props;
+      this.setState({isRescanningAuction: true});
       await this.props.startWalletSync();
       await walletClient.importName(domain.name, domain.info.height - 1);
       await this.props.waitForWalletSync();
@@ -113,6 +129,8 @@ class BidNow extends Component {
     } catch (e) {
       await this.props.stopWalletSync();
       this.props.showError(e.message);
+    } finally {
+      this.setState({isRescanningAuction: false});
     }
   };
 
@@ -328,6 +346,7 @@ class BidNow extends Component {
       bidAmount,
       disguiseAmount,
       hasAccepted,
+      isSubmittingBid,
     } = this.state;
     const {pendingOperation, pendingOperationMeta} = this.props.domain;
 
@@ -402,9 +421,9 @@ class BidNow extends Component {
             <button
               className="domains__bid-now__action__cta"
               onClick={this.sendBid}
-              disabled={!hasAccepted}
+              disabled={!hasAccepted || isSubmittingBid}
             >
-              {pendingBidExists ? t('submitAnotherBid') : t('submitBid')}
+              {isSubmittingBid ? t('submitting') : (pendingBidExists ? t('submitAnotherBid') : t('submitBid'))}
             </button>
           </div>
         </div>
@@ -419,13 +438,15 @@ class BidNow extends Component {
 
   renderRescanButton() {
     const {t} = this.context;
+    const {isRescanningAuction} = this.state;
     return (
       <div className="domains__bid-now__action">
         <button
           className="domains__bid-now__action__cta"
           onClick={this.rescanAuction}
+          disabled={isRescanningAuction}
         >
-          {t('rescanAuction')}
+          {isRescanningAuction ? t('submitting') : t('rescanAuction')}
           <Tooltipable
             left={"-130px"}
             className="domains__bid-now__rescan-tooltip"

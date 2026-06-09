@@ -12,6 +12,8 @@ import { displayBalance } from '../../../utils/balances';
 import Blocktime from '../../../components/Blocktime';
 import * as names from '../../../ducks/names';
 import { showError, showSuccess } from '../../../ducks/notifications';
+import * as logger from '../../../utils/logClient';
+import { formatTxHash } from '../../../utils/txHash';
 import {I18nContext} from "../../../utils/i18n";
 
 class Owned extends Component {
@@ -30,7 +32,18 @@ class Owned extends Component {
 
   static contextType = I18nContext;
 
+  state = {
+    isSubmittingRegister: false,
+    isSubmittingRenewal: false,
+  };
+
   sendRenewal = async () => {
+    if (this.state.isSubmittingRenewal) {
+      return;
+    }
+
+    this.setState({isSubmittingRenewal: true});
+
     try {
       const res = await this.props.sendRenewal();
       if (res !== null) {
@@ -38,17 +51,28 @@ class Owned extends Component {
       }
     } catch (e) {
       this.props.showError(e.message);
+    } finally {
+      this.setState({isSubmittingRenewal: false});
     }
   };
 
   sendRegister = async () => {
+    if (this.state.isSubmittingRegister) {
+      return;
+    }
+
+    this.setState({isSubmittingRegister: true});
+
     try {
       const res = await this.props.sendRegister();
       if (res !== null) {
         this.props.showSuccess(this.context.t('registerSuccess'));
+        logger.info(`Auction register submitted for ${this.props.name}/: tx=${formatTxHash(res)}`);
       }
     } catch (e) {
       this.props.showError(e.message);
+    } finally {
+      this.setState({isSubmittingRegister: false});
     }
   };
 
@@ -59,6 +83,7 @@ class Owned extends Component {
     const { renewalPeriodStart, renewalPeriodEnd } = stats || {};
     const isPendingRenew = domain.pendingOperation === 'RENEW';
     const isPendingRegister = domain.pendingOperation === 'REGISTER';
+    const {isSubmittingRegister, isSubmittingRenewal} = this.state;
     const {t} = this.context;
 
     return (
@@ -82,17 +107,17 @@ class Owned extends Component {
             <button
               className="domains__action-panel__renew-domain-btn"
               onClick={this.sendRenewal}
-              disabled={isPendingRenew || !chain || chain.height < renewalPeriodStart}
+              disabled={isSubmittingRenewal || isPendingRenew || !chain || chain.height < renewalPeriodStart}
             >
-              { isPendingRenew ? t('renewing') : t('renewMyDomain') }
+              { isSubmittingRenewal ? t('submitting') : (isPendingRenew ? t('renewing') : t('renewMyDomain')) }
             </button>
             :
             <button
               className="domains__action-panel__renew-domain-btn"
               onClick={this.sendRegister}
-              disabled={isPendingRegister}
+              disabled={isSubmittingRegister || isPendingRegister}
             >
-              { isPendingRegister ? t('registering') : t('registerMyDomain') }
+              { isSubmittingRegister ? t('submitting') : (isPendingRegister ? t('registering') : t('registerMyDomain')) }
             </button>
           }
           <button
