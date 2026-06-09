@@ -206,6 +206,19 @@ async function inflateReveals(reveals, nameHeight) {
   return ret;
 }
 
+async function assertAuctionTracked(name) {
+  try {
+    await walletClient.getAuctionInfo(name);
+  } catch (e) {
+    if (e.message.match(/auction not found/i)) {
+      throw new Error(
+        `Auction data for ${name}/ is not available in this wallet after rescan. Use Rescan Auction and wait for it to finish, then try again.`
+      );
+    }
+    throw e;
+  }
+}
+
 export const sendOpen = name => async (dispatch) => {
   await new Promise((resolve, reject) => {
     dispatch(getPassphrase(resolve, reject));
@@ -236,6 +249,8 @@ export const sendBid = (name, amount, lockup, height) => async (dispatch) => {
       await dispatch(stopWalletSync());
     }
   }
+
+  await assertAuctionTracked(name);
 
   let res = await walletClient.sendBid(name, amount, lockup);
   if (!res) {

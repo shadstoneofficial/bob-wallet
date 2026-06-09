@@ -62,6 +62,8 @@ const {Device} = hsdLedger.HID;
 const ONE_MINUTE = 60000;
 
 const WALLET_API_KEY = 'walletApiKey';
+const SIGNING_KEY_ERROR_MESSAGE = 'No spendable wallet key was found for this transaction. Make sure the selected wallet/account has the funds and private keys needed to sign.';
+const PRIVATE_KEY_ERROR_MESSAGE = 'No private key available.';
 
 class WalletService {
   constructor() {
@@ -675,6 +677,14 @@ class WalletService {
       'createbid',
       [name, Number(displayBalance(amount)), Number(displayBalance(lockup))],
     ),
+    {
+      actionName: 'bid',
+      diagnosticContext: {
+        name,
+        bidAmount: Number(displayBalance(amount)),
+        lockup: Number(displayBalance(lockup)),
+      },
+    },
   );
 
   sendRegister = (name) => this._walletProxy(
@@ -1625,12 +1635,76 @@ class WalletService {
    * @param {Metadata} options.metadata extra info about inputs and outputs
    * @returns {import('hsd/lib/primitives/mtx').MTX | null} mtx or null
    */
+  _createSigningDiagnostics = async ({
+    wallet,
+    mtx,
+    parsedMtxData,
+    info,
+    accountInfo,
+    rings = [],
+    actionName,
+    diagnosticContext,
+  }) => {
+    let inputPathCount = null;
+    let inputPathError = null;
+
+    try {
+      const inputPaths = await wallet.getInputPaths(mtx);
+      inputPathCount = inputPaths.filter(Boolean).length;
+    } catch (error) {
+      inputPathError = error.message;
+    }
+
+    const signerInputCount = parsedMtxData.signerData
+      .filter((input) => input && input.length)
+      .length;
+    const master = info.master || {};
+    const unlockedUntil = master.until || 0;
+
+    return {
+      actionName,
+      diagnosticContext,
+      walletId: this.name,
+      accountName: accountInfo.name,
+      accountType: accountInfo.type,
+      watchOnly: !!info.watchOnly,
+      encrypted: !!master.encrypted,
+      unlocked: !master.encrypted || unlockedUntil > 0,
+      unlockedUntil,
+      inputCount: mtx.inputs.length,
+      outputCount: mtx.outputs.length,
+      inputPathCount,
+      inputPathError,
+      signerInputCount,
+      ringCount: rings.length,
+      containsMultisig: !!parsedMtxData.containsMultisig,
+    };
+  };
+
+  _throwSigningKeyError = async (context) => {
+    const diagnostics = await this._createSigningDiagnostics(context);
+    console.error('[WalletService._walletProxy] Signing key unavailable', diagnostics);
+
+    const {actionName, diagnosticContext} = context;
+    const name = diagnosticContext?.name;
+    const error = new Error(
+      actionName === 'bid'
+        ? `Bid was not submitted${name ? ` for ${name}/` : ''}: Bob could build the bid transaction, but the selected wallet/account could not provide signing keys for its inputs. Unlock the correct wallet/account, confirm it is not watch-only, then rescan the auction before retrying.`
+        : SIGNING_KEY_ERROR_MESSAGE
+    );
+
+    error.diagnostics = diagnostics;
+    throw error;
+  };
+
   _walletProxy = async (createFn, options) => {
     const {
       broadcast = true,
       returnOnlyIfFullySigned = true, // if we don't have all signatures, return null
       ledgerOptions = {},
       metadata = null,
+      actionName = 'transaction',
+      diagnosticContext = {},
     } = options || {};
 
     const wallet = await this.node.wdb.get(this.name);
@@ -1670,18 +1744,32 @@ class WalletService {
           // Handle hot wallets (non-multisig)
           const rings = await wallet.deriveInputs(mtx);
           if (!rings.length) {
-            throw new Error(
-              'No spendable wallet key was found for this transaction. Make sure the selected wallet/account has the funds and private keys needed to sign.'
-            );
+            await this._throwSigningKeyError({
+              wallet,
+              mtx,
+              parsedMtxData,
+              info,
+              accountInfo,
+              rings,
+              actionName,
+              diagnosticContext,
+            });
           }
           const type = parsedMtxData.metadata?.inputs?.[0]?.sighashType ?? Script.hashType.ALL;
           try {
             await mtx.sign(rings, type);
           } catch (error) {
-            if (error && error.message === 'No private key available.') {
-              throw new Error(
-                'No spendable wallet key was found for this transaction. Make sure the selected wallet/account has the funds and private keys needed to sign.'
-              );
+            if (error && error.message === PRIVATE_KEY_ERROR_MESSAGE) {
+              await this._throwSigningKeyError({
+                wallet,
+                mtx,
+                parsedMtxData,
+                info,
+                accountInfo,
+                rings,
+                actionName,
+                diagnosticContext,
+              });
             }
             throw error;
           }
