@@ -37,6 +37,7 @@ import {
   DEFAULT_SHAKEDEX_CHANNEL_HOST,
   getShakedexChannelBaseUrl,
 } from '../../constants/shakedexChannels.js';
+import { dedupeMarketplaceAuctionsByName } from '../../utils/marketplaceAuctions.js';
 
 let db;
 
@@ -171,12 +172,13 @@ export async function iteratePrefix(prefix, cb) {
 export async function getExchangeAuctions(currentPage = 1) {
   const marketClient = await getMarketClient();
   const res = await marketClient.get('api/v2/auctions?page=1&per_page=100');
-  const auctions = res.auctions.map(auction => {
+  const auctions = dedupeMarketplaceAuctionsByName(res.auctions).map(auction => {
+    auction.bids = Array.isArray(auction.bids) ? auction.bids : [];
     auction.bids.sort((a,b) => b.price - a.price);
     return auction;
   })
   return {
-    total: +res.total,
+    total: auctions.length,
     auctions
   }
 }

@@ -196,6 +196,12 @@ class App extends Component {
           <ProtectedRoute
             isLocked={isLocked}
             wallets={wallets}
+            path="/receive/addresses"
+            render={this.routeRenderer(t('headingAddresses'), ReceiveModal)}
+          />
+          <ProtectedRoute
+            isLocked={isLocked}
+            wallets={wallets}
             path="/receive"
             render={this.routeRenderer(t('headingReceive'), ReceiveModal)}
           />

@@ -30,3 +30,4 @@ require('./app/background/wallet/tests/liquidityHtlc.spec');
 require('./app/deeplink/tests/index.spec');
 require('./app/utils/tests/paidNameTransfer.spec');
 require('./app/utils/tests/shakedexListingAction.spec');
+require('./app/utils/tests/marketplaceAuctions.spec');

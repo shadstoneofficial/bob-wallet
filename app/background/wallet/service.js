@@ -486,6 +486,87 @@ class WalletService {
     return this.client.createAddress(this.name, 'default');
   };
 
+  getReceiveAddresses = async () => {
+    if (!this.name) return [];
+
+    const wallet = await this.node.wdb.get(this.name);
+    if (!wallet) return [];
+
+    const account = await wallet.getAccount('default');
+    if (!account) return [];
+
+    const receiveDepth = Math.max(account.receiveDepth, 1);
+    const currentIndex = account.receiveDepth > 0
+      ? account.receiveDepth - 1
+      : 0;
+    const addressesByIndex = new Map();
+
+    for (let index = 0; index < receiveDepth; index++) {
+      const address = account.deriveReceive(index).getAddress().toString(this.network);
+      addressesByIndex.set(index, {
+        address,
+        branch: 0,
+        index,
+        current: index === currentIndex,
+        used: false,
+        txCount: 0,
+        balance: 0,
+        lastUsed: null,
+      });
+    }
+
+    const txsByHash = new Map();
+    const history = await wallet.getHistory('default');
+    const pending = await wallet.getPending('default');
+
+    for (const tx of [...history, ...pending]) {
+      txsByHash.set(tx.hash.toString('hex'), tx);
+    }
+
+    const details = await wallet.toDetails(Array.from(txsByHash.values()));
+
+    for (const item of details) {
+      const tx = item.getJSON(this.network, this.lastKnownChainHeight);
+      const touched = new Set();
+      const lastUsed = tx.block ? tx.time * 1000 : Date.now();
+
+      for (const output of tx.outputs || []) {
+        const receiveIndex = getReceivePathIndex(output.path);
+        if (receiveIndex == null || !addressesByIndex.has(receiveIndex)) {
+          continue;
+        }
+
+        touched.add(receiveIndex);
+      }
+
+      for (const receiveIndex of touched) {
+        const entry = addressesByIndex.get(receiveIndex);
+        entry.used = true;
+        entry.txCount += 1;
+        entry.lastUsed = Math.max(entry.lastUsed || 0, lastUsed);
+      }
+    }
+
+    const coins = await wallet.getCoins('default');
+    for (const coin of coins) {
+      if (!coin.address) continue;
+
+      const path = await wallet.getPath(coin.address.hash);
+      if (!path || path.branch !== 0 || !addressesByIndex.has(path.index)) {
+        continue;
+      }
+
+      addressesByIndex.get(path.index).balance += coin.value;
+    }
+
+    return Array.from(addressesByIndex.values()).sort((a, b) => {
+      if (a.current !== b.current) return a.current ? -1 : 1;
+      if (a.used !== b.used) return a.used ? -1 : 1;
+      if (a.txCount !== b.txCount) return b.txCount - a.txCount;
+      return a.index - b.index;
+    });
+  };
+
   getAuctionInfo = async (name) => {
     return this._executeRPC('getauctioninfo', [name]);
   };
@@ -2490,6 +2571,23 @@ async function getMultisigKeys(wallet, coin, script, accountKeys, network) {
   return accountKeysByPubKey;
 }
 
+function getReceivePathIndex(path) {
+  if (!path || path.change) {
+    return null;
+  }
+
+  if (!path.derivation || typeof path.derivation !== 'string') {
+    return null;
+  }
+
+  const index = Number(path.derivation.split('/').pop());
+  if (!Number.isInteger(index) || index < 0) {
+    return null;
+  }
+
+  return index;
+}
+
 function hasKeySigned(mtx, inputIdx, coin, script, signatures, key) {
   for (const sig of signatures) {
     const type = sig[sig.length - 1];
@@ -2535,6 +2633,7 @@ const methods = {
   createNewWallet: service.createNewWallet,
   importSeed: service.importSeed,
   generateReceivingAddress: service.generateReceivingAddress,
+  getReceiveAddresses: service.getReceiveAddresses,
   getAuctionInfo: service.getAuctionInfo,
   getTransactionHistory: service.getTransactionHistory,
   getPendingTransactions: service.getPendingTransactions,

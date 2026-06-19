@@ -8,6 +8,35 @@
     border-radius: 0.6rem;
     padding: 2rem;
     margin: 0 auto;
+
+    &--wide {
+      max-width: 58rem;
+      width: 100%;
+    }
+  }
+
+  &__tabs {
+    @extend %row-nowrap;
+    align-self: stretch;
+    border-bottom: 1px solid rgba($black, 0.1);
+    gap: 0.5rem;
+    margin: -0.5rem 0 1.5rem 0;
+  }
+
+  &__tab {
+    border: none;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    color: $manatee-gray;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 700;
+    padding: 0.5rem 0.25rem 0.75rem 0.25rem;
+
+    &--active {
+      color: $azure-blue;
+      border-bottom-color: $azure-blue;
+    }
   }
 
   &__header {
@@ -53,6 +82,35 @@
     width: 300px;
   }
 
+  &__secondary-btn {
+    @extend %btn-primary;
+    margin: 1rem 0 0 0;
+    max-width: 300px;
+    width: 100%;
+
+    &:disabled {
+      cursor: default;
+      opacity: 0.7;
+    }
+
+    &--compact {
+      flex: 0 0 auto;
+      margin: 0;
+      max-width: 12rem;
+      padding-left: 1rem;
+      padding-right: 1rem;
+    }
+  }
+
+  &__text-btn {
+    border: none;
+    background: transparent;
+    color: $azure-blue;
+    cursor: pointer;
+    font-weight: 700;
+    padding: 0;
+  }
+
   &__content {
     @extend %col-nowrap;
     align-items: center;
@@ -71,7 +129,7 @@
   &__address-display {
     @extend %row-nowrap;
     border: solid 1.25px rgba($black, 0.1);
-    margin: 0rem 0 1.5rem 0;
+    margin: 0rem 0 0.8rem 0;
     border-radius: 8px;
     align-items: center;
     padding: 0.5rem 0.5rem 0.5rem 1rem;
@@ -92,6 +150,107 @@
     line-height: 1.5rem;
     text-align: center;
     color: $manatee-gray;
+  }
+
+  &__explanation {
+    @extend %h3;
+    max-width: 24rem;
+    line-height: 1.45rem;
+    margin-bottom: 1.25rem;
+    text-align: center;
+    color: rgba($black, 0.75);
+  }
+
+  &__addresses {
+    align-self: stretch;
+  }
+
+  &__addresses-heading {
+    @extend %row-nowrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+  }
+
+  &__addresses-help {
+    @extend %h3;
+    color: rgba($black, 0.75);
+    line-height: 1.45rem;
+    max-width: 34rem;
+  }
+
+  &__addresses-state {
+    @extend %h3;
+    align-self: stretch;
+    color: $manatee-gray;
+    padding: 2rem 0;
+    text-align: center;
+
+    &--error {
+      color: $orange-red;
+    }
+  }
+
+  &__addresses-table {
+    border: 1px solid rgba($black, 0.1);
+    border-radius: 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  &__addresses-row {
+    display: grid;
+    grid-template-columns: 6rem minmax(14rem, 1fr) 7rem 4rem 6rem 5rem;
+    align-items: center;
+    gap: 0.75rem;
+    min-height: 3rem;
+    padding: 0.6rem 0.75rem;
+    border-top: 1px solid rgba($black, 0.08);
+    color: rgba($black, 0.8);
+    font-size: 0.75rem;
+    min-width: 46rem;
+
+    &:first-child {
+      border-top: none;
+    }
+
+    &--header {
+      min-height: 2.5rem;
+      background: rgba($black, 0.04);
+      color: rgba($black, 0.62);
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+  }
+
+  &__addresses-address {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: 'Roboto Mono', monospace;
+    font-size: 0.7rem;
+  }
+
+  &__address-status {
+    border-radius: 999px;
+    background: rgba($black, 0.07);
+    color: rgba($black, 0.65);
+    display: inline-block;
+    font-size: 0.68rem;
+    font-weight: 700;
+    padding: 0.2rem 0.5rem;
+
+    &--current {
+      background: rgba($azure-blue, 0.15);
+      color: $azure-blue;
+    }
+
+    &--used {
+      background: rgba($success-green, 0.15);
+      color: $success-green;
+    }
   }
 
   &__copy-btn {

@@ -56,6 +56,7 @@ import {
   DEFAULT_SHAKEDEX_CHANNEL_HOST,
   getShakedexChannelBaseUrl,
 } from '../../constants/shakedexChannels.js';
+import { isPendingMarketplaceAuction } from '../../utils/marketplaceAuctions';
 
 const analytics = aClientStub(() => require('electron').ipcRenderer);
 const shakedex = sClientStub(() => require('electron').ipcRenderer);
@@ -2430,7 +2431,7 @@ function getBuyableBid(auction, currentBid) {
 }
 
 function isPendingAuction(auction) {
-  return auction?.pending || auction?.buyable === false || auction?.status === 'pending';
+  return isPendingMarketplaceAuction(auction);
 }
 
 function getKnownCurrentPrice(auction, currentBidsMap) {

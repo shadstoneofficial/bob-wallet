@@ -314,6 +314,45 @@ body.bob-theme-dark {
     color: #e6edf3;
   }
 
+  .receive__title,
+  .receive__explanation,
+  .receive__addresses-help,
+  .receive__addresses-row,
+  .receive__addresses-address {
+    color: #e6edf3;
+  }
+
+  .receive__disclaimer,
+  .receive__addresses-row--header,
+  .receive__addresses-state {
+    color: #9aa4af;
+  }
+
+  .receive__address-display,
+  .receive__addresses-table,
+  .receive__addresses-row {
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+
+  .receive__addresses-row--header {
+    background-color: #1f2630;
+  }
+
+  .receive__address-status {
+    background: rgba(255, 255, 255, 0.08);
+    color: #c9d1d9;
+  }
+
+  .receive__address-status--current {
+    background: rgba(47, 129, 247, 0.22);
+    color: #58a6ff;
+  }
+
+  .receive__address-status--used {
+    background: rgba(63, 185, 80, 0.18);
+    color: #7ee787;
+  }
+
   .addons-page__card-header span,
   .expiring-page__status--later {
     background-color: rgba(47, 129, 247, 0.16);
