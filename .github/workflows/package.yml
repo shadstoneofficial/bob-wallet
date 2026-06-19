@@ -33,7 +33,7 @@ jobs:
             mac_arch: x64
             signed_macos: true
           - name: Windows
-            runner: windows-latest
+            runner: windows-2022
             cmd_package: npm run package-win
             artifact_name: Bob-windows
             signed_macos: false
