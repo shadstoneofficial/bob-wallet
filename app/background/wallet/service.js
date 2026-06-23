@@ -61,6 +61,7 @@ const {LedgerHSD, LedgerChange, LedgerCovenant, LedgerInput} = hsdLedger;
 const {Device} = hsdLedger.HID;
 const ONE_MINUTE = 60000;
 const ADDRESS_LOOKUP_DERIVATION_LIMIT = 1000;
+const ADDRESS_LOOKUP_ACCOUNT_LIMIT = 20;
 
 const WALLET_API_KEY = 'walletApiKey';
 const ADDRESS_META_PREFIX = 'walletAddressMeta';
@@ -793,6 +794,167 @@ class WalletService {
       derivationLimit: ADDRESS_LOOKUP_DERIVATION_LIMIT,
       seen,
     };
+  };
+
+  findShakeWalletAddress = async (address, passphrase) => {
+    if (!this.name) throw new Error('No wallet selected.');
+    if (!this.node || !this.node.wdb) throw new Error('Wallet database is not ready.');
+    if (!passphrase) throw new Error('Bob password is required to scan additional accounts.');
+
+    const parsedAddress = Address.fromString(String(address || '').trim(), this.network);
+    const addressString = parsedAddress.toString(this.network);
+    const wallet = await this.node.wdb.get(this.name);
+
+    if (!wallet) throw new Error('Selected wallet was not found.');
+    if (wallet.watchOnly) throw new Error('Cannot derive new accounts for a watch-only wallet.');
+
+    await wallet.unlock(passphrase, ONE_MINUTE);
+
+    if (!wallet.master || !wallet.master.key) {
+      throw new Error('Bob could not unlock the wallet master key.');
+    }
+
+    const existingAccounts = new Map();
+    const existingAccountNames = await wallet.getAccounts();
+
+    for (const accountName of existingAccountNames) {
+      const account = await wallet.getAccount(accountName);
+      if (account) existingAccounts.set(account.accountIndex, account);
+    }
+
+    let match = null;
+    const accountDepth = Math.max(wallet.accountDepth || 0, existingAccounts.size);
+
+    for (let accountIndex = 0; accountIndex < ADDRESS_LOOKUP_ACCOUNT_LIMIT; accountIndex++) {
+      const existingAccount = existingAccounts.get(accountIndex);
+      const account = existingAccount || this.createVirtualAccount(wallet, accountIndex);
+      const branches = [
+        {
+          id: 0,
+          name: 'receive',
+          derive: index => account.deriveReceive(index),
+        },
+        {
+          id: 1,
+          name: 'change',
+          derive: index => account.deriveChange(index),
+        },
+      ];
+
+      for (const branch of branches) {
+        for (let index = 0; index < ADDRESS_LOOKUP_DERIVATION_LIMIT; index++) {
+          const derivedAddress = branch.derive(index).getAddress();
+
+          if (!derivedAddress.hash.equals(parsedAddress.hash)) continue;
+
+          match = {
+            walletId: this.name,
+            accountIndex,
+            accountName: existingAccount ? existingAccount.name : null,
+            branch: branch.id,
+            branchName: branch.name,
+            index,
+            accountExisted: !!existingAccount,
+            address: addressString,
+          };
+          break;
+        }
+
+        if (match) break;
+      }
+
+      if (match) break;
+    }
+
+    if (!match) {
+      return {
+        status: 'not-found',
+        address: addressString,
+        selectedWallet: this.name,
+        accountLimit: ADDRESS_LOOKUP_ACCOUNT_LIMIT,
+        derivationLimit: ADDRESS_LOOKUP_DERIVATION_LIMIT,
+        importedAccounts: [],
+      };
+    }
+
+    const importedAccounts = [];
+
+    if (!match.accountExisted) {
+      if (match.accountIndex < accountDepth) {
+        throw new Error(`Matching account index ${match.accountIndex} is below Bob's current account depth but was not loaded.`);
+      }
+
+      for (let accountIndex = accountDepth; accountIndex <= match.accountIndex; accountIndex++) {
+        const accountName = await this.getUniqueAccountName(wallet, accountIndex === match.accountIndex
+          ? `shake-account-${accountIndex}`
+          : `imported-account-${accountIndex}`);
+        const account = await wallet.createAccount({
+          name: accountName,
+          type: 'pubkeyhash',
+        }, passphrase);
+
+        importedAccounts.push({
+          accountIndex: account.accountIndex,
+          accountName: account.name,
+        });
+
+        if (account.accountIndex === match.accountIndex) {
+          match.accountName = account.name;
+        }
+      }
+
+      const wallets = await this.listWallets();
+      dispatchToMainWindow({
+        type: SET_WALLETS,
+        payload: createPayloadForSetWallets(wallets, this.name),
+      });
+
+      this.rescan(0).catch(e => {
+        console.error('Could not start account recovery rescan.', e);
+      });
+    }
+
+    return {
+      status: match.accountExisted ? 'found-existing-account' : 'imported-account',
+      address: addressString,
+      selectedWallet: this.name,
+      accountLimit: ADDRESS_LOOKUP_ACCOUNT_LIMIT,
+      derivationLimit: ADDRESS_LOOKUP_DERIVATION_LIMIT,
+      match,
+      importedAccounts,
+      rescanStarted: importedAccounts.length > 0,
+    };
+  };
+
+  createVirtualAccount(wallet, accountIndex) {
+    const type = this.network.keyPrefix.coinType;
+    const accountKey = wallet.master.key
+      .deriveAccount(44, type, accountIndex)
+      .toPublic();
+
+    return Account.fromOptions(this.node.wdb, {
+      wid: wallet.wid,
+      id: wallet.id,
+      name: accountIndex === 0 ? 'default' : `account-${accountIndex}`,
+      watchOnly: false,
+      accountKey,
+      accountIndex,
+      type: 'pubkeyhash',
+      m: 1,
+      n: 1,
+      lookahead: 200,
+    });
+  }
+
+  getUniqueAccountName = async (wallet, baseName) => {
+    if (!(await wallet.hasAccount(baseName))) return baseName;
+
+    for (let suffix = 2; suffix < 100; suffix++) {
+      const name = `${baseName}-${suffix}`;
+      if (!(await wallet.hasAccount(name))) return name;
+    }
+
+    throw new Error(`Could not find an available account name for ${baseName}.`);
   };
 
   getAuctionInfo = async (name) => {
@@ -2845,6 +3007,7 @@ service.importSeed.suppressLogging = true;
 service.getMasterHDKey.suppressLogging = true;
 service.setPassphrase.suppressLogging = true;
 service.revealSeed.suppressLogging = true;
+service.findShakeWalletAddress.suppressLogging = true;
 service.unlock.suppressLogging = true;
 
 const sName = 'Wallet';
@@ -2864,6 +3027,7 @@ const methods = {
   getReceiveAddresses: service.getReceiveAddresses,
   setAddressMetadata: service.setAddressMetadata,
   lookupWalletAddress: service.lookupWalletAddress,
+  findShakeWalletAddress: service.findShakeWalletAddress,
   getAuctionInfo: service.getAuctionInfo,
   getTransactionHistory: service.getTransactionHistory,
   getPendingTransactions: service.getPendingTransactions,

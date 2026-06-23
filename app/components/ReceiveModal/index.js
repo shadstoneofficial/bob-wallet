@@ -51,6 +51,7 @@ export default class ReceiveModal extends Component {
       direction: 'asc',
     },
     lookupAddress: '',
+    lookupPassphrase: '',
     lookupResult: null,
     lookupError: '',
     hasLoadedAddresses: false,
@@ -58,6 +59,7 @@ export default class ReceiveModal extends Component {
     isGeneratingAddress: false,
     isSavingAddressMetadata: false,
     isLookingUpAddress: false,
+    isFindingShakeAccount: false,
     isShowingAddress: false,
     addressLoadError: '',
   };
@@ -181,6 +183,39 @@ export default class ReceiveModal extends Component {
       });
     } finally {
       this.setState({isLookingUpAddress: false});
+    }
+  };
+
+  findShakeAccount = async () => {
+    const lookupAddress = this.state.lookupAddress.trim();
+    const lookupPassphrase = this.state.lookupPassphrase;
+    if (!lookupAddress || !lookupPassphrase || this.state.isFindingShakeAccount) return;
+
+    this.setState({
+      isFindingShakeAccount: true,
+      lookupError: '',
+      lookupResult: null,
+    });
+
+    try {
+      const lookupResult = await walletClient.findShakeWalletAddress(
+        lookupAddress,
+        lookupPassphrase,
+      );
+      this.setState({
+        lookupResult,
+        lookupPassphrase: '',
+      });
+
+      if (lookupResult.rescanStarted) {
+        await this.loadAddresses();
+      }
+    } catch (e) {
+      this.setState({
+        lookupError: e.message || 'Could not scan additional Shake accounts.',
+      });
+    } finally {
+      this.setState({isFindingShakeAccount: false});
     }
   };
 
@@ -378,15 +413,24 @@ export default class ReceiveModal extends Component {
 
     if (!lookupResult) return null;
 
-    const activeOwnership = lookupResult.ownerships.find(item => item.selected);
-    const otherOwnership = lookupResult.ownerships.find(item => !item.selected);
+    const ownerships = lookupResult.ownerships || [];
+    const seenItems = lookupResult.seen || [];
+    const activeOwnership = ownerships.find(item => item.selected);
+    const otherOwnership = ownerships.find(item => !item.selected);
     const activeDerived = (lookupResult.derivedMatches || []).find(item => item.selected);
     const otherDerived = (lookupResult.derivedMatches || []).find(item => !item.selected);
-    const seen = lookupResult.seen[0];
+    const importedMatch = lookupResult.match;
+    const seen = seenItems[0];
     let title = 'Not found in local Bob wallets';
     let detail = `Bob checked known wallet paths and derived receive/change addresses up to #${lookupResult.derivationLimit || 1000}, but did not find this address.`;
 
-    if (activeOwnership) {
+    if (lookupResult.status === 'imported-account' && importedMatch) {
+      title = 'Shake account imported';
+      detail = `${importedMatch.accountName} ${importedMatch.branchName} address #${importedMatch.index}. Bob found this address in HD account #${importedMatch.accountIndex}, created the missing account, and started a rescan for its history.`;
+    } else if (lookupResult.status === 'found-existing-account' && importedMatch) {
+      title = 'Found in existing Bob account';
+      detail = `${importedMatch.accountName} ${importedMatch.branchName} address #${importedMatch.index}. Bob already has this HD account.`;
+    } else if (activeOwnership) {
       title = 'Owned by selected wallet';
       detail = `${activeOwnership.accountName} ${activeOwnership.branchName} address #${activeOwnership.index}`;
     } else if (otherOwnership) {
@@ -428,6 +472,7 @@ export default class ReceiveModal extends Component {
       hasLoadedAddresses,
       isSavingAddressMetadata,
       isLookingUpAddress,
+      isFindingShakeAccount,
     } = this.state;
 
     if (isLoadingAddresses && !hasLoadedAddresses) {
@@ -499,6 +544,30 @@ export default class ReceiveModal extends Component {
               onClick={this.lookupWalletAddress}
             >
               {isLookingUpAddress ? 'Checking...' : 'Check'}
+            </button>
+          </div>
+          <div className="receive__address-lookup-recovery">
+            <input
+              className="receive__addresses-filter receive__address-lookup-password"
+              type="password"
+              value={this.state.lookupPassphrase}
+              placeholder="Bob password to scan Shake accounts"
+              onChange={(e) => this.setState({
+                lookupPassphrase: e.target.value,
+                lookupError: '',
+              })}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  this.findShakeAccount();
+                }
+              }}
+            />
+            <button
+              className="receive__metadata-btn receive__address-lookup-btn"
+              disabled={!lookupAddress.trim() || !this.state.lookupPassphrase || isFindingShakeAccount}
+              onClick={this.findShakeAccount}
+            >
+              {isFindingShakeAccount ? 'Scanning...' : 'Find Shake account'}
             </button>
           </div>
           {this.renderLookupResult()}

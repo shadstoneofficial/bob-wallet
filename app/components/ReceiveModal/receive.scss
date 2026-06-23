@@ -236,7 +236,19 @@
     margin-top: 0.5rem;
   }
 
+  &__address-lookup-recovery {
+    @extend %row-nowrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+  }
+
   &__address-lookup-input {
+    flex: 1 1 auto;
+    width: auto;
+  }
+
+  &__address-lookup-password {
     flex: 1 1 auto;
     width: auto;
   }
