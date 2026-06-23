@@ -633,6 +633,114 @@ class WalletService {
     return metadata;
   };
 
+  lookupWalletAddress = async (address) => {
+    if (!this.node || !this.node.wdb) {
+      throw new Error('Wallet database is not ready.');
+    }
+
+    const parsedAddress = Address.fromString(String(address || '').trim(), this.network);
+    const addressString = parsedAddress.toString(this.network);
+    const addressHash = parsedAddress.hash.toString('hex');
+    const wallets = await this.node.wdb.getWallets();
+    const ownerships = [];
+    const seen = [];
+
+    for (const walletId of wallets) {
+      if (walletId === 'primary') continue;
+
+      const wallet = await this.node.wdb.get(walletId);
+      if (!wallet) continue;
+
+      const wid = await this.node.wdb.getWID(walletId);
+      const path = await this.node.wdb.getPath(wid, parsedAddress.hash);
+
+      if (path) {
+        const accountName = await this.node.wdb.getAccountName(wid, path.account);
+        ownerships.push({
+          walletId,
+          selected: walletId === this.name,
+          account: path.account,
+          accountName: accountName || path.name || String(path.account),
+          branch: path.branch,
+          branchName: path.branch === 0
+            ? 'receive'
+            : path.branch === 1
+              ? 'change'
+              : String(path.branch),
+          index: path.index,
+        });
+      }
+
+      const accountNames = await wallet.getAccounts();
+      for (const accountName of accountNames) {
+        const txsByHash = new Map();
+        const history = await wallet.getHistory(accountName);
+        const pending = await wallet.getPending(accountName);
+
+        for (const tx of [...history, ...pending]) {
+          txsByHash.set(tx.hash.toString('hex'), tx);
+        }
+
+        if (txsByHash.size === 0) continue;
+
+        const details = await wallet.toDetails(Array.from(txsByHash.values()));
+        for (const item of details) {
+          const tx = item.getJSON(this.network, this.lastKnownChainHeight);
+          for (const [outputIndex, output] of (tx.outputs || []).entries()) {
+            const outputAddress = output.address;
+            const covenant = output.covenant || {};
+            const covenantText = JSON.stringify(covenant);
+
+            if (outputAddress === addressString) {
+              seen.push({
+                walletId,
+                selected: walletId === this.name,
+                accountName,
+                type: 'output',
+                txHash: tx.hash,
+                height: tx.height,
+                date: tx.date,
+                outputIndex,
+                action: covenant.action || null,
+                address: outputAddress,
+              });
+            } else if (covenantText.includes(addressHash)) {
+              seen.push({
+                walletId,
+                selected: walletId === this.name,
+                accountName,
+                type: 'covenant',
+                txHash: tx.hash,
+                height: tx.height,
+                date: tx.date,
+                outputIndex,
+                action: covenant.action || null,
+                address: outputAddress || null,
+              });
+            }
+          }
+        }
+      }
+    }
+
+    const status = ownerships.some(item => item.selected)
+      ? 'owned-active'
+      : ownerships.length > 0
+        ? 'owned-other'
+        : seen.length > 0
+          ? 'seen'
+          : 'not-found';
+
+    return {
+      address: addressString,
+      hash: addressHash,
+      selectedWallet: this.name,
+      status,
+      ownerships,
+      seen,
+    };
+  };
+
   getAuctionInfo = async (name) => {
     return this._executeRPC('getauctioninfo', [name]);
   };
@@ -2701,6 +2809,7 @@ const methods = {
   generateReceivingAddress: service.generateReceivingAddress,
   getReceiveAddresses: service.getReceiveAddresses,
   setAddressMetadata: service.setAddressMetadata,
+  lookupWalletAddress: service.lookupWalletAddress,
   getAuctionInfo: service.getAuctionInfo,
   getTransactionHistory: service.getTransactionHistory,
   getPendingTransactions: service.getPendingTransactions,

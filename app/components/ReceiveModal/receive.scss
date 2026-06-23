@@ -222,6 +222,57 @@
     }
   }
 
+  &__address-lookup {
+    border: 1px solid rgba($black, 0.1);
+    border-radius: 8px;
+    margin: 0 0 0.75rem;
+    padding: 0.75rem;
+  }
+
+  &__address-lookup-form {
+    @extend %row-nowrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+  }
+
+  &__address-lookup-input {
+    flex: 1 1 auto;
+    width: auto;
+  }
+
+  &__address-lookup-btn {
+    flex: 0 0 auto;
+  }
+
+  &__address-lookup-result {
+    border-top: 1px solid rgba($black, 0.08);
+    color: rgba($black, 0.68);
+    font-size: 0.72rem;
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+
+    &--found {
+      color: rgba($black, 0.82);
+    }
+
+    &--error {
+      color: $orange-red;
+    }
+  }
+
+  &__address-lookup-title {
+    font-size: 0.75rem;
+    font-weight: 700;
+  }
+
+  &__address-lookup-detail {
+    font-family: 'Roboto Mono', monospace;
+    line-height: 1.4;
+    margin-top: 0.25rem;
+    overflow-wrap: anywhere;
+  }
+
   &__addresses-row {
     display: grid;
     grid-template-columns: 6rem minmax(11rem, 13rem) minmax(24rem, 1fr) 8rem 4rem 7rem 8rem;

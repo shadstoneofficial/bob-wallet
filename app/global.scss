@@ -330,6 +330,7 @@ body.bob-theme-dark {
 
   .receive__address-display,
   .receive__addresses-table,
+  .receive__address-lookup,
   .receive__addresses-filter,
   .receive__addresses-label,
   .receive__addresses-row {
@@ -344,6 +345,16 @@ body.bob-theme-dark {
 
   .receive__addresses-row--header {
     background-color: #1f2630;
+  }
+
+  .receive__address-lookup-result {
+    border-color: rgba(255, 255, 255, 0.12);
+    color: #9aa4af;
+  }
+
+  .receive__address-lookup-result--found,
+  .receive__address-lookup-title {
+    color: #e6edf3;
   }
 
   .receive__address-status {

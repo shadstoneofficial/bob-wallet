@@ -50,10 +50,14 @@ export default class ReceiveModal extends Component {
       key: '',
       direction: 'asc',
     },
+    lookupAddress: '',
+    lookupResult: null,
+    lookupError: '',
     hasLoadedAddresses: false,
     isLoadingAddresses: false,
     isGeneratingAddress: false,
     isSavingAddressMetadata: false,
+    isLookingUpAddress: false,
     isShowingAddress: false,
     addressLoadError: '',
   };
@@ -155,6 +159,28 @@ export default class ReceiveModal extends Component {
       await this.loadAddresses();
     } finally {
       this.setState({isSavingAddressMetadata: false});
+    }
+  };
+
+  lookupWalletAddress = async () => {
+    const lookupAddress = this.state.lookupAddress.trim();
+    if (!lookupAddress || this.state.isLookingUpAddress) return;
+
+    this.setState({
+      isLookingUpAddress: true,
+      lookupError: '',
+      lookupResult: null,
+    });
+
+    try {
+      const lookupResult = await walletClient.lookupWalletAddress(lookupAddress);
+      this.setState({lookupResult});
+    } catch (e) {
+      this.setState({
+        lookupError: e.message || 'Could not check this address.',
+      });
+    } finally {
+      this.setState({isLookingUpAddress: false});
     }
   };
 
@@ -339,16 +365,59 @@ export default class ReceiveModal extends Component {
     );
   }
 
+  renderLookupResult() {
+    const {lookupError, lookupResult} = this.state;
+
+    if (lookupError) {
+      return (
+        <div className="receive__address-lookup-result receive__address-lookup-result--error">
+          {lookupError}
+        </div>
+      );
+    }
+
+    if (!lookupResult) return null;
+
+    const activeOwnership = lookupResult.ownerships.find(item => item.selected);
+    const otherOwnership = lookupResult.ownerships.find(item => !item.selected);
+    const seen = lookupResult.seen[0];
+    let title = 'Address not found locally';
+    let detail = 'Bob did not find this address in local wallet paths or transaction history.';
+
+    if (activeOwnership) {
+      title = 'Owned by selected wallet';
+      detail = `${activeOwnership.accountName} ${activeOwnership.branchName} address #${activeOwnership.index}`;
+    } else if (otherOwnership) {
+      title = 'Owned by another local Bob wallet';
+      detail = `${otherOwnership.walletId}: ${otherOwnership.accountName} ${otherOwnership.branchName} address #${otherOwnership.index}`;
+    } else if (seen) {
+      title = 'Seen in Bob history';
+      detail = `${seen.walletId}: ${seen.action || seen.type} transaction ${seen.txHash}`;
+    }
+
+    return (
+      <div className={c('receive__address-lookup-result', {
+        'receive__address-lookup-result--found': lookupResult.status !== 'not-found',
+      })}
+      >
+        <div className="receive__address-lookup-title">{title}</div>
+        <div className="receive__address-lookup-detail">{detail}</div>
+      </div>
+    );
+  }
+
   renderAddresses() {
     const {t} = this.context;
     const {
       addressLabels,
       addressFilter,
+      lookupAddress,
       addressLoadError,
       isGeneratingAddress,
       isLoadingAddresses,
       hasLoadedAddresses,
       isSavingAddressMetadata,
+      isLookingUpAddress,
     } = this.state;
 
     if (isLoadingAddresses && !hasLoadedAddresses) {
@@ -395,6 +464,34 @@ export default class ReceiveModal extends Component {
             placeholder="Filter by address or label"
             onChange={(e) => this.setState({addressFilter: e.target.value})}
           />
+        </div>
+        <div className="receive__address-lookup">
+          <div className="receive__address-lookup-title">Check Shake/Bob address</div>
+          <div className="receive__address-lookup-form">
+            <input
+              className="receive__addresses-filter receive__address-lookup-input"
+              value={lookupAddress}
+              placeholder="Paste a Handshake address"
+              onChange={(e) => this.setState({
+                lookupAddress: e.target.value,
+                lookupError: '',
+                lookupResult: null,
+              })}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  this.lookupWalletAddress();
+                }
+              }}
+            />
+            <button
+              className="receive__metadata-btn receive__address-lookup-btn"
+              disabled={!lookupAddress.trim() || isLookingUpAddress}
+              onClick={this.lookupWalletAddress}
+            >
+              {isLookingUpAddress ? 'Checking...' : 'Check'}
+            </button>
+          </div>
+          {this.renderLookupResult()}
         </div>
         <div className="receive__addresses-table">
           <div className="receive__addresses-row receive__addresses-row--header">
