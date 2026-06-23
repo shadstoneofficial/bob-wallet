@@ -45,6 +45,11 @@ export default class ReceiveModal extends Component {
   state = {
     addresses: [],
     addressLabels: {},
+    addressFilter: '',
+    addressSort: {
+      key: '',
+      direction: 'asc',
+    },
     hasLoadedAddresses: false,
     isLoadingAddresses: false,
     isGeneratingAddress: false,
@@ -245,11 +250,100 @@ export default class ReceiveModal extends Component {
     return new Date(address.lastUsed).toLocaleDateString();
   }
 
+  getAddressStatusRank(address) {
+    if (address.current) return 0;
+    if (address.used) return 1;
+    return 2;
+  }
+
+  getComparableAddressValue(address, key) {
+    const label = this.state.addressLabels[this.getAddressKey(address)] || address.label || '';
+
+    switch (key) {
+      case 'status':
+        return this.getAddressStatusRank(address);
+      case 'label':
+        return label.toLowerCase();
+      case 'address':
+        return address.address.toLowerCase();
+      case 'balance':
+        return Number(address.balance) || 0;
+      case 'txCount':
+        return Number(address.txCount) || 0;
+      case 'lastUsed':
+        return address.lastUsed ? new Date(address.lastUsed).getTime() : 0;
+      default:
+        return '';
+    }
+  }
+
+  getFilteredAddresses() {
+    const {addresses, addressFilter, addressSort} = this.state;
+    const filter = addressFilter.trim().toLowerCase();
+    const filteredAddresses = filter
+      ? addresses.filter((address) => {
+        const label = this.state.addressLabels[this.getAddressKey(address)] || address.label || '';
+        return address.address.toLowerCase().includes(filter)
+          || label.toLowerCase().includes(filter);
+      })
+      : addresses;
+
+    if (!addressSort.key) {
+      return filteredAddresses;
+    }
+
+    return [...filteredAddresses].sort((a, b) => {
+      const aValue = this.getComparableAddressValue(a, addressSort.key);
+      const bValue = this.getComparableAddressValue(b, addressSort.key);
+
+      let comparison = 0;
+      if (typeof aValue === 'number' && typeof bValue === 'number') {
+        comparison = aValue - bValue;
+      } else {
+        comparison = String(aValue).localeCompare(String(bValue));
+      }
+
+      return addressSort.direction === 'asc' ? comparison : comparison * -1;
+    });
+  }
+
+  setAddressSort = (key) => {
+    const {addressSort} = this.state;
+
+    this.setState({
+      addressSort: {
+        key,
+        direction: addressSort.key === key && addressSort.direction === 'asc'
+          ? 'desc'
+          : 'asc',
+      },
+    });
+  };
+
+  renderAddressHeader(key, label) {
+    const {addressSort} = this.state;
+    const isActive = addressSort.key === key;
+
+    return (
+      <button
+        className={c('receive__addresses-sort', {
+          'receive__addresses-sort--active': isActive,
+        })}
+        onClick={() => this.setAddressSort(key)}
+      >
+        <span>{label}</span>
+        <span className="receive__addresses-sort-indicator">
+          {isActive ? (addressSort.direction === 'asc' ? '^' : 'v') : ''}
+        </span>
+      </button>
+    );
+  }
+
   renderAddresses() {
     const {t} = this.context;
     const {
-      addresses,
       addressLabels,
+      addressFilter,
       addressLoadError,
       isGeneratingAddress,
       isLoadingAddresses,
@@ -273,6 +367,8 @@ export default class ReceiveModal extends Component {
       );
     }
 
+    const visibleAddresses = this.getFilteredAddresses();
+
     return (
       <div className="receive__addresses">
         <div className="receive__addresses-heading">
@@ -292,17 +388,30 @@ export default class ReceiveModal extends Component {
               : t('receiveModalGenerateAddress')}
           </button>
         </div>
+        <div className="receive__addresses-toolbar">
+          <input
+            className="receive__addresses-filter"
+            value={addressFilter}
+            placeholder="Filter by address or label"
+            onChange={(e) => this.setState({addressFilter: e.target.value})}
+          />
+        </div>
         <div className="receive__addresses-table">
           <div className="receive__addresses-row receive__addresses-row--header">
-            <div>{t('receiveModalAddressStatus')}</div>
-            <div>Label</div>
-            <div>{t('address')}</div>
-            <div>{t('receiveModalAddressBalance')}</div>
-            <div>{t('receiveModalAddressTxs')}</div>
-            <div>{t('receiveModalAddressLastUsed')}</div>
+            <div>{this.renderAddressHeader('status', t('receiveModalAddressStatus'))}</div>
+            <div>{this.renderAddressHeader('label', 'Label')}</div>
+            <div>{this.renderAddressHeader('address', t('address'))}</div>
+            <div>{this.renderAddressHeader('balance', t('receiveModalAddressBalance'))}</div>
+            <div>{this.renderAddressHeader('txCount', t('receiveModalAddressTxs'))}</div>
+            <div>{this.renderAddressHeader('lastUsed', t('receiveModalAddressLastUsed'))}</div>
             <div>{t('receiveModalAddressActions')}</div>
           </div>
-          {addresses.map(address => {
+          {visibleAddresses.length === 0 && (
+            <div className="receive__addresses-state receive__addresses-state--empty">
+              No addresses match this filter.
+            </div>
+          )}
+          {visibleAddresses.map(address => {
             const addressKey = this.getAddressKey(address);
             const label = addressLabels[addressKey] || '';
 
@@ -317,7 +426,7 @@ export default class ReceiveModal extends Component {
                     {this.renderAddressStatus(address)}
                   </span>
                 </div>
-                <div>
+                <div className="receive__addresses-label-cell">
                   <input
                     className="receive__addresses-label"
                     value={label}
