@@ -381,8 +381,8 @@ export default class ReceiveModal extends Component {
     const activeOwnership = lookupResult.ownerships.find(item => item.selected);
     const otherOwnership = lookupResult.ownerships.find(item => !item.selected);
     const seen = lookupResult.seen[0];
-    let title = 'Address not found locally';
-    let detail = 'Bob did not find this address in local wallet paths or transaction history.';
+    let title = 'Not found in local Bob wallets';
+    let detail = 'Bob did not find this address as owned or seen in local wallet history.';
 
     if (activeOwnership) {
       title = 'Owned by selected wallet';
@@ -391,8 +391,8 @@ export default class ReceiveModal extends Component {
       title = 'Owned by another local Bob wallet';
       detail = `${otherOwnership.walletId}: ${otherOwnership.accountName} ${otherOwnership.branchName} address #${otherOwnership.index}`;
     } else if (seen) {
-      title = 'Seen in Bob history';
-      detail = `${seen.walletId}: ${seen.action || seen.type} transaction ${seen.txHash}`;
+      title = 'Seen in Bob history, not owned by this wallet';
+      detail = `${seen.walletId} saw this address in a ${seen.action || seen.type} transaction: ${seen.txHash}`;
     }
 
     return (
