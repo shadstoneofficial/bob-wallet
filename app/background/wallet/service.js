@@ -61,7 +61,8 @@ const {LedgerHSD, LedgerChange, LedgerCovenant, LedgerInput} = hsdLedger;
 const {Device} = hsdLedger.HID;
 const ONE_MINUTE = 60000;
 const ADDRESS_LOOKUP_DERIVATION_LIMIT = 1000;
-const ADDRESS_LOOKUP_ACCOUNT_LIMIT = 20;
+const SHAKE_RECOVERY_DERIVATION_LIMIT = 5000;
+const SHAKE_RECOVERY_ACCOUNT_LIMIT = 100;
 
 const WALLET_API_KEY = 'walletApiKey';
 const ADDRESS_META_PREFIX = 'walletAddressMeta';
@@ -825,7 +826,7 @@ class WalletService {
     let match = null;
     const accountDepth = Math.max(wallet.accountDepth || 0, existingAccounts.size);
 
-    for (let accountIndex = 0; accountIndex < ADDRESS_LOOKUP_ACCOUNT_LIMIT; accountIndex++) {
+    for (let accountIndex = 0; accountIndex < SHAKE_RECOVERY_ACCOUNT_LIMIT; accountIndex++) {
       const existingAccount = existingAccounts.get(accountIndex);
       const account = existingAccount || this.createVirtualAccount(wallet, accountIndex);
       const branches = [
@@ -842,7 +843,7 @@ class WalletService {
       ];
 
       for (const branch of branches) {
-        for (let index = 0; index < ADDRESS_LOOKUP_DERIVATION_LIMIT; index++) {
+        for (let index = 0; index < SHAKE_RECOVERY_DERIVATION_LIMIT; index++) {
           const derivedAddress = branch.derive(index).getAddress();
 
           if (!derivedAddress.hash.equals(parsedAddress.hash)) continue;
@@ -871,8 +872,9 @@ class WalletService {
         status: 'not-found',
         address: addressString,
         selectedWallet: this.name,
-        accountLimit: ADDRESS_LOOKUP_ACCOUNT_LIMIT,
-        derivationLimit: ADDRESS_LOOKUP_DERIVATION_LIMIT,
+        accountLimit: SHAKE_RECOVERY_ACCOUNT_LIMIT,
+        derivationLimit: SHAKE_RECOVERY_DERIVATION_LIMIT,
+        recoveryScan: true,
         importedAccounts: [],
       };
     }
@@ -918,8 +920,9 @@ class WalletService {
       status: match.accountExisted ? 'found-existing-account' : 'imported-account',
       address: addressString,
       selectedWallet: this.name,
-      accountLimit: ADDRESS_LOOKUP_ACCOUNT_LIMIT,
-      derivationLimit: ADDRESS_LOOKUP_DERIVATION_LIMIT,
+      accountLimit: SHAKE_RECOVERY_ACCOUNT_LIMIT,
+      derivationLimit: SHAKE_RECOVERY_DERIVATION_LIMIT,
+      recoveryScan: true,
       match,
       importedAccounts,
       rescanStarted: importedAccounts.length > 0,

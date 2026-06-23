@@ -422,7 +422,9 @@ export default class ReceiveModal extends Component {
     const importedMatch = lookupResult.match;
     const seen = seenItems[0];
     let title = 'Not found in local Bob wallets';
-    let detail = `Bob checked known wallet paths and derived receive/change addresses up to #${lookupResult.derivationLimit || 1000}, but did not find this address.`;
+    let detail = lookupResult.recoveryScan
+      ? `Bob unlocked this wallet and scanned HD account indexes 0-${(lookupResult.accountLimit || 1) - 1}, with receive/change addresses up to #${(lookupResult.derivationLimit || 1) - 1}, but did not find this address.`
+      : `Bob checked known wallet paths and derived receive/change addresses up to #${lookupResult.derivationLimit || 1000}, but did not find this address.`;
 
     if (lookupResult.status === 'imported-account' && importedMatch) {
       title = 'Shake account imported';
