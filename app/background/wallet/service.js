@@ -60,6 +60,7 @@ const randomAddrs = {
 const {LedgerHSD, LedgerChange, LedgerCovenant, LedgerInput} = hsdLedger;
 const {Device} = hsdLedger.HID;
 const ONE_MINUTE = 60000;
+const ADDRESS_LOOKUP_DERIVATION_LIMIT = 1000;
 
 const WALLET_API_KEY = 'walletApiKey';
 const ADDRESS_META_PREFIX = 'walletAddressMeta';
@@ -643,6 +644,7 @@ class WalletService {
     const addressHash = parsedAddress.hash.toString('hex');
     const wallets = await this.node.wdb.getWallets();
     const ownerships = [];
+    const derivedMatches = [];
     const seen = [];
 
     for (const walletId of wallets) {
@@ -673,6 +675,52 @@ class WalletService {
 
       const accountNames = await wallet.getAccounts();
       for (const accountName of accountNames) {
+        const account = await wallet.getAccount(accountName);
+
+        if (account) {
+          const branches = [
+            {
+              id: 0,
+              name: 'receive',
+              depth: account.receiveDepth || 0,
+              derive: index => account.deriveReceive(index),
+            },
+            {
+              id: 1,
+              name: 'change',
+              depth: account.changeDepth || 0,
+              derive: index => account.deriveChange(index),
+            },
+          ];
+
+          for (const branch of branches) {
+            const scanLimit = Math.max(
+              ADDRESS_LOOKUP_DERIVATION_LIMIT,
+              branch.depth + (account.lookahead || 0)
+            );
+
+            for (let index = 0; index < scanLimit; index++) {
+              const key = branch.derive(index);
+              const derivedAddress = key.getAddress();
+
+              if (!derivedAddress.hash.equals(parsedAddress.hash)) continue;
+
+              derivedMatches.push({
+                walletId,
+                selected: walletId === this.name,
+                accountName,
+                branch: branch.id,
+                branchName: branch.name,
+                index,
+                knownDepth: branch.depth,
+                scannedTo: scanLimit - 1,
+                inKnownDepth: index < branch.depth,
+              });
+              break;
+            }
+          }
+        }
+
         const txsByHash = new Map();
         const history = await wallet.getHistory(accountName);
         const pending = await wallet.getPending(accountName);
@@ -727,9 +775,13 @@ class WalletService {
       ? 'owned-active'
       : ownerships.length > 0
         ? 'owned-other'
-        : seen.length > 0
-          ? 'seen'
-          : 'not-found';
+        : derivedMatches.some(item => item.selected)
+          ? 'derived-active'
+          : derivedMatches.length > 0
+            ? 'derived-other'
+            : seen.length > 0
+              ? 'seen'
+              : 'not-found';
 
     return {
       address: addressString,
@@ -737,6 +789,8 @@ class WalletService {
       selectedWallet: this.name,
       status,
       ownerships,
+      derivedMatches,
+      derivationLimit: ADDRESS_LOOKUP_DERIVATION_LIMIT,
       seen,
     };
   };

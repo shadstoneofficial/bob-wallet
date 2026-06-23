@@ -380,9 +380,11 @@ export default class ReceiveModal extends Component {
 
     const activeOwnership = lookupResult.ownerships.find(item => item.selected);
     const otherOwnership = lookupResult.ownerships.find(item => !item.selected);
+    const activeDerived = (lookupResult.derivedMatches || []).find(item => item.selected);
+    const otherDerived = (lookupResult.derivedMatches || []).find(item => !item.selected);
     const seen = lookupResult.seen[0];
     let title = 'Not found in local Bob wallets';
-    let detail = 'Bob did not find this address as owned or seen in local wallet history.';
+    let detail = `Bob checked known wallet paths and derived receive/change addresses up to #${lookupResult.derivationLimit || 1000}, but did not find this address.`;
 
     if (activeOwnership) {
       title = 'Owned by selected wallet';
@@ -390,6 +392,14 @@ export default class ReceiveModal extends Component {
     } else if (otherOwnership) {
       title = 'Owned by another local Bob wallet';
       detail = `${otherOwnership.walletId}: ${otherOwnership.accountName} ${otherOwnership.branchName} address #${otherOwnership.index}`;
+    } else if (activeDerived) {
+      title = 'Belongs to selected wallet';
+      detail = activeDerived.inKnownDepth
+        ? `${activeDerived.accountName} ${activeDerived.branchName} address #${activeDerived.index}. Bob can derive this address from this wallet, but it was not indexed in the local wallet path list.`
+        : `${activeDerived.accountName} ${activeDerived.branchName} address #${activeDerived.index}. Bob can derive this address from this wallet, but it is beyond Bob's current ${activeDerived.branchName} depth of ${activeDerived.knownDepth}.`;
+    } else if (otherDerived) {
+      title = 'Belongs to another local Bob wallet';
+      detail = `${otherDerived.walletId}: ${otherDerived.accountName} ${otherDerived.branchName} address #${otherDerived.index}. Bob derived this address from that wallet.`;
     } else if (seen) {
       title = 'Seen in Bob history, not owned by this wallet';
       detail = `${seen.walletId} saw this address in a ${seen.action || seen.type} transaction: ${seen.txHash}`;
