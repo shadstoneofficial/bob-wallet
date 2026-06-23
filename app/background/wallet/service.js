@@ -62,8 +62,13 @@ const {Device} = hsdLedger.HID;
 const ONE_MINUTE = 60000;
 
 const WALLET_API_KEY = 'walletApiKey';
+const ADDRESS_META_PREFIX = 'walletAddressMeta';
 const SIGNING_KEY_ERROR_MESSAGE = 'No spendable wallet key was found for this transaction. Make sure the selected wallet/account has the funds and private keys needed to sign.';
 const PRIVATE_KEY_ERROR_MESSAGE = 'No private key available.';
+
+function addressMetaKey(network, walletId, account, branch, index) {
+  return `${ADDRESS_META_PREFIX}:${network}:${walletId}:${account}:${branch}:${index}`;
+}
 
 class WalletService {
   constructor() {
@@ -507,12 +512,26 @@ class WalletService {
         address,
         branch: 0,
         index,
+        account: 'default',
         current: index === currentIndex,
         used: false,
         txCount: 0,
         balance: 0,
         lastUsed: null,
+        label: '',
+        pinned: false,
       });
+    }
+
+    for (const [index, entry] of addressesByIndex.entries()) {
+      const metadata = await this.getAddressMetadata({
+        account: 'default',
+        branch: 0,
+        index,
+      });
+      entry.label = metadata.label;
+      entry.pinned = metadata.pinned;
+      entry.updatedAt = metadata.updatedAt;
     }
 
     const txsByHash = new Map();
@@ -560,11 +579,58 @@ class WalletService {
     }
 
     return Array.from(addressesByIndex.values()).sort((a, b) => {
+      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
       if (a.current !== b.current) return a.current ? -1 : 1;
       if (a.used !== b.used) return a.used ? -1 : 1;
       if (a.txCount !== b.txCount) return b.txCount - a.txCount;
       return a.index - b.index;
     });
+  };
+
+  getAddressMetadata = async ({account = 'default', branch = 0, index}) => {
+    if (!this.name || typeof index !== 'number') {
+      return {
+        label: '',
+        pinned: false,
+        updatedAt: null,
+      };
+    }
+
+    const metadata = await get(
+      addressMetaKey(this.networkName, this.name, account, branch, index)
+    );
+
+    return {
+      label: metadata && typeof metadata.label === 'string'
+        ? metadata.label
+        : '',
+      pinned: !!(metadata && metadata.pinned),
+      updatedAt: metadata && metadata.updatedAt ? metadata.updatedAt : null,
+    };
+  };
+
+  setAddressMetadata = async ({
+    account = 'default',
+    branch = 0,
+    index,
+    label = '',
+    pinned = false,
+  }) => {
+    if (!this.name) throw new Error('No wallet selected.');
+    if (typeof index !== 'number') throw new Error('Address index required.');
+
+    const metadata = {
+      label: String(label || '').trim().slice(0, 80),
+      pinned: !!pinned,
+      updatedAt: Date.now(),
+    };
+
+    await put(
+      addressMetaKey(this.networkName, this.name, account, branch, index),
+      metadata
+    );
+
+    return metadata;
   };
 
   getAuctionInfo = async (name) => {
@@ -2634,6 +2700,7 @@ const methods = {
   importSeed: service.importSeed,
   generateReceivingAddress: service.generateReceivingAddress,
   getReceiveAddresses: service.getReceiveAddresses,
+  setAddressMetadata: service.setAddressMetadata,
   getAuctionInfo: service.getAuctionInfo,
   getTransactionHistory: service.getTransactionHistory,
   getPendingTransactions: service.getPendingTransactions,

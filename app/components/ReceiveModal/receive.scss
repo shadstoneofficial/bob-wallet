@@ -201,7 +201,7 @@
 
   &__addresses-row {
     display: grid;
-    grid-template-columns: 6rem minmax(14rem, 1fr) 7rem 4rem 6rem 5rem;
+    grid-template-columns: 6rem 10rem minmax(14rem, 1fr) 7rem 4rem 6rem 8rem;
     align-items: center;
     gap: 0.75rem;
     min-height: 3rem;
@@ -209,7 +209,7 @@
     border-top: 1px solid rgba($black, 0.08);
     color: rgba($black, 0.8);
     font-size: 0.75rem;
-    min-width: 46rem;
+    min-width: 62rem;
 
     &:first-child {
       border-top: none;
@@ -231,6 +231,51 @@
     white-space: nowrap;
     font-family: 'Roboto Mono', monospace;
     font-size: 0.7rem;
+  }
+
+  &__addresses-label {
+    border: 1px solid rgba($black, 0.12);
+    border-radius: 6px;
+    color: rgba($black, 0.82);
+    font-size: 0.72rem;
+    min-width: 0;
+    outline: none;
+    padding: 0.35rem 0.45rem;
+    width: 100%;
+
+    &:focus {
+      border-color: rgba($azure-blue, 0.7);
+      box-shadow: 0 0 0 2px rgba($azure-blue, 0.12);
+    }
+  }
+
+  &__addresses-actions {
+    @extend %row-nowrap;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  &__metadata-btn {
+    border: none;
+    outline: none;
+    font-size: 0.7rem;
+    padding: 0.25rem 0.55rem;
+    background-color: rgba($black, 0.07);
+    color: rgba($black, 0.68);
+    font-weight: 700;
+    border-radius: 0.5rem;
+    cursor: pointer;
+    user-select: none;
+
+    &--active {
+      background-color: rgba($azure-blue, 0.15);
+      color: $azure-blue;
+    }
+
+    &:disabled {
+      cursor: not-allowed;
+      opacity: 0.65;
+    }
   }
 
   &__address-status {
