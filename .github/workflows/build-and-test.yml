@@ -15,14 +15,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest]
+        os: [windows-2022, ubuntu-latest]
         node-version: ['22']
 
         # OS-specific commands/variables
         include:
           - os: ubuntu-latest
             cmd_build: npm run build
-          - os: windows-latest
+          - os: windows-2022
             cmd_build: node .\scripts\package.js
 
     runs-on: ${{matrix.os}}
