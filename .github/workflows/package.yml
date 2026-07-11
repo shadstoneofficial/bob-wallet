@@ -53,16 +53,6 @@ jobs:
           node-version: "22"
           cache: "npm"
 
-      # https://github.com/actions/setup-node/issues/280#issuecomment-1139455898
-      - name: Update node-gyp
-        if: startsWith(matrix.platform.runner, 'windows')
-        run: |
-          $WhereNode = Get-Command node | Select-Object -ExpandProperty Definition
-          $NodeDirPath = Split-Path $WhereNode -Parent
-          $NodeModulesPath = $NodeDirPath + "\node_modules\npm\node_modules\@npmcli\run-script"
-          cd $NodeModulesPath
-          npm install node-gyp@10.3.1
-
       - name: Install Linux dependencies
         if: startsWith(matrix.platform.runner, 'ubuntu')
         run: sudo apt update && sudo apt install libudev-dev libusb-1.0-0-dev -y
