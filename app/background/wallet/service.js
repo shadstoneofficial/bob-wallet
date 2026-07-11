@@ -60,10 +60,18 @@ const randomAddrs = {
 const {LedgerHSD, LedgerChange, LedgerCovenant, LedgerInput} = hsdLedger;
 const {Device} = hsdLedger.HID;
 const ONE_MINUTE = 60000;
+const ADDRESS_LOOKUP_DERIVATION_LIMIT = 1000;
+const SHAKE_RECOVERY_DERIVATION_LIMIT = 5000;
+const SHAKE_RECOVERY_ACCOUNT_LIMIT = 100;
 
 const WALLET_API_KEY = 'walletApiKey';
+const ADDRESS_META_PREFIX = 'walletAddressMeta';
 const SIGNING_KEY_ERROR_MESSAGE = 'No spendable wallet key was found for this transaction. Make sure the selected wallet/account has the funds and private keys needed to sign.';
 const PRIVATE_KEY_ERROR_MESSAGE = 'No private key available.';
+
+function addressMetaKey(network, walletId, account, branch, index) {
+  return `${ADDRESS_META_PREFIX}:${network}:${walletId}:${account}:${branch}:${index}`;
+}
 
 class WalletService {
   constructor() {
@@ -507,12 +515,26 @@ class WalletService {
         address,
         branch: 0,
         index,
+        account: 'default',
         current: index === currentIndex,
         used: false,
         txCount: 0,
         balance: 0,
         lastUsed: null,
+        label: '',
+        pinned: false,
       });
+    }
+
+    for (const [index, entry] of addressesByIndex.entries()) {
+      const metadata = await this.getAddressMetadata({
+        account: 'default',
+        branch: 0,
+        index,
+      });
+      entry.label = metadata.label;
+      entry.pinned = metadata.pinned;
+      entry.updatedAt = metadata.updatedAt;
     }
 
     const txsByHash = new Map();
@@ -560,11 +582,382 @@ class WalletService {
     }
 
     return Array.from(addressesByIndex.values()).sort((a, b) => {
+      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
       if (a.current !== b.current) return a.current ? -1 : 1;
       if (a.used !== b.used) return a.used ? -1 : 1;
       if (a.txCount !== b.txCount) return b.txCount - a.txCount;
       return a.index - b.index;
     });
+  };
+
+  getAddressMetadata = async ({account = 'default', branch = 0, index}) => {
+    if (!this.name || typeof index !== 'number') {
+      return {
+        label: '',
+        pinned: false,
+        updatedAt: null,
+      };
+    }
+
+    const metadata = await get(
+      addressMetaKey(this.networkName, this.name, account, branch, index)
+    );
+
+    return {
+      label: metadata && typeof metadata.label === 'string'
+        ? metadata.label
+        : '',
+      pinned: !!(metadata && metadata.pinned),
+      updatedAt: metadata && metadata.updatedAt ? metadata.updatedAt : null,
+    };
+  };
+
+  setAddressMetadata = async ({
+    account = 'default',
+    branch = 0,
+    index,
+    label = '',
+    pinned = false,
+  }) => {
+    if (!this.name) throw new Error('No wallet selected.');
+    if (typeof index !== 'number') throw new Error('Address index required.');
+
+    const metadata = {
+      label: String(label || '').trim().slice(0, 80),
+      pinned: !!pinned,
+      updatedAt: Date.now(),
+    };
+
+    await put(
+      addressMetaKey(this.networkName, this.name, account, branch, index),
+      metadata
+    );
+
+    return metadata;
+  };
+
+  lookupWalletAddress = async (address) => {
+    if (!this.node || !this.node.wdb) {
+      throw new Error('Wallet database is not ready.');
+    }
+
+    const parsedAddress = Address.fromString(String(address || '').trim(), this.network);
+    const addressString = parsedAddress.toString(this.network);
+    const addressHash = parsedAddress.hash.toString('hex');
+    const wallets = await this.node.wdb.getWallets();
+    const ownerships = [];
+    const derivedMatches = [];
+    const seen = [];
+
+    for (const walletId of wallets) {
+      if (walletId === 'primary') continue;
+
+      const wallet = await this.node.wdb.get(walletId);
+      if (!wallet) continue;
+
+      const wid = await this.node.wdb.getWID(walletId);
+      const path = await this.node.wdb.getPath(wid, parsedAddress.hash);
+
+      if (path) {
+        const accountName = await this.node.wdb.getAccountName(wid, path.account);
+        ownerships.push({
+          walletId,
+          selected: walletId === this.name,
+          account: path.account,
+          accountName: accountName || path.name || String(path.account),
+          branch: path.branch,
+          branchName: path.branch === 0
+            ? 'receive'
+            : path.branch === 1
+              ? 'change'
+              : String(path.branch),
+          index: path.index,
+        });
+      }
+
+      const accountNames = await wallet.getAccounts();
+      for (const accountName of accountNames) {
+        const account = await wallet.getAccount(accountName);
+
+        if (account) {
+          const branches = [
+            {
+              id: 0,
+              name: 'receive',
+              depth: account.receiveDepth || 0,
+              derive: index => account.deriveReceive(index),
+            },
+            {
+              id: 1,
+              name: 'change',
+              depth: account.changeDepth || 0,
+              derive: index => account.deriveChange(index),
+            },
+          ];
+
+          for (const branch of branches) {
+            const scanLimit = Math.max(
+              ADDRESS_LOOKUP_DERIVATION_LIMIT,
+              branch.depth + (account.lookahead || 0)
+            );
+
+            for (let index = 0; index < scanLimit; index++) {
+              const key = branch.derive(index);
+              const derivedAddress = key.getAddress();
+
+              if (!derivedAddress.hash.equals(parsedAddress.hash)) continue;
+
+              derivedMatches.push({
+                walletId,
+                selected: walletId === this.name,
+                accountName,
+                branch: branch.id,
+                branchName: branch.name,
+                index,
+                knownDepth: branch.depth,
+                scannedTo: scanLimit - 1,
+                inKnownDepth: index < branch.depth,
+              });
+              break;
+            }
+          }
+        }
+
+        const txsByHash = new Map();
+        const history = await wallet.getHistory(accountName);
+        const pending = await wallet.getPending(accountName);
+
+        for (const tx of [...history, ...pending]) {
+          txsByHash.set(tx.hash.toString('hex'), tx);
+        }
+
+        if (txsByHash.size === 0) continue;
+
+        const details = await wallet.toDetails(Array.from(txsByHash.values()));
+        for (const item of details) {
+          const tx = item.getJSON(this.network, this.lastKnownChainHeight);
+          for (const [outputIndex, output] of (tx.outputs || []).entries()) {
+            const outputAddress = output.address;
+            const covenant = output.covenant || {};
+            const covenantText = JSON.stringify(covenant);
+
+            if (outputAddress === addressString) {
+              seen.push({
+                walletId,
+                selected: walletId === this.name,
+                accountName,
+                type: 'output',
+                txHash: tx.hash,
+                height: tx.height,
+                date: tx.date,
+                outputIndex,
+                action: covenant.action || null,
+                address: outputAddress,
+              });
+            } else if (covenantText.includes(addressHash)) {
+              seen.push({
+                walletId,
+                selected: walletId === this.name,
+                accountName,
+                type: 'covenant',
+                txHash: tx.hash,
+                height: tx.height,
+                date: tx.date,
+                outputIndex,
+                action: covenant.action || null,
+                address: outputAddress || null,
+              });
+            }
+          }
+        }
+      }
+    }
+
+    const status = ownerships.some(item => item.selected)
+      ? 'owned-active'
+      : ownerships.length > 0
+        ? 'owned-other'
+        : derivedMatches.some(item => item.selected)
+          ? 'derived-active'
+          : derivedMatches.length > 0
+            ? 'derived-other'
+            : seen.length > 0
+              ? 'seen'
+              : 'not-found';
+
+    return {
+      address: addressString,
+      hash: addressHash,
+      selectedWallet: this.name,
+      status,
+      ownerships,
+      derivedMatches,
+      derivationLimit: ADDRESS_LOOKUP_DERIVATION_LIMIT,
+      seen,
+    };
+  };
+
+  findShakeWalletAddress = async (address, passphrase) => {
+    if (!this.name) throw new Error('No wallet selected.');
+    if (!this.node || !this.node.wdb) throw new Error('Wallet database is not ready.');
+    if (!passphrase) throw new Error('Bob password is required to scan additional accounts.');
+
+    const parsedAddress = Address.fromString(String(address || '').trim(), this.network);
+    const addressString = parsedAddress.toString(this.network);
+    const wallet = await this.node.wdb.get(this.name);
+
+    if (!wallet) throw new Error('Selected wallet was not found.');
+    if (wallet.watchOnly) throw new Error('Cannot derive new accounts for a watch-only wallet.');
+
+    await wallet.unlock(passphrase, ONE_MINUTE);
+
+    if (!wallet.master || !wallet.master.key) {
+      throw new Error('Bob could not unlock the wallet master key.');
+    }
+
+    const existingAccounts = new Map();
+    const existingAccountNames = await wallet.getAccounts();
+
+    for (const accountName of existingAccountNames) {
+      const account = await wallet.getAccount(accountName);
+      if (account) existingAccounts.set(account.accountIndex, account);
+    }
+
+    let match = null;
+    const accountDepth = Math.max(wallet.accountDepth || 0, existingAccounts.size);
+
+    for (let accountIndex = 0; accountIndex < SHAKE_RECOVERY_ACCOUNT_LIMIT; accountIndex++) {
+      const existingAccount = existingAccounts.get(accountIndex);
+      const account = existingAccount || this.createVirtualAccount(wallet, accountIndex);
+      const branches = [
+        {
+          id: 0,
+          name: 'receive',
+          derive: index => account.deriveReceive(index),
+        },
+        {
+          id: 1,
+          name: 'change',
+          derive: index => account.deriveChange(index),
+        },
+      ];
+
+      for (const branch of branches) {
+        for (let index = 0; index < SHAKE_RECOVERY_DERIVATION_LIMIT; index++) {
+          const derivedAddress = branch.derive(index).getAddress();
+
+          if (!derivedAddress.hash.equals(parsedAddress.hash)) continue;
+
+          match = {
+            walletId: this.name,
+            accountIndex,
+            accountName: existingAccount ? existingAccount.name : null,
+            branch: branch.id,
+            branchName: branch.name,
+            index,
+            accountExisted: !!existingAccount,
+            address: addressString,
+          };
+          break;
+        }
+
+        if (match) break;
+      }
+
+      if (match) break;
+    }
+
+    if (!match) {
+      return {
+        status: 'not-found',
+        address: addressString,
+        selectedWallet: this.name,
+        accountLimit: SHAKE_RECOVERY_ACCOUNT_LIMIT,
+        derivationLimit: SHAKE_RECOVERY_DERIVATION_LIMIT,
+        recoveryScan: true,
+        importedAccounts: [],
+      };
+    }
+
+    const importedAccounts = [];
+
+    if (!match.accountExisted) {
+      if (match.accountIndex < accountDepth) {
+        throw new Error(`Matching account index ${match.accountIndex} is below Bob's current account depth but was not loaded.`);
+      }
+
+      for (let accountIndex = accountDepth; accountIndex <= match.accountIndex; accountIndex++) {
+        const accountName = await this.getUniqueAccountName(wallet, accountIndex === match.accountIndex
+          ? `shake-account-${accountIndex}`
+          : `imported-account-${accountIndex}`);
+        const account = await wallet.createAccount({
+          name: accountName,
+          type: 'pubkeyhash',
+        }, passphrase);
+
+        importedAccounts.push({
+          accountIndex: account.accountIndex,
+          accountName: account.name,
+        });
+
+        if (account.accountIndex === match.accountIndex) {
+          match.accountName = account.name;
+        }
+      }
+
+      const wallets = await this.listWallets();
+      dispatchToMainWindow({
+        type: SET_WALLETS,
+        payload: createPayloadForSetWallets(wallets, this.name),
+      });
+
+      this.rescan(0).catch(e => {
+        console.error('Could not start account recovery rescan.', e);
+      });
+    }
+
+    return {
+      status: match.accountExisted ? 'found-existing-account' : 'imported-account',
+      address: addressString,
+      selectedWallet: this.name,
+      accountLimit: SHAKE_RECOVERY_ACCOUNT_LIMIT,
+      derivationLimit: SHAKE_RECOVERY_DERIVATION_LIMIT,
+      recoveryScan: true,
+      match,
+      importedAccounts,
+      rescanStarted: importedAccounts.length > 0,
+    };
+  };
+
+  createVirtualAccount(wallet, accountIndex) {
+    const type = this.network.keyPrefix.coinType;
+    const accountKey = wallet.master.key
+      .deriveAccount(44, type, accountIndex)
+      .toPublic();
+
+    return Account.fromOptions(this.node.wdb, {
+      wid: wallet.wid,
+      id: wallet.id,
+      name: accountIndex === 0 ? 'default' : `account-${accountIndex}`,
+      watchOnly: false,
+      accountKey,
+      accountIndex,
+      type: 'pubkeyhash',
+      m: 1,
+      n: 1,
+      lookahead: 200,
+    });
+  }
+
+  getUniqueAccountName = async (wallet, baseName) => {
+    if (!(await wallet.hasAccount(baseName))) return baseName;
+
+    for (let suffix = 2; suffix < 100; suffix++) {
+      const name = `${baseName}-${suffix}`;
+      if (!(await wallet.hasAccount(name))) return name;
+    }
+
+    throw new Error(`Could not find an available account name for ${baseName}.`);
   };
 
   getAuctionInfo = async (name) => {
@@ -2622,6 +3015,7 @@ service.importSeed.suppressLogging = true;
 service.getMasterHDKey.suppressLogging = true;
 service.setPassphrase.suppressLogging = true;
 service.revealSeed.suppressLogging = true;
+service.findShakeWalletAddress.suppressLogging = true;
 service.unlock.suppressLogging = true;
 
 const sName = 'Wallet';
@@ -2639,6 +3033,9 @@ const methods = {
   importSeed: service.importSeed,
   generateReceivingAddress: service.generateReceivingAddress,
   getReceiveAddresses: service.getReceiveAddresses,
+  setAddressMetadata: service.setAddressMetadata,
+  lookupWalletAddress: service.lookupWalletAddress,
+  findShakeWalletAddress: service.findShakeWalletAddress,
   getAuctionInfo: service.getAuctionInfo,
   getTransactionHistory: service.getTransactionHistory,
   getPendingTransactions: service.getPendingTransactions,

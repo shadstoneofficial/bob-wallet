@@ -199,20 +199,110 @@
     overflow-y: hidden;
   }
 
+  &__addresses-toolbar {
+    @extend %row-nowrap;
+    align-items: center;
+    margin: 1rem 0 0.75rem;
+  }
+
+  &__addresses-filter {
+    border: 1px solid rgba($black, 0.12);
+    border-radius: 6px;
+    box-sizing: border-box;
+    color: rgba($black, 0.82);
+    font-size: 0.75rem;
+    max-width: 100%;
+    outline: none;
+    padding: 0.45rem 0.65rem;
+    width: 20rem;
+
+    &:focus {
+      border-color: rgba($azure-blue, 0.7);
+      box-shadow: 0 0 0 2px rgba($azure-blue, 0.12);
+    }
+  }
+
+  &__address-lookup {
+    border: 1px solid rgba($black, 0.1);
+    border-radius: 8px;
+    margin: 0 0 0.75rem;
+    padding: 0.75rem;
+  }
+
+  &__address-lookup-form {
+    @extend %row-nowrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+  }
+
+  &__address-lookup-recovery {
+    @extend %row-nowrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+  }
+
+  &__address-lookup-input {
+    flex: 1 1 auto;
+    width: auto;
+  }
+
+  &__address-lookup-password {
+    flex: 1 1 auto;
+    width: auto;
+  }
+
+  &__address-lookup-btn {
+    flex: 0 0 auto;
+  }
+
+  &__address-lookup-result {
+    border-top: 1px solid rgba($black, 0.08);
+    color: rgba($black, 0.68);
+    font-size: 0.72rem;
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+
+    &--found {
+      color: rgba($black, 0.82);
+    }
+
+    &--error {
+      color: $orange-red;
+    }
+  }
+
+  &__address-lookup-title {
+    font-size: 0.75rem;
+    font-weight: 700;
+  }
+
+  &__address-lookup-detail {
+    font-family: 'Roboto Mono', monospace;
+    line-height: 1.4;
+    margin-top: 0.25rem;
+    overflow-wrap: anywhere;
+  }
+
   &__addresses-row {
     display: grid;
-    grid-template-columns: 6rem minmax(14rem, 1fr) 7rem 4rem 6rem 5rem;
+    grid-template-columns: 6rem minmax(11rem, 13rem) minmax(24rem, 1fr) 8rem 4rem 7rem 8rem;
     align-items: center;
-    gap: 0.75rem;
+    gap: 1rem;
     min-height: 3rem;
     padding: 0.6rem 0.75rem;
     border-top: 1px solid rgba($black, 0.08);
     color: rgba($black, 0.8);
     font-size: 0.75rem;
-    min-width: 46rem;
+    min-width: 74rem;
 
     &:first-child {
       border-top: none;
+    }
+
+    > div {
+      min-width: 0;
     }
 
     &--header {
@@ -225,12 +315,98 @@
     }
   }
 
+  &__addresses-sort {
+    @extend %row-nowrap;
+    align-items: center;
+    background: transparent;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+    font-weight: inherit;
+    gap: 0.25rem;
+    letter-spacing: inherit;
+    outline: none;
+    padding: 0;
+    text-align: left;
+    text-transform: inherit;
+
+    &--active,
+    &:hover,
+    &:focus {
+      color: rgba($azure-blue, 0.95);
+    }
+  }
+
+  &__addresses-sort-indicator {
+    display: inline-block;
+    min-width: 0.5rem;
+  }
+
   &__addresses-address {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     font-family: 'Roboto Mono', monospace;
     font-size: 0.7rem;
+  }
+
+  &__addresses-label-cell {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  &__addresses-label {
+    border: 1px solid rgba($black, 0.12);
+    border-radius: 6px;
+    box-sizing: border-box;
+    color: rgba($black, 0.82);
+    font-size: 0.72rem;
+    max-width: 100%;
+    min-width: 0;
+    outline: none;
+    padding: 0.35rem 0.45rem;
+    width: 100%;
+
+    &:focus {
+      border-color: rgba($azure-blue, 0.7);
+      box-shadow: 0 0 0 2px rgba($azure-blue, 0.12);
+    }
+  }
+
+  &__addresses-state--empty {
+    border-top: 1px solid rgba($black, 0.08);
+    font-size: 0.78rem;
+    padding: 1.5rem 0;
+  }
+
+  &__addresses-actions {
+    @extend %row-nowrap;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  &__metadata-btn {
+    border: none;
+    outline: none;
+    font-size: 0.7rem;
+    padding: 0.25rem 0.55rem;
+    background-color: rgba($black, 0.07);
+    color: rgba($black, 0.68);
+    font-weight: 700;
+    border-radius: 0.5rem;
+    cursor: pointer;
+    user-select: none;
+
+    &--active {
+      background-color: rgba($azure-blue, 0.15);
+      color: $azure-blue;
+    }
+
+    &:disabled {
+      cursor: not-allowed;
+      opacity: 0.65;
+    }
   }
 
   &__address-status {
