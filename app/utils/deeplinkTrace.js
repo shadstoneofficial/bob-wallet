@@ -9,13 +9,6 @@ function getUserDataPath() {
     }
   } catch (e) {}
 
-  try {
-    const remote = require('@electron/remote');
-    if (remote.app) {
-      return remote.app.getPath('userData');
-    }
-  } catch (e) {}
-
   return null;
 }
 

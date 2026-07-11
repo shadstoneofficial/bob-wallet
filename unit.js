@@ -24,6 +24,22 @@ for (const target of [globalThis, globalThis.window, globalThis.self]) {
 
 configure({ adapter: new Adapter.default() });
 
+window.bobElectron = {
+  ipc: {send() {}, on() { return 1; }, off() {}},
+  shell: {openExternal() { return Promise.resolve(false); }},
+  dialog: {
+    showOpenDialog() { return Promise.resolve({canceled: true, filePaths: []}); },
+    showOpenDialogSync() { return undefined; },
+    showSaveDialogSync() { return undefined; },
+  },
+  files: {
+    readFile() { return Promise.reject(new Error('No test file selected.')); },
+    readFileSync() { throw new Error('No test file selected.'); },
+    writeFile() { return Promise.resolve(true); },
+  },
+  app: {isPackaged: false, getPath() { return null; }},
+};
+
 require('./app/pages/Auction/tests/RepairBid.spec');
 require('./app/pages/MyDomain/tests/Records.spec');
 require('./app/background/wallet/tests/liquidityHtlc.spec');
@@ -31,3 +47,4 @@ require('./app/deeplink/tests/index.spec');
 require('./app/utils/tests/paidNameTransfer.spec');
 require('./app/utils/tests/shakedexListingAction.spec');
 require('./app/utils/tests/marketplaceAuctions.spec');
+require('./app/utils/tests/urlPolicy.spec');

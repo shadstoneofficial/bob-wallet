@@ -14,7 +14,7 @@ import {I18nContext} from "../../utils/i18n";
 import {parseTxFile} from "../../utils/parsers";
 import "./multisig.scss";
 
-const { dialog } = require('@electron/remote');
+const { dialog } = require('electron');
 
 
 @withRouter

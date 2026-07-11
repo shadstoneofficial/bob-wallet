@@ -10,7 +10,7 @@ import { waitForPassphrase, hasAddress } from '../../ducks/walletActions';
 import {I18nContext} from "../../utils/i18n";
 import { parsePaidNameTransferInput } from '../../utils/paidNameTransfer';
 
-const { dialog } = require('@electron/remote');
+const { dialog } = require('electron');
 
 
 @connect(

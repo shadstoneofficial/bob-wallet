@@ -5,7 +5,7 @@ import https from 'https';
 const secp256k1 = require('bcrypto/lib/secp256k1');
 const Validator = require('bval');
 import { ConnectionTypes, getConnection } from '../connections/service';
-import { dispatchToMainWindow, getMainWindow } from '../../mainWindow';
+import { dispatchToMainWindow, getMainWindow, isTrustedRendererEvent } from '../../mainWindow';
 import { NETWORKS } from '../../constants/networks';
 import { displayBalance, toBaseUnits, toDisplayUnits } from '../../utils/balances';
 import { service as nodeService } from '../node/service';
@@ -2132,7 +2132,8 @@ class WalletService {
 
     const mainWindow = getMainWindow();
     return new Promise(async (resolve, reject) => {
-      const signHandler = async () => {
+      const signHandler = async (event) => {
+        if (!isTrustedRendererEvent(event)) return;
         try {
           if (info.watchOnly) {
             const ledgerOptions = {
@@ -2161,6 +2162,7 @@ class WalletService {
         }
       }
       const continueHandler = async (event, options = {}) => {
+        if (!isTrustedRendererEvent(event)) return;
         ipc.removeListener('MULTISIG/SIGN', signHandler);
         ipc.removeListener('MULTISIG/CONTINUE', continueHandler);
         ipc.removeListener('MULTISIG/CANCEL', cancelHandler);
@@ -2173,7 +2175,8 @@ class WalletService {
         }
         resolve(mtx);
       }
-      const cancelHandler = () => {
+      const cancelHandler = (event) => {
+        if (!isTrustedRendererEvent(event)) return;
         // User has given up, inform the calling function.
         resolve(null);
 
@@ -2289,7 +2292,8 @@ class WalletService {
 
     const mainWindow = getMainWindow();
     return new Promise((resolve, reject) => {
-      const resHandler = async () => {
+      const resHandler = async (event) => {
+        if (!isTrustedRendererEvent(event)) return;
         let device;
         try {
           device = await Device.requestDevice();
@@ -2336,7 +2340,8 @@ class WalletService {
           }
         }
       };
-      const cancelHandler = () => {
+      const cancelHandler = (event) => {
+        if (!isTrustedRendererEvent(event)) return;
         // User has given up on Ledger, inform the calling function.
         reject(new Error('Cancelled.'));
 

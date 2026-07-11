@@ -1,9 +1,10 @@
 import { history, store } from '../../store/configureStore';
 import { setDeeplinkParams } from '../../ducks/app';
+import { getSafeLiquidityIntentUrl } from '../../utils/urlPolicy';
 
 export default message => {
   const url = new URL(message);
-  const intentUrl = url.searchParams.get('intent');
+  const intentUrl = getSafeLiquidityIntentUrl(url.searchParams.get('intent'));
 
   if (intentUrl) {
     store.dispatch(setDeeplinkParams({

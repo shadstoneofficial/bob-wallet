@@ -27,7 +27,7 @@ import {getExchangeListings} from "../../ducks/exchange";
 import {LISTING_STATUS} from "../../constants/exchange";
 import {listingStatusToI18nKey} from "../../utils/shakedex";
 
-const {dialog} = require('@electron/remote');
+const {dialog} = require('electron');
 
 const analytics = aClientStub(() => require('electron').ipcRenderer);
 

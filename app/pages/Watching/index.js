@@ -18,7 +18,7 @@ import {getPageIndices} from "../../utils/pageable";
 import {verifyName} from "hsd/lib/covenants/rules";
 import dbClient from "../../utils/dbClient";
 import {I18nContext} from "../../utils/i18n";
-const {dialog} = require('@electron/remote');
+const {dialog} = require('electron');
 
 
 const analytics = aClientStub(() => require('electron').ipcRenderer);

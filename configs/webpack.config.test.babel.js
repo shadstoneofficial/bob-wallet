@@ -20,6 +20,13 @@ module.exports = {
     path: path.resolve(__dirname, '../test-dist'),
     filename: 'test.js'
   },
+  resolve: {
+    alias: {
+      electron$: path.join(__dirname, '..', 'app', 'renderer', 'electron.js'),
+      [path.join(__dirname, '..', 'app', 'utils', 'deeplinkTrace.js')]:
+        path.join(__dirname, '..', 'app', 'renderer', 'deeplinkTrace.js'),
+    },
+  },
   module: {
     rules: [
       {

@@ -16,7 +16,7 @@ export default {
 
   mode: 'production',
 
-  target: 'electron-renderer',
+  target: 'web',
 
   entry: path.join(__dirname, '..', 'app/index'),
 
@@ -24,6 +24,26 @@ export default {
     path: path.join(__dirname, '..', 'dist'),
     publicPath: './',
     filename: 'renderer.js'
+  },
+
+  resolve: {
+    alias: {
+      electron$: path.join(__dirname, '..', 'app', 'renderer', 'electron.js'),
+      fs$: path.join(__dirname, '..', 'app', 'renderer', 'fs.js'),
+      [path.join(__dirname, '..', 'app', 'sentry.js')]:
+        path.join(__dirname, '..', 'app', 'renderer', 'sentry.js'),
+      [path.join(__dirname, '..', 'app', 'utils', 'deeplinkTrace.js')]:
+        path.join(__dirname, '..', 'app', 'renderer', 'deeplinkTrace.js'),
+    },
+    fallback: {
+      child_process: false,
+      dns: false,
+      fs: false,
+      module: false,
+      readline: false,
+      net: false,
+      tls: false,
+    },
   },
 
   optimization: {
@@ -158,5 +178,6 @@ export default {
     }),
 
     new NodePolyfillPlugin({excludeAliases: ['process']}),
+    new webpack.ProvidePlugin({process: 'process/browser'}),
   ]
 };

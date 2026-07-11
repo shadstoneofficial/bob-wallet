@@ -1,9 +1,9 @@
 import { del, get, put } from '../db/service';
 import { app } from "electron";
 import {
-  getLiquiditySpotChannelUrl,
   normalizeLiquiditySpotHost,
 } from '../../constants/liquiditySpotChannels';
+import {fetchLiquidityChannel} from './safeChannelFetch';
 
 const EXPLORER = 'setting/explorer';
 const LOCALE = 'setting/locale';
@@ -92,25 +92,29 @@ export async function validateLiquidityChannelHost(host) {
     };
   }
 
-  const url = getLiquiditySpotChannelUrl(normalizedHost);
-
   try {
-    const resp = await fetch(url, {method: 'GET'});
+    const result = await fetchLiquidityChannel(normalizedHost);
     return {
-      ok: resp.ok,
+      ok: true,
       host: normalizedHost,
-      url,
-      status: resp.status,
-      error: resp.ok ? null : `HTTP ${resp.status}`,
+      url: result.url,
+      status: result.status,
+      error: null,
     };
   } catch (e) {
     return {
       ok: false,
       host: normalizedHost,
-      url,
+      url: '',
+      status: e.status,
       error: e.message,
     };
   }
+}
+
+export async function getLiquidityChannel(host) {
+  const result = await fetchLiquidityChannel(host);
+  return result.channel;
 }
 
 const sName = 'Setting';
@@ -127,6 +131,7 @@ const methods = {
   setShowUsdValue,
   getLatestRelease,
   validateLiquidityChannelHost,
+  getLiquidityChannel,
 };
 
 export async function start(server) {

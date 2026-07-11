@@ -3,8 +3,9 @@ const fs = require('fs');
 const exec = require('child_process').exec;
 const rootDir = path.resolve(path.join(__dirname, '..'));
 const binDir = path.join(rootDir, 'node_modules', '.bin');
-const webpackBin = path.join(binDir, 'webpack.cmd');
-const babelBin = path.join(binDir, 'babel.cmd');
+const binExt = process.platform === 'win32' ? '.cmd' : '';
+const webpackBin = path.join(binDir, `webpack${binExt}`);
+const babelBin = path.join(binDir, `babel${binExt}`);
 
 console.log(`Packaging from root directory ${rootDir}.`);
 
@@ -32,7 +33,7 @@ function webpack(cb) {
   console.log('Executing webpack.');
 
   exec(`"${webpackBin}" --config "${path.join(rootDir, 'configs', 'webpack.config.renderer.prod.babel.js')}"`, {
-    NODE_ENV: 'production',
+    env: {...process.env, NODE_ENV: 'production'},
   }, (err, stdout, stderr) => {
     if (err) {
       throw err;

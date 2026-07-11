@@ -4,7 +4,7 @@
       "@babel/env",
       {
         "targets": {
-          "electron": "22.0.0"
+          "electron": "43.0.0"
         },
         "debug": true
       }

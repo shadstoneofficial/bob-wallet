@@ -27,7 +27,7 @@ import {
 } from '../../utils/paidNameTransfer';
 import './send-name.scss';
 
-const { dialog } = require('@electron/remote');
+const { dialog } = require('electron');
 
 const SELL_MODE = 'send';
 const CLAIM_MODE = 'claim';

@@ -108,6 +108,9 @@
   "license": "MIT",
   "keywords": [],
   "homepage": "https://bobwallet.io/",
+  "overrides": {
+    "bdb": "1.6.2"
+  },
   "devDependencies": {
     "@babel/cli": "7.20.7",
     "@babel/core": "7.20.12",
@@ -123,7 +126,8 @@
     "babel-loader": "9.1.2",
     "cross-env": "7.0.3",
     "css-loader": "6.7.3",
-    "electron": "22.0.3",
+    "dmg-license": "1.0.11",
+    "electron": "43.1.0",
     "electron-builder": "23.6.0",
     "enzyme": "3.11.0",
     "jsdom": "21.1.0",
@@ -135,18 +139,17 @@
     "sinon": "15.0.1",
     "style-loader": "3.3.1",
     "tape": "5.6.3",
-    "webpack": "5.75.0",
+    "webpack": "5.108.4",
     "webpack-bundle-analyzer": "4.7.0",
     "webpack-cli": "5.0.1",
     "webpack-dev-server": "4.11.1"
   },
   "dependencies": {
-    "@electron/remote": "2.0.9",
     "@rithvikvibhu/connected-react-router": "6.9.3",
-    "@sentry/electron": "4.1.2",
+    "@sentry/electron": "7.15.0",
     "bcrypto": "5.4.0",
     "bcurl": "0.2.0",
-    "bdb": "1.4.0",
+    "bdb": "1.6.2",
     "bignumber.js": "9.1.1",
     "binet": "0.3.7",
     "bns": "0.15.0",
@@ -177,10 +180,10 @@
     "redux": "4.2.0",
     "redux-thunk": "2.4.2",
     "sass": "1.57.1",
-    "semver": "7.3.8",
+    "semver": "7.8.5",
     "shakedex": "0.0.19",
     "source-map-support": "0.5.21",
-    "uuid": "9.0.0",
+    "uuid": "14.0.1",
     "winston": "3.8.2"
   }
 }

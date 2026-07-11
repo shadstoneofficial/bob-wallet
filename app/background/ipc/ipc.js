@@ -16,7 +16,8 @@ export const nullServer = {
 };
 
 function log() {
-  if (process.env.NODE_ENV === 'production') {
+  const electronApp = require('electron').app;
+  if (process.env.NODE_ENV === 'production' || (electronApp && electronApp.isPackaged)) {
     return;
   }
 
@@ -43,10 +44,13 @@ function sanitizeRes(res, method) {
   return res;
 }
 
-export function makeServer(ipcMain) {
+export function makeServer(ipcMain, authorize = () => true) {
   const methods = {};
 
   const handler = (event, data) => {
+    if (!authorize(event)) {
+      return;
+    }
     const method = methods[data.method];
 
     if (!data.id) {

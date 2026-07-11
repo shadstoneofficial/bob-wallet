@@ -6,6 +6,7 @@ import PropTypes from 'prop-types';
 import {I18nContext} from '../../utils/i18n';
 import DocsHelp from '../../components/DocsHelp';
 import walletClient from '../../utils/walletClient';
+import {clientStub as settingClientStub} from '../../background/setting/client';
 import {
   DEFAULT_LIQUIDITY_SPOT_CHANNEL_HOST,
   LIQUIDITY_ADDON_NAME,
@@ -16,6 +17,12 @@ import {
   normalizeLiquiditySpotHost,
 } from '../../constants/liquiditySpotChannels';
 import './addons.scss';
+import {
+  getLiquiditySwapRoomUrl,
+  getSafeLiquidityIntentUrl,
+} from '../../utils/urlPolicy';
+
+const settingClient = settingClientStub(() => require('electron').ipcRenderer);
 
 const ADDONS = [
   {
@@ -117,20 +124,13 @@ class Addons extends Component {
   }
 
   async loadLiquidityChannel(host = this.state.liquiditySpotHost) {
-    const channelUrl = getLiquiditySpotChannelUrl(host, '/api/channel');
-
     this.setState({
       liquidityChannelLoading: true,
       liquidityChannelError: '',
     });
 
     try {
-      const response = await fetch(channelUrl);
-
-      if (!response.ok)
-        throw new Error(`Liquidity channel returned ${response.status}`);
-
-      const channel = await response.json();
+      const channel = await settingClient.getLiquidityChannel(host);
 
       this.setState({
         liquidityChannel: channel,
@@ -218,8 +218,9 @@ class Addons extends Component {
     const {deeplinkParams} = this.props;
     const intentUrl = deeplinkParams?.liquiditySwapIntentUrl;
 
-    if (intentUrl) {
-      shell.openExternal(intentUrl);
+    const safeIntentUrl = getSafeLiquidityIntentUrl(intentUrl);
+    if (safeIntentUrl) {
+      shell.openExternal(safeIntentUrl);
     }
   }
 
@@ -227,19 +228,10 @@ class Addons extends Component {
     const {deeplinkParams} = this.props;
     const intentUrl = deeplinkParams?.liquiditySwapIntentUrl;
 
-    if (!intentUrl)
+    const roomUrl = getLiquiditySwapRoomUrl(intentUrl);
+    if (!roomUrl)
       return;
-
-    try {
-      const url = new URL(intentUrl);
-      const match = url.pathname.match(/^\/api\/swaps\/(\d+)\/wallet-intents$/);
-      if (match) {
-        shell.openExternal(`${url.origin}/swaps/${match[1]}`);
-        return;
-      }
-    } catch (e) {}
-
-    shell.openExternal(intentUrl);
+    shell.openExternal(roomUrl);
   }
 
   openLiquidityChannelPath(path) {
@@ -247,7 +239,8 @@ class Addons extends Component {
   }
 
   async loadLiquiditySwapIntent(intentUrl) {
-    if (!intentUrl) {
+    const safeIntentUrl = getSafeLiquidityIntentUrl(intentUrl);
+    if (!safeIntentUrl) {
       this.setState({
         liquiditySwapIntent: null,
         liquiditySwapIntentLoading: false,
@@ -265,7 +258,7 @@ class Addons extends Component {
     });
 
     try {
-      const response = await fetch(intentUrl);
+      const response = await fetch(safeIntentUrl);
 
       if (!response.ok)
         throw new Error(`Liquidity.spot returned ${response.status}`);

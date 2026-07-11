@@ -50,7 +50,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "18"
+          node-version: "22"
           cache: "npm"
 
       # https://github.com/actions/setup-node/issues/280#issuecomment-1139455898
@@ -69,10 +69,6 @@ jobs:
 
       - name: Install npm packages
         run: npm ci
-
-      - name: Install dmg-license
-        if: matrix.platform.signed_macos
-        run: npm i dmg-license --no-save
 
       - name: Run tests
         run: npm test

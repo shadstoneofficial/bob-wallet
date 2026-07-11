@@ -1,12 +1,5 @@
-let Sentry, app;
-
-if (process.type === 'renderer') {
-  Sentry = require('@sentry/electron/renderer');
-  app = require('@electron/remote').app;
-} else {
-  Sentry = require('@sentry/electron/main');
-  app = require('electron').app;
-}
+const Sentry = require('@sentry/electron/main');
+const {app} = require('electron');
 
 const pkg = require('../package.json');
 

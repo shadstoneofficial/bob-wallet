@@ -2,6 +2,7 @@ import React, { Component } from 'react';
 import { connect } from 'react-redux';
 import Hash from '../../components/Hash';
 import './index.scss';
+import Anchor from '../../components/Anchor';
 
 // @connect(
 //   state => ({
@@ -40,9 +41,9 @@ export default class Footer extends Component {
             <div className="window-footer__nav-header">AAW</div>
             <ul className="window-footer__nav-links">
               <li>
-                <a href="https://handshake.org/faq" target="_blank">
+                <Anchor href="https://handshake.org/faq">
                   FAQ
-                </a>
+                </Anchor>
               </li>
               <li>
                 <a>Terms of Use</a>
@@ -56,9 +57,9 @@ export default class Footer extends Component {
                 <a>Redeem coins</a>
               </li>
               <li>
-                <a href="https://handshake.org/" target="_blank">
+                <Anchor href="https://handshake.org/">
                   handshake.org
-                </a>
+                </Anchor>
               </li>
             </ul>
           </div>
@@ -66,14 +67,14 @@ export default class Footer extends Component {
             <div className="window-footer__nav-header">Community</div>
             <ul className="window-footer__nav-links">
               <li>
-                <a href="https://github.com/handshake-org/" target="_blank">
+                <Anchor href="https://github.com/handshake-org/">
                   GitHub
-                </a>
+                </Anchor>
               </li>
               <li>
-                <a href="https://twitter.com/hns" target="_blank">
+                <Anchor href="https://twitter.com/hns">
                   Twitter
-                </a>
+                </Anchor>
               </li>
             </ul>
           </div>

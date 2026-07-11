@@ -1,6 +1,7 @@
 import React from "react";
 import {shell} from "electron";
 import "./index.scss";
+import {getSafeExternalUrl} from '../../utils/urlPolicy';
 
 export default function Anchor(props) {
   const {
@@ -8,10 +9,17 @@ export default function Anchor(props) {
     children,
   } = props;
 
+  const open = () => {
+    const safeUrl = getSafeExternalUrl(href);
+    if (safeUrl) {
+      shell.openExternal(safeUrl);
+    }
+  };
+
   return (
     <a
       className="anchor"
-      onClick={() => shell.openExternal(href)}
+      onClick={open}
     >
       {children}
     </a>

@@ -13,4 +13,5 @@ export const clientStub = ipcRendererInjector => makeClient(ipcRendererInjector,
   'setShowUsdValue',
   'getLatestRelease',
   'validateLiquidityChannelHost',
+  'getLiquidityChannel',
 ]);

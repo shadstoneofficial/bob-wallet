@@ -9,7 +9,7 @@ import { getPassphrase, revealSeed } from "../../ducks/walletActions";
 import { I18nContext } from '../../utils/i18n';
 import walletClient from "../../utils/walletClient";
 import './phrase-mismatch.scss';
-const { dialog } = require('@electron/remote');
+const { dialog } = require('electron');
 
 
 @connect(

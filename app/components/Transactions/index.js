@@ -16,7 +16,7 @@ import {I18nContext} from "../../utils/i18n";
 import { debounce } from '../../utils/throttle';
 import { displayBalance } from '../../utils/balances';
 
-const {dialog} = require('@electron/remote');
+const {dialog} = require('electron');
 
 const SORT_BY_TYPES = {
   DATE_DESCENDING: 'Date - Descending',

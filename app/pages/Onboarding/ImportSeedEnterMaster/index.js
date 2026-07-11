@@ -1,4 +1,3 @@
-import fs from 'fs';
 import React, { Component } from 'react';
 import PropTypes from 'prop-types';
 import c from 'classnames';
@@ -29,7 +28,7 @@ class ImportSeedEnterMaster extends Component {
 
   static contextType = I18nContext;
 
-  submitMaster = () => {
+  submitMaster = async () => {
     const {onNext} = this.props;
     const {file, passphrase} = this.state;
 
@@ -37,7 +36,7 @@ class ImportSeedEnterMaster extends Component {
     if (file.type !== 'application/json') return;
 
     try {
-      const fileContent = fs.readFileSync(file.path, 'utf-8');
+      const fileContent = await file.text();
       const json = JSON.parse(fileContent);
 
       this.validateMasterJSON(json);

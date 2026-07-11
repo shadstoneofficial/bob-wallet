@@ -11,7 +11,7 @@ import walletClient from "../../utils/walletClient";
 import {I18nContext} from "../../utils/i18n";
 import './multisig-modal.scss';
 
-const { dialog } = require('@electron/remote');
+const { dialog } = require('electron');
 const ipc = require('electron').ipcRenderer;
 
 @connect(
