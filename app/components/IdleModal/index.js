@@ -10,6 +10,7 @@ class IdleModal extends Component {
   static propTypes = {
     idle: PropTypes.number.isRequired,
     maxIdle: PropTypes.number.isRequired,
+    walletSync: PropTypes.bool.isRequired,
     resetIdle: PropTypes.func.isRequired,
     logout: PropTypes.func.isRequired,
   };
@@ -27,13 +28,20 @@ class IdleModal extends Component {
       return;
     }
 
-    if (prevProps.maxIdle === 0) {
+    if (this.props.walletSync) {
+      if (this.state.isShowing) {
+        this.close();
+      }
+      return;
+    }
+
+    if (this.props.maxIdle === 0) {
       return;
     }
 
     if (
       !this.props.isLocked &&
-      this.props.idle >= prevProps.maxIdle &&
+      this.props.idle >= this.props.maxIdle &&
       !this.state.isShowing
     ) {
       if (!this.interval) {
@@ -119,6 +127,7 @@ export default connect(
   (state) => ({
     idle: state.wallet.idle,
     maxIdle: state.wallet.maxIdle,
+    walletSync: state.wallet.walletSync,
     isLocked: state.wallet.isLocked,
   }),
   (dispatch) => ({

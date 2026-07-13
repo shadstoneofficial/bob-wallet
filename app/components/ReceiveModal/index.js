@@ -44,9 +44,11 @@ export default class ReceiveModal extends Component {
 
   state = {
     addresses: [],
+    addressLabels: {},
     hasLoadedAddresses: false,
     isLoadingAddresses: false,
     isGeneratingAddress: false,
+    isSavingAddressMetadata: false,
     isShowingAddress: false,
     addressLoadError: '',
   };
@@ -96,8 +98,13 @@ export default class ReceiveModal extends Component {
 
     try {
       const addresses = await walletClient.getReceiveAddresses();
+      const addressLabels = addresses.reduce((labels, address) => ({
+        ...labels,
+        [this.getAddressKey(address)]: address.label || '',
+      }), {});
       this.setState({
         addresses,
+        addressLabels,
         hasLoadedAddresses: true,
       });
     } catch (e) {
@@ -106,6 +113,43 @@ export default class ReceiveModal extends Component {
       });
     } finally {
       this.setState({isLoadingAddresses: false});
+    }
+  };
+
+  getAddressKey(address) {
+    return `${address.account || 'default'}:${address.branch || 0}:${address.index}`;
+  }
+
+  updateAddressLabel = (address, label) => {
+    this.setState({
+      addressLabels: {
+        ...this.state.addressLabels,
+        [this.getAddressKey(address)]: label,
+      },
+    });
+  };
+
+  saveAddressMetadata = async (address, updates = {}) => {
+    if (this.state.isSavingAddressMetadata) return;
+
+    const label = updates.label !== undefined
+      ? updates.label
+      : this.state.addressLabels[this.getAddressKey(address)] || '';
+    const pinned = updates.pinned !== undefined ? updates.pinned : !!address.pinned;
+
+    this.setState({isSavingAddressMetadata: true});
+
+    try {
+      await walletClient.setAddressMetadata({
+        account: address.account || 'default',
+        branch: address.branch || 0,
+        index: address.index,
+        label,
+        pinned,
+      });
+      await this.loadAddresses();
+    } finally {
+      this.setState({isSavingAddressMetadata: false});
     }
   };
 
@@ -205,10 +249,12 @@ export default class ReceiveModal extends Component {
     const {t} = this.context;
     const {
       addresses,
+      addressLabels,
       addressLoadError,
       isGeneratingAddress,
       isLoadingAddresses,
       hasLoadedAddresses,
+      isSavingAddressMetadata,
     } = this.state;
 
     if (isLoadingAddresses && !hasLoadedAddresses) {
@@ -249,34 +295,67 @@ export default class ReceiveModal extends Component {
         <div className="receive__addresses-table">
           <div className="receive__addresses-row receive__addresses-row--header">
             <div>{t('receiveModalAddressStatus')}</div>
+            <div>Label</div>
             <div>{t('address')}</div>
             <div>{t('receiveModalAddressBalance')}</div>
             <div>{t('receiveModalAddressTxs')}</div>
             <div>{t('receiveModalAddressLastUsed')}</div>
             <div>{t('receiveModalAddressActions')}</div>
           </div>
-          {addresses.map(address => (
-            <div className="receive__addresses-row" key={address.address}>
-              <div>
-                <span className={c('receive__address-status', {
-                  'receive__address-status--current': address.current,
-                  'receive__address-status--used': address.used && !address.current,
-                })}
-                >
-                  {this.renderAddressStatus(address)}
-                </span>
+          {addresses.map(address => {
+            const addressKey = this.getAddressKey(address);
+            const label = addressLabels[addressKey] || '';
+
+            return (
+              <div className="receive__addresses-row" key={address.address}>
+                <div>
+                  <span className={c('receive__address-status', {
+                    'receive__address-status--current': address.current,
+                    'receive__address-status--used': address.used && !address.current,
+                  })}
+                  >
+                    {this.renderAddressStatus(address)}
+                  </span>
+                </div>
+                <div>
+                  <input
+                    className="receive__addresses-label"
+                    value={label}
+                    placeholder="Add label"
+                    disabled={isSavingAddressMetadata}
+                    onChange={(e) => this.updateAddressLabel(address, e.target.value)}
+                    onBlur={() => this.saveAddressMetadata(address, {label})}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.currentTarget.blur();
+                      }
+                    }}
+                  />
+                </div>
+                <div className="receive__addresses-address" title={address.address}>
+                  {address.address}
+                </div>
+                <div>{displayBalance(address.balance)} HNS</div>
+                <div>{address.txCount}</div>
+                <div>{this.renderLastUsed(address)}</div>
+                <div className="receive__addresses-actions">
+                  <button
+                    className={c('receive__metadata-btn', {
+                      'receive__metadata-btn--active': address.pinned,
+                    })}
+                    disabled={isSavingAddressMetadata}
+                    onClick={() => this.saveAddressMetadata(address, {
+                      label,
+                      pinned: !address.pinned,
+                    })}
+                  >
+                    {address.pinned ? 'Unpin' : 'Pin'}
+                  </button>
+                  <CopyButton content={address.address} />
+                </div>
               </div>
-              <div className="receive__addresses-address" title={address.address}>
-                {address.address}
-              </div>
-              <div>{displayBalance(address.balance)} HNS</div>
-              <div>{address.txCount}</div>
-              <div>{this.renderLastUsed(address)}</div>
-              <div>
-                <CopyButton content={address.address} />
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     );
