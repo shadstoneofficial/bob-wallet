@@ -192,6 +192,21 @@
   font-size: .75rem;
 }
 
+.exchange-marketplace-error {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  margin: .75rem 0;
+  padding: .75rem;
+  border: 1px solid rgba($orange-red, .35);
+  border-radius: .5rem;
+  color: $orange-red;
+
+  span {
+    flex: 1 1 auto;
+  }
+}
+
 .exchange-listing-filters {
   display: flex;
   align-items: center;

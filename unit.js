@@ -47,4 +47,6 @@ require('./app/deeplink/tests/index.spec');
 require('./app/utils/tests/paidNameTransfer.spec');
 require('./app/utils/tests/shakedexListingAction.spec');
 require('./app/utils/tests/marketplaceAuctions.spec');
+require('./app/utils/tests/marketplaceRequest.spec');
+require('./app/pages/Exchange/tests/marketplaceSpv.spec');
 require('./app/utils/tests/urlPolicy.spec');

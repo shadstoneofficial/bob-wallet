@@ -6,6 +6,10 @@ import networks from 'hsd/lib/protocol/networks.js';
 import {getFinalizeFromTransferTx} from "../utils/shakedex";
 import { LISTING_STATUS } from '../constants/exchange.js';
 import { SET_WALLET } from './walletReducer.js';
+import {
+  classifyMarketplaceError,
+  MARKETPLACE_STATUS,
+} from '../utils/marketplaceRequest.js';
 
 const shakedex = shakedexClientStub(() => require('electron').ipcRenderer);
 const nodeClient = nodeClientStub(() => require('electron').ipcRenderer);
@@ -78,6 +82,8 @@ function getInitialState() {
     total: 0,
     currentPage: 1,
     isLoading: false,
+    marketplaceStatus: MARKETPLACE_STATUS.IDLE,
+    marketplaceError: '',
     isLoadingListings: false,
     isError: false,
     isPlacingBid: false,
@@ -110,10 +116,11 @@ export const getExchangeAuctions = () => async (dispatch, getState) => {
   try {
     auctions = await shakedex.getExchangeAuctions(currentPage);
   } catch (e) {
+    const error = classifyMarketplaceError(e);
     dispatch({
       type: GET_EXCHANGE_AUCTIONS_ERR,
       payload: {
-        message: e.message,
+        ...error,
       },
     });
     return;
@@ -826,6 +833,8 @@ export default function (state = getInitialState(), action) {
         ...state,
         isLoading: true,
         isError: false,
+        marketplaceStatus: MARKETPLACE_STATUS.LOADING,
+        marketplaceError: '',
       };
 
     case GET_EXCHANGE_AUCTIONS_OK:
@@ -842,6 +851,8 @@ export default function (state = getInitialState(), action) {
         auctions,
         isLoading: false,
         isError: false,
+        marketplaceStatus: MARKETPLACE_STATUS.LOADED,
+        marketplaceError: '',
         total: action.payload.total,
       };
 
@@ -850,6 +861,8 @@ export default function (state = getInitialState(), action) {
         ...state,
         isLoading: false,
         isError: true,
+        marketplaceStatus: action.payload.kind,
+        marketplaceError: action.payload.message,
       };
 
     case GET_EXCHANGE_FULLFILLMENTS_OK:

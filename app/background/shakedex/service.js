@@ -37,7 +37,10 @@ import {
   DEFAULT_SHAKEDEX_CHANNEL_HOST,
   getShakedexChannelBaseUrl,
 } from '../../constants/shakedexChannels.js';
-import { dedupeMarketplaceAuctionsByName } from '../../utils/marketplaceAuctions.js';
+import {
+  fetchMarketplaceAuctions,
+  getMarketplaceClientOptions,
+} from '../../utils/marketplaceRequest.js';
 
 let db;
 
@@ -66,10 +69,7 @@ async function getMarketApiBaseUrl() {
 }
 
 async function getMarketClient() {
-  return new Client({
-    host: await getMarketApiHost(),
-    ssl: true,
-  });
+  return new Client(getMarketplaceClientOptions(await getMarketApiHost()));
 }
 
 function buildProofUploadPayload(auction, proof) {
@@ -171,15 +171,13 @@ export async function iteratePrefix(prefix, cb) {
 
 export async function getExchangeAuctions(currentPage = 1) {
   const marketClient = await getMarketClient();
-  const res = await marketClient.get('api/v2/auctions?page=1&per_page=100');
-  const auctions = dedupeMarketplaceAuctionsByName(res.auctions).map(auction => {
-    auction.bids = Array.isArray(auction.bids) ? auction.bids : [];
-    auction.bids.sort((a,b) => b.price - a.price);
-    return auction;
-  })
-  return {
-    total: auctions.length,
-    auctions
+  try {
+    return await fetchMarketplaceAuctions(marketClient, currentPage);
+  } catch (error) {
+    if (/timed?\s*out|timeout/i.test(`${error && error.message || ''}`)) {
+      error.code = 'MARKETPLACE_TIMEOUT';
+    }
+    throw error;
   }
 }
 

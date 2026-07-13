@@ -57,6 +57,10 @@ import {
   getShakedexChannelBaseUrl,
 } from '../../constants/shakedexChannels.js';
 import { isPendingMarketplaceAuction } from '../../utils/marketplaceAuctions';
+import {
+  getMarketplaceViewState,
+  MARKETPLACE_STATUS,
+} from '../../utils/marketplaceRequest';
 
 const analytics = aClientStub(() => require('electron').ipcRenderer);
 const shakedex = sClientStub(() => require('electron').ipcRenderer);
@@ -117,7 +121,7 @@ function isShortFixedListingProof(listing) {
   return expiryTime - Date.now() < 30 * 24 * 60 * 60 * 1000;
 }
 
-class Exchange extends Component {
+export class Exchange extends Component {
   static propTypes = {
     spv: PropTypes.bool.isRequired,
     nodeProgress: PropTypes.number,
@@ -154,7 +158,6 @@ class Exchange extends Component {
       submitListingError: '',
       feeInfo: null,
       generatingListing: null,
-      isLoading: true,
       isLoadingLocalListings: true,
       shakedexDeprecatedToggle: false,
       currentBidsMap: new Map(),
@@ -290,13 +293,7 @@ class Exchange extends Component {
   }
 
   async fetchShakedex() {
-    try {
-      this.setState({ isLoading: true });
-      await this.props.getExchangeAuctions();
-      this.setState({ isLoading: false });
-    } catch (e) {
-      this.setState({ isLoading: false });
-    }
+    return this.props.getExchangeAuctions();
   }
 
   async fetchChannelSettings() {
@@ -1428,13 +1425,13 @@ class Exchange extends Component {
       return t('notSupportWithMultisig');
     }
 
-    if (this.props.isLoading) {
-      return t('loading');
-    }
-
     const isSpv = this.props.spv;
     const showSellerListings = !isSpv || ENABLE_SPV_SELLER_BETA;
     const marketplaceAuctions = this.getVisibleMarketplaceAuctions();
+    const marketplaceView = getMarketplaceViewState(
+      this.props.marketplaceStatus,
+      this.props.auctions.length,
+    );
     const activeChannelText = this.state.marketChannelHost;
     const marketBaseUrl = getShakedexChannelBaseUrl({host: this.state.marketChannelHost});
     const downloadableListingProofs = this.getDownloadableListingProofs();
@@ -1466,7 +1463,10 @@ class Exchange extends Component {
             <div className="exchange-marketplace-header__actions">
               <button
                 className="exchange-marketplace-header__button"
-                disabled={this.state.isLoading || this.state.marketStatusLoading}
+                disabled={
+                  this.props.marketplaceStatus === MARKETPLACE_STATUS.LOADING
+                  || this.state.marketStatusLoading
+                }
                 onClick={this.refreshMarketplace}
               >
                 {t('refresh')}
@@ -1488,23 +1488,49 @@ class Exchange extends Component {
           {this.renderMarketplaceFilters(marketplaceAuctions.length)}
           <Table className="exchange-table">
             <Header />
-            {this.state.isLoading && (
+            {marketplaceView.showInitialLoading && (
               <TableRow>
                 <div className="loader" style={{ backgroundImage: `url(${SpinnerSVG})`}} />
               </TableRow>
             )}
-            {!this.state.isLoading && !!marketplaceAuctions.length && marketplaceAuctions.map(this.renderAuctionRow)}
+            {marketplaceView.showRefreshing && (
+              <TableRow>
+                <TableItem>{t('refreshingMarketplaceListings')}</TableItem>
+              </TableRow>
+            )}
+            {!!marketplaceAuctions.length && marketplaceAuctions.map(this.renderAuctionRow)}
             {this.renderListingControls()}
-            {!this.state.isLoading && !marketplaceAuctions.length && (
+            {marketplaceView.showEmpty && (
               <TableRow>
                 <TableItem>
-                  {t('noMarketplaceListingsFound')}
+                  {t('marketplaceLoadedEmpty')}
                 </TableItem>
               </TableRow>
             )}
-            {this.props.isError && (
-              <div>
-                {t('genericError')}
+            {
+              this.props.marketplaceStatus === MARKETPLACE_STATUS.LOADED
+              && this.props.auctions.length > 0
+              && !marketplaceAuctions.length
+              && (
+                <TableRow>
+                  <TableItem>{t('noMarketplaceListingsFound')}</TableItem>
+                </TableRow>
+              )
+            }
+            {marketplaceView.showError && (
+              <div className="exchange-marketplace-error" role="alert">
+                <strong>
+                  {this.props.marketplaceStatus === MARKETPLACE_STATUS.TIMEOUT
+                    ? t('marketplaceRequestTimedOut')
+                    : t('marketplaceServerError')}
+                </strong>
+                <span>{this.props.marketplaceError}</span>
+                <button
+                  className="exchange-marketplace-header__button"
+                  onClick={this.fetchShakedex.bind(this)}
+                >
+                  {t('retry')}
+                </button>
               </div>
             )}
           </Table>
@@ -2455,6 +2481,8 @@ export default connect(
     auctions: state.exchange.auctionIds.map(id => state.exchange.auctions[id]),
     total: state.exchange.total,
     currentPage: state.exchange.currentPage,
+    marketplaceStatus: state.exchange.marketplaceStatus,
+    marketplaceError: state.exchange.marketplaceError,
     fulfillments: state.exchange.fulfillments,
     listings: state.exchange.listings,
     finalizingName: state.exchange.finalizingName,
