@@ -23,6 +23,7 @@ import {
 import {STOP, SET_CUSTOM_RPC_STATUS} from '../../ducks/nodeReducer';
 import {showSuccess, showError} from '../../ducks/notifications';
 import {getNamesForRegisterAll} from "./create-register-all";
+import {parseShakeshiftRegisterValue} from './shakeshiftRegisterValue';
 import {getStats} from "./stats";
 import {get, put} from "../db/service";
 import hsdLedger from 'hsd-ledger';
@@ -1161,9 +1162,13 @@ class WalletService {
     },
   );
 
-  sendRegister = (name) => this._walletProxy(
-    () => this._executeRPC('createupdate', [name, {records: []}]),
-  );
+  sendRegister = async (name) => {
+    const wallet = await this.node.wdb.get(this.name);
+
+    return this._walletProxy(
+      () => this._createVerifiedRegisterMTX(wallet, name),
+    );
+  };
 
   sendUpdate = (name, json) => this._walletProxy(
     () => this._executeRPC('createupdate', [name, json]),
@@ -1300,12 +1305,7 @@ class WalletService {
       req.on('error', reject);
     });
 
-    const match = html.match(/<span>Name Value<\/span>\s*<span[^>]*data-value="(\d+)"/);
-
-    if (!match)
-      return null;
-
-    return Number(match[1]);
+    return parseShakeshiftRegisterValue(html);
   }
 
   transferMany = async (names, address) => {

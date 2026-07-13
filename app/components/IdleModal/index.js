@@ -21,19 +21,19 @@ class IdleModal extends Component {
     timeRemaining: 60,
   };
 
-  componentDidUpdate(prevProps) {
+  componentDidUpdate() {
     if (this.props.isLocked && this.state.isShowing) {
       this.close();
       return;
     }
 
-    if (prevProps.maxIdle === 0) {
+    if (this.props.maxIdle === 0) {
       return;
     }
 
     if (
       !this.props.isLocked &&
-      this.props.idle >= prevProps.maxIdle &&
+      this.props.idle >= this.props.maxIdle &&
       !this.state.isShowing
     ) {
       if (!this.interval) {
