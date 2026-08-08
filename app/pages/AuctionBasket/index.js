@@ -284,6 +284,15 @@ class AuctionBasket extends Component {
       && lockup >= bid;
   };
 
+  /** Empty or 0/0 — leave in the list but do not submit or block review. */
+  isAmountEmpty = (item) => {
+    const bid = Number(item?.bidAmount);
+    const blind = Number(item?.blindAmount || 0);
+    const bidN = Number.isFinite(bid) ? bid : 0;
+    const blindN = Number.isFinite(blind) ? blind : 0;
+    return bidN === 0 && blindN === 0;
+  };
+
   getRowTotals = (rowMetaOverride) => {
     const { order, items } = this.props;
     const rowMeta = rowMetaOverride || this.state.rowMeta;
@@ -293,6 +302,7 @@ class AuctionBasket extends Component {
     let validCount = 0;
     let notBiddingCount = 0;
     let badAmountCount = 0;
+    let skippedEmptyCount = 0;
     let earliestHours = null;
     const validNames = [];
 
@@ -303,6 +313,7 @@ class AuctionBasket extends Component {
       const blind = Number(item.blindAmount || 0);
       const lockup = bid + blind;
       const amountsOk = this.isAmountOk(item);
+      const amountEmpty = this.isAmountEmpty(item);
       const stateOk = !meta.error && meta.state === 'BIDDING';
 
       if (stateOk && amountsOk) {
@@ -318,6 +329,9 @@ class AuctionBasket extends Component {
         }
       } else if (!stateOk) {
         notBiddingCount += 1;
+      } else if (amountEmpty) {
+        // Already bid earlier, or intentionally left blank — skip on submit.
+        skippedEmptyCount += 1;
       } else {
         badAmountCount += 1;
       }
@@ -331,6 +345,7 @@ class AuctionBasket extends Component {
       validCount,
       notBiddingCount,
       badAmountCount,
+      skippedEmptyCount,
       validNames,
       earliestHours,
       feeBuffer,
@@ -342,9 +357,25 @@ class AuctionBasket extends Component {
     if (!this.isHotWalletCapable()) return false;
     if (!this.props.order.length) return false;
     const totals = this.getRowTotals(rowMetaOverride);
-    // Ready when at least one bidding name has valid amounts.
-    // Non-bidding rows are skipped at submit (not blockers).
+    // Ready when at least one row has valid amounts.
+    // Empty 0/0 rows and non-bidding rows are skipped (not blockers).
     return totals.validCount > 0 && totals.badAmountCount === 0;
+  };
+
+  removeEmptyAmountRows = () => {
+    const { order, items, removeFromBasket } = this.props;
+    let removed = 0;
+    for (const name of [...order]) {
+      if (this.isAmountEmpty(items[name])) {
+        removeFromBasket(name);
+        removed += 1;
+      }
+    }
+    if (removed) {
+      this.props.showSuccess(this.context.t('basketRemovedEmpty', String(removed)));
+    } else {
+      this.props.showError(this.context.t('basketNothingNew'));
+    }
   };
 
   removeNonBidding = () => {
@@ -369,7 +400,7 @@ class AuctionBasket extends Component {
     const { t } = this.context;
     const { order, items, updateBasketItem } = this.props;
     const { rowMeta } = this.state;
-    // Use first bidding row that has amounts as the template, else first row with amounts.
+    // Use first bidding row that has amounts as the template.
     let template = null;
     for (const name of order) {
       const item = items[name];
@@ -385,7 +416,10 @@ class AuctionBasket extends Component {
     let updated = 0;
     for (const name of order) {
       const meta = rowMeta[name] || {};
-      if (meta.state === 'BIDDING' && !meta.error) {
+      const item = items[name] || {};
+      // Only fill bidding rows that are still empty — do not overwrite
+      // amounts the user already set, and do not force re-bids.
+      if (meta.state === 'BIDDING' && !meta.error && this.isAmountEmpty(item)) {
         updateBasketItem(name, {
           bidAmount: template.bidAmount,
           blindAmount: template.blindAmount,
@@ -395,6 +429,8 @@ class AuctionBasket extends Component {
     }
     if (updated) {
       this.props.showSuccess(t('basketAppliedAmounts', String(updated)));
+    } else {
+      this.props.showError(t('basketNothingNew'));
     }
   };
 
@@ -540,6 +576,13 @@ class AuctionBasket extends Component {
             </button>
             <button
               type="button"
+              className="auction-basket__btn auction-basket__btn--secondary"
+              onClick={this.removeEmptyAmountRows}
+            >
+              {t('basketRemoveEmpty')}
+            </button>
+            <button
+              type="button"
               className="auction-basket__btn auction-basket__btn--danger"
               onClick={() => {
                 this.props.clearBasket();
@@ -627,6 +670,9 @@ class AuctionBasket extends Component {
 
           <p className="auction-basket__help">
             {t('basketBiddingOnlyHelp')}
+          </p>
+          <p className="auction-basket__help">
+            {t('basketSkipEmptyHelp')}
           </p>
 
           {!order.length ? (
@@ -742,9 +788,14 @@ class AuctionBasket extends Component {
           <span>{t('basketReviewHelp')}</span>
         </div>
 
-        {totals.notBiddingCount > 0 && (
+        {(totals.notBiddingCount > 0 || totals.skippedEmptyCount > 0) && (
           <div className="auction-basket__warn-box">
-            {t('basketSkipNonBidding', String(totals.notBiddingCount), String(totals.validCount))}
+            {totals.notBiddingCount > 0 && (
+              <div>{t('basketSkipNonBidding', String(totals.notBiddingCount), String(totals.validCount))}</div>
+            )}
+            {totals.skippedEmptyCount > 0 && (
+              <div>{t('basketSkipEmptyReview', String(totals.skippedEmptyCount), String(totals.validCount))}</div>
+            )}
           </div>
         )}
 
