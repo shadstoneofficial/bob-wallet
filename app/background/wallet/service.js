@@ -1208,11 +1208,14 @@ class WalletService {
 
       const bidHns = Number(displayBalance(entry.bid));
       const lockupHns = Number(displayBalance(entry.lockup));
-      if (!(bidHns > 0) || !Number.isFinite(bidHns)) {
+      if (!Number.isFinite(bidHns) || bidHns < 0) {
         throw new Error(`Invalid bid amount for ${name}.`);
       }
-      if (!(lockupHns >= bidHns) || !Number.isFinite(lockupHns)) {
+      if (!Number.isFinite(lockupHns) || lockupHns < bidHns) {
         throw new Error(`Lockup must be at least the bid for ${name}.`);
+      }
+      if (!(bidHns > 0) && !(lockupHns > 0)) {
+        throw new Error(`Bid or lockup must be greater than zero for ${name}.`);
       }
 
       actions.push(['BID', name, bidHns, lockupHns]);

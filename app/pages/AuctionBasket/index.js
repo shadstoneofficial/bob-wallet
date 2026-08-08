@@ -212,6 +212,17 @@ class AuctionBasket extends Component {
     }
   };
 
+  isAmountOk = (item) => {
+    const bid = Number(item?.bidAmount);
+    const blind = Number(item?.blindAmount || 0);
+    const lockup = bid + blind;
+    // Match single-name Bid Now: true bid may be 0 if blind/lockup > 0.
+    return Number.isFinite(bid) && bid >= 0
+      && Number.isFinite(blind) && blind >= 0
+      && (bid > 0 || blind > 0)
+      && lockup >= bid;
+  };
+
   getRowTotals = (rowMetaOverride) => {
     const { order, items } = this.props;
     const rowMeta = rowMetaOverride || this.state.rowMeta;
@@ -219,22 +230,23 @@ class AuctionBasket extends Component {
     let totalBlind = 0;
     let totalLockup = 0;
     let validCount = 0;
-    let invalidCount = 0;
+    let notBiddingCount = 0;
+    let badAmountCount = 0;
     let earliestHours = null;
+    const validNames = [];
 
     for (const name of order) {
       const item = items[name] || {};
       const meta = rowMeta[name] || {};
-      const bid = Number(item.bidAmount);
+      const bid = Number(item.bidAmount) || 0;
       const blind = Number(item.blindAmount || 0);
       const lockup = bid + blind;
-      const amountsOk = Number.isFinite(bid) && bid > 0
-        && Number.isFinite(blind) && blind >= 0
-        && lockup >= bid;
+      const amountsOk = this.isAmountOk(item);
       const stateOk = !meta.error && meta.state === 'BIDDING';
 
-      if (amountsOk && stateOk) {
+      if (stateOk && amountsOk) {
         validCount += 1;
+        validNames.push(name);
         totalBid += bid;
         totalBlind += blind;
         totalLockup += lockup;
@@ -243,8 +255,10 @@ class AuctionBasket extends Component {
             earliestHours = meta.hoursUntilReveal;
           }
         }
+      } else if (!stateOk) {
+        notBiddingCount += 1;
       } else {
-        invalidCount += 1;
+        badAmountCount += 1;
       }
     }
 
@@ -254,7 +268,9 @@ class AuctionBasket extends Component {
       totalBlind,
       totalLockup,
       validCount,
-      invalidCount,
+      notBiddingCount,
+      badAmountCount,
+      validNames,
       earliestHours,
       feeBuffer,
       needed: totalLockup + feeBuffer,
@@ -265,7 +281,60 @@ class AuctionBasket extends Component {
     if (!this.isHotWalletCapable()) return false;
     if (!this.props.order.length) return false;
     const totals = this.getRowTotals(rowMetaOverride);
-    return totals.validCount > 0 && totals.invalidCount === 0;
+    // Ready when at least one bidding name has valid amounts.
+    // Non-bidding rows are skipped at submit (not blockers).
+    return totals.validCount > 0 && totals.badAmountCount === 0;
+  };
+
+  removeNonBidding = () => {
+    const { order, removeFromBasket } = this.props;
+    const { rowMeta } = this.state;
+    let removed = 0;
+    for (const name of [...order]) {
+      const meta = rowMeta[name];
+      if (!meta || meta.error || meta.state !== 'BIDDING') {
+        removeFromBasket(name);
+        removed += 1;
+      }
+    }
+    if (removed) {
+      this.props.showSuccess(this.context.t('basketRemovedNonBidding', String(removed)));
+    } else {
+      this.props.showError(this.context.t('basketNothingNew'));
+    }
+  };
+
+  applyAmountsToBidding = () => {
+    const { t } = this.context;
+    const { order, items, updateBasketItem } = this.props;
+    const { rowMeta } = this.state;
+    // Use first bidding row that has amounts as the template, else first row with amounts.
+    let template = null;
+    for (const name of order) {
+      const item = items[name];
+      if (this.isAmountOk(item)) {
+        template = item;
+        break;
+      }
+    }
+    if (!template) {
+      this.props.showError(t('basketNeedAmountTemplate'));
+      return;
+    }
+    let updated = 0;
+    for (const name of order) {
+      const meta = rowMeta[name] || {};
+      if (meta.state === 'BIDDING' && !meta.error) {
+        updateBasketItem(name, {
+          bidAmount: template.bidAmount,
+          blindAmount: template.blindAmount,
+        });
+        updated += 1;
+      }
+    }
+    if (updated) {
+      this.props.showSuccess(t('basketAppliedAmounts', String(updated)));
+    }
   };
 
   goReview = async () => {
@@ -297,7 +366,7 @@ class AuctionBasket extends Component {
       showSuccess,
       history,
     } = this.props;
-    const { accepted, submitting, rowMeta } = this.state;
+    const { accepted, submitting } = this.state;
 
     if (submitting) return;
     if (!accepted) {
@@ -309,25 +378,29 @@ class AuctionBasket extends Component {
       return;
     }
 
-    await this.refreshStatuses();
+    const rowMeta = await this.refreshStatuses();
 
     const entries = [];
     for (const name of order) {
       const item = items[name];
-      const meta = this.state.rowMeta[name] || rowMeta[name] || {};
-      const bid = Number(item.bidAmount);
-      const blind = Number(item.blindAmount || 0);
-      if (!(bid > 0) || blind < 0 || meta.error || meta.state !== 'BIDDING') {
-        showError(t('basketFixRowsBeforeReview'));
-        this.setState({ step: 'edit' });
-        return;
+      const meta = rowMeta[name] || {};
+      if (meta.error || meta.state !== 'BIDDING' || !this.isAmountOk(item)) {
+        continue; // skip non-bidding / incomplete rows
       }
+      const bid = Number(item.bidAmount) || 0;
+      const blind = Number(item.blindAmount || 0);
       entries.push({
         name,
         bid: toBaseUnits(bid),
         lockup: toBaseUnits(bid + blind),
         height: meta.height,
       });
+    }
+
+    if (!entries.length) {
+      showError(t('basketFixRowsBeforeReview'));
+      this.setState({ step: 'edit' });
+      return;
     }
 
     this.setState({ submitting: true });
@@ -388,6 +461,21 @@ class AuctionBasket extends Component {
               disabled={this.state.checking}
             >
               {this.state.checking ? t('loading') : t('basketRefreshStatus')}
+            </button>
+            <button
+              type="button"
+              className="auction-basket__btn auction-basket__btn--secondary"
+              onClick={this.removeNonBidding}
+              disabled={this.state.checking}
+            >
+              {t('basketKeepBiddingOnly')}
+            </button>
+            <button
+              type="button"
+              className="auction-basket__btn auction-basket__btn--secondary"
+              onClick={this.applyAmountsToBidding}
+            >
+              {t('basketApplyAmounts')}
             </button>
             <button
               type="button"
@@ -475,6 +563,10 @@ class AuctionBasket extends Component {
             <h3>{t('basketContents')}</h3>
             <span>{t('basketAmountsHint')}</span>
           </div>
+
+          <p className="auction-basket__help">
+            {t('basketBiddingOnlyHelp')}
+          </p>
 
           {!order.length ? (
             <div className="auction-basket__empty">{t('basketEmpty')}</div>
@@ -583,6 +675,12 @@ class AuctionBasket extends Component {
           <span>{t('basketReviewHelp')}</span>
         </div>
 
+        {totals.notBiddingCount > 0 && (
+          <div className="auction-basket__warn-box">
+            {t('basketSkipNonBidding', String(totals.notBiddingCount), String(totals.validCount))}
+          </div>
+        )}
+
         <div className="auction-basket__summary">
           <div className="auction-basket__stat">
             <label>{t('basketNamesCount')}</label>
@@ -632,7 +730,7 @@ class AuctionBasket extends Component {
               </tr>
             </thead>
             <tbody>
-              {order.map((name) => {
+              {totals.validNames.map((name) => {
                 const item = items[name] || {};
                 const meta = this.state.rowMeta[name] || {};
                 const bid = Number(item.bidAmount) || 0;

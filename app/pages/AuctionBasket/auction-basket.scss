@@ -144,6 +144,13 @@
     font-style: italic;
   }
 
+  &__help {
+    margin: 0 0 0.75rem;
+    font-size: 0.8rem;
+    line-height: 1.4;
+    color: $manatee-gray;
+  }
+
   &__table-wrap {
     overflow-x: auto;
   }
@@ -332,7 +339,8 @@
 body.bob-theme-dark {
   .auction-basket {
     &__intro p,
-    &__panel-header span {
+    &__panel-header span,
+    &__help {
       color: rgba($white, 0.55);
     }
 
