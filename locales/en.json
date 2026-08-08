@@ -269,6 +269,7 @@
   "basketNeedAmountTemplate": "Set bid/blind on one row first, then copy to all bidding names.",
   "basketAppliedAmounts": "Applied amounts to %s bidding name(s).",
   "basketSkipNonBidding": "Skipping %s name(s) not in bidding. Submitting %s bid(s) only.",
+  "basketImportingHelp": "First-time bids on a name may trigger a short wallet rescan so SPV can load auction data. Wait for Synchronized before retrying if an import error appears.",
   "headingReceive": "Receive",
   "headingSend": "Send",
   "headingSettings": "Settings",

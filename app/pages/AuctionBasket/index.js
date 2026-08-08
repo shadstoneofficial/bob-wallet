@@ -171,9 +171,10 @@ class AuctionBasket extends Component {
           const state = info.info?.state || (info.start ? 'AVAILABLE' : 'UNKNOWN');
           const bidding = isBidding(domain);
           const hoursUntilReveal = info.info?.stats?.hoursUntilReveal;
+          // Always keep import height when known. SPV wallets need importname
+          // even if the UI already loaded name info from the node.
           const height = info.info?.height != null ? info.info.height - 1 : null;
-          const walletHasName = !!this.props.names?.[name]?.walletHasName
-            || !!this.props.names?.[name]?.info;
+          const walletHasName = !!this.props.names?.[name]?.walletHasName;
 
           let error = '';
           if (!bidding) {
@@ -190,7 +191,7 @@ class AuctionBasket extends Component {
             state: bidding ? 'BIDDING' : state,
             error,
             hoursUntilReveal,
-            height: walletHasName ? null : height,
+            height,
             walletHasName,
             targetSpacing: net.pow.targetSpacing,
           };
@@ -756,6 +757,7 @@ class AuctionBasket extends Component {
             <li>{t('basketWarningRevealLater')}</li>
             <li>{t('basketWarningNoBlockGuarantee')}</li>
             <li>{t('basketWarningBiddingOnly')}</li>
+            <li>{t('basketImportingHelp')}</li>
           </ul>
         </div>
 

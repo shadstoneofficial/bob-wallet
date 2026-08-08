@@ -212,11 +212,38 @@ async function assertAuctionTracked(name) {
   } catch (e) {
     if (e.message.match(/auction not found/i)) {
       throw new Error(
-        `Auction data for ${name}/ is not available in this wallet after rescan. Use Rescan Auction and wait for it to finish, then try again.`
+        `This wallet does not have auction history for ${name}/ yet (common in SPV). ` +
+        `Bob will try to import it automatically for basket bids. ` +
+        `If this keeps happening, open ${name}/ and use Rescan Auction, wait until sync finishes, then retry.`
       );
     }
     throw e;
   }
+}
+
+async function ensureAuctionTracked(name, importHeight = null) {
+  try {
+    await walletClient.getAuctionInfo(name);
+    return { imported: false };
+  } catch (e) {
+    if (!e.message.match(/auction not found/i)) {
+      throw e;
+    }
+  }
+
+  let height = importHeight;
+  if (height == null) {
+    const result = await nodeClient.getNameInfo(name);
+    if (result?.info?.height == null) {
+      throw new Error(
+        `Cannot bid on ${name}/: no on-chain auction height found. The name may not be in bidding yet.`
+      );
+    }
+    height = result.info.height - 1;
+  }
+
+  await walletClient.importName(name, height);
+  return { imported: true, height };
 }
 
 export const sendOpen = name => async (dispatch) => {
@@ -282,13 +309,35 @@ export const sendBidMany = (entries) => async (dispatch, getState) => {
     dispatch(getPassphrase(resolve, reject));
   });
 
-  // Import any SPV name state once, then sync once (not per name).
-  const needsImport = entries.filter((e) => e.height != null && e.name);
-  if (needsImport.length) {
+  // SPV wallets often lack auction history for names you have not bid on yet.
+  // Import any missing names, then wait for one rescan before building the batch.
+  const missing = [];
+  for (const entry of entries) {
+    try {
+      await walletClient.getAuctionInfo(entry.name);
+    } catch (e) {
+      if (!e.message.match(/auction not found/i)) {
+        throw e;
+      }
+      missing.push(entry);
+    }
+  }
+
+  if (missing.length) {
     try {
       await dispatch(startWalletSync());
-      for (const entry of needsImport) {
-        await walletClient.importName(entry.name, entry.height);
+      for (const entry of missing) {
+        let height = entry.height;
+        if (height == null) {
+          const result = await nodeClient.getNameInfo(entry.name);
+          if (result?.info?.height == null) {
+            throw new Error(
+              `Cannot import ${entry.name}/ for bidding: no auction height from the node.`
+            );
+          }
+          height = result.info.height - 1;
+        }
+        await walletClient.importName(entry.name, height);
       }
       await dispatch(waitForWalletSync());
     } catch (e) {
@@ -298,8 +347,26 @@ export const sendBidMany = (entries) => async (dispatch, getState) => {
     }
   }
 
+  // Confirm every name is tracked after import/rescan.
+  const stillMissing = [];
   for (const entry of entries) {
-    await assertAuctionTracked(entry.name);
+    try {
+      await walletClient.getAuctionInfo(entry.name);
+    } catch (e) {
+      if (e.message.match(/auction not found/i)) {
+        stillMissing.push(entry.name);
+      } else {
+        throw e;
+      }
+    }
+  }
+
+  if (stillMissing.length) {
+    throw new Error(
+      `Wallet still missing auction data for: ${stillMissing.map((n) => `${n}/`).join(', ')}. ` +
+      `Wait until the top-right status shows Synchronized (not still syncing), ` +
+      `then open each name and use Rescan Auction if needed, and retry the basket.`
+    );
   }
 
   const payload = entries.map((entry) => ({
