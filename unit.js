@@ -43,6 +43,7 @@ window.bobElectron = {
 require('./app/pages/Auction/tests/RepairBid.spec');
 require('./app/pages/MyDomain/tests/Records.spec');
 require('./app/background/wallet/tests/liquidityHtlc.spec');
+require('./app/background/wallet/tests/registerValidation.spec');
 require('./app/deeplink/tests/index.spec');
 require('./app/utils/tests/paidNameTransfer.spec');
 require('./app/utils/tests/shakedexListingAction.spec');

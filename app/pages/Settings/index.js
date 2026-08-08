@@ -1180,6 +1180,17 @@ export default class Settings extends Component {
                     <span>Default</span>
                     <strong>{this.state.spvHelperApiDefaultBaseUrl}</strong>
                   </div>
+                  <div className="settings__channel-card__status">
+                    Review the provider-neutral SPV Helper API v1 documentation and technical standard.
+                  </div>
+                  <div className="settings__channel-card__actions">
+                    <Anchor href="https://bobwallet.org/docs/spv-helper-api-v1">
+                      SPV Helper API v1 Guide
+                    </Anchor>
+                    <Anchor href="https://bobwallet.org/standards/bob-spv-helper-api-v1.md">
+                      Markdown Standard
+                    </Anchor>
+                  </div>
                   <input
                     className="settings__channel-card__input"
                     value={this.state.spvHelperApiDraftBaseUrl}

@@ -1,7 +1,6 @@
 import { WalletClient } from 'hsd/lib/client';
 import BigNumber from 'bignumber.js';
 import crypto from 'crypto';
-import https from 'https';
 const secp256k1 = require('bcrypto/lib/secp256k1');
 const Validator = require('bval');
 import { ConnectionTypes, getConnection } from '../connections/service';
@@ -24,6 +23,10 @@ import {STOP, SET_CUSTOM_RPC_STATUS} from '../../ducks/nodeReducer';
 import {showSuccess, showError} from '../../ducks/notifications';
 import {getNamesForRegisterAll} from "./create-register-all";
 import {getStats} from "./stats";
+import {
+  applyRegisterAuthority,
+  getRegisterAuthority,
+} from './registerValidation';
 import {get, put} from "../db/service";
 import hsdLedger from 'hsd-ledger';
 import {NAME_STATES} from "../../constants/names";
@@ -1161,9 +1164,14 @@ class WalletService {
     },
   );
 
-  sendRegister = (name) => this._walletProxy(
-    () => this._executeRPC('createupdate', [name, {records: []}]),
-  );
+  sendRegister = async (name) => {
+    const {wdb} = this.node;
+    const wallet = await wdb.get(this.name);
+
+    return this._walletProxy(
+      () => this._createVerifiedRegisterMTX(wallet, name),
+    );
+  };
 
   sendUpdate = (name, json) => this._walletProxy(
     () => this._executeRPC('createupdate', [name, json]),
@@ -1212,100 +1220,38 @@ class WalletService {
   };
 
   _createVerifiedRegisterMTX = async (wallet, name) => {
-    const mtx = await wallet.createUpdate(
-      name,
-      Resource.fromJSON({records: []}),
-      {paths: true},
-    );
+    const options = {paths: true};
+    const unlock = await wallet.fundLock.lock();
 
-    await this._repairRegisterValueFromChain(name, mtx);
-
-    return mtx;
-  }
-
-  _repairRegisterValueFromChain = async (name, mtx) => {
-    if (this.networkName !== NETWORKS.MAINNET)
-      return;
-
-    const nameHash = hashName(Buffer.from(name, 'ascii'));
-    const registerOutput = mtx.outputs.find((output) => {
-      return output.covenant
-        && output.covenant.type === types.REGISTER
-        && output.covenant.getHash(0).equals(nameHash);
-    });
-
-    if (!registerOutput)
-      return;
-
-    const verifiedValue = await this._fetchShakeshiftNameValue(name);
-
-    if (!Number.isSafeInteger(verifiedValue) || verifiedValue <= 0) {
-      throw new Error(
-        `Could not verify the final auction price for ${name}/ before registering. ` +
-        'Please try again later or use a full-node wallet for this register.'
+    try {
+      const mtx = await wallet.makeUpdate(
+        name,
+        Resource.fromJSON({records: []}),
       );
-    }
-
-    const delta = verifiedValue - registerOutput.value;
-
-    if (delta === 0)
-      return;
-
-    const changeOutput = mtx.outputs.find((output) => {
-      return output !== registerOutput
-        && output.covenant
-        && output.covenant.type === types.NONE;
-    });
-
-    if (!changeOutput)
-      throw new Error(`Could not adjust change while registering ${name}/.`);
-
-    if (changeOutput.value < delta) {
-      throw new Error(
-        `The verified final auction price for ${name}/ is higher than Bob's local SPV state, ` +
-        'and there is not enough change in the transaction to repair it safely.'
-      );
-    }
-
-    registerOutput.value = verifiedValue;
-    changeOutput.value -= delta;
-  }
-
-  _fetchShakeshiftNameValue = async (name) => {
-    const html = await new Promise((resolve, reject) => {
-      const req = https.get(
-        `https://shakeshift.com/name/${encodeURIComponent(name)}`,
-        {timeout: 8000},
-        (res) => {
-          if (res.statusCode !== 200) {
-            res.resume();
-            reject(new Error(`Shakeshift returned HTTP ${res.statusCode}`));
-            return;
-          }
-
-          let body = '';
-          res.setEncoding('utf8');
-          res.on('data', (chunk) => {
-            body += chunk;
-            if (body.length > 500000)
-              req.destroy(new Error('Shakeshift response was too large.'));
-          });
-          res.on('end', () => resolve(body));
-        },
-      );
-
-      req.on('timeout', () => {
-        req.destroy(new Error('Timed out while verifying auction price.'));
+      const nameHash = hashName(Buffer.from(name, 'ascii'));
+      const outputIndex = mtx.outputs.findIndex((output) => {
+        return output.covenant
+          && output.covenant.type === types.REGISTER
+          && output.covenant.getHash(0).equals(nameHash);
       });
-      req.on('error', reject);
-    });
 
-    const match = html.match(/<span>Name Value<\/span>\s*<span[^>]*data-value="(\d+)"/);
+      if (outputIndex === -1)
+        throw new Error(`Cannot safely register ${name}/: the local wallet did not create a REGISTER covenant.`);
 
-    if (!match)
-      return null;
+      const nameInfo = await this.nodeService.getNameInfo(name);
+      const authority = getRegisterAuthority(
+        name,
+        nameHash.toString('hex'),
+        nameInfo,
+      );
 
-    return Number(match[1]);
+      applyRegisterAuthority(name, mtx, outputIndex, authority);
+
+      await wallet.fill(mtx, options);
+      return wallet.finalize(mtx, options);
+    } finally {
+      unlock();
+    }
   }
 
   transferMany = async (names, address) => {
