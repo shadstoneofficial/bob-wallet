@@ -100,7 +100,7 @@ class ConnectLedger extends React.Component {
         n
       );
       await this.props.completeInitialization(this.props.walletName, this.props.passphrase);
-      this.props.history.push('/account');
+      this.props.history.push('/overview');
     }, 2000);
   };
 

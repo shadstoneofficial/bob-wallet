@@ -311,6 +311,24 @@ export const sendRevealAll = () => async (dispatch) => {
   return await walletClient.sendRevealAll();
 };
 
+export const sendRevealMany = (names) => async (dispatch) => {
+  if (!names || !names.length) {
+    return null;
+  }
+
+  await new Promise((resolve, reject) => {
+    dispatch(getPassphrase(resolve, reject));
+  });
+
+  for (const name of names) {
+    if (name) {
+      await namesDb.storeName(name);
+    }
+  }
+
+  return await walletClient.sendRevealMany(names);
+};
+
 export const sendRegisterAll = () => async (dispatch) => {
   const passphrase = await new Promise((resolve, reject) => {
     dispatch(getPassphrase(resolve, reject));

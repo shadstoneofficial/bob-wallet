@@ -12,6 +12,7 @@ const initialState = {
     REVEAL: [],
     CLOSED: [],
     TRANSFER: [],
+    NEED_REVEAL: [],
   },
 };
 
@@ -51,6 +52,7 @@ export const getYourBids = () => async (dispatch) => {
       REVEAL: filter.REVEAL.filter(id => !!map[id]),
       CLOSED: filter.CLOSED.filter(id => !!map[id]),
       TRANSFER: filter.TRANSFER.filter(id => !!map[id]),
+      NEED_REVEAL: (filter.NEED_REVEAL || []).filter(id => !!map[id]),
     }));
   }
 };

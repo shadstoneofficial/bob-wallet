@@ -113,6 +113,12 @@ class Sidebar extends Component {
             </NavLink>
           }
           <NavLink
+            to="/overview"
+            className={isActive => `sidebar__action ${isActive ? "sidebar__action--selected" : ''}`}
+          >
+            {t('headingOverview')}
+          </NavLink>
+          <NavLink
             to="/account"
             className={isActive => `sidebar__action ${isActive ? "sidebar__action--selected" : ''}`}
           >

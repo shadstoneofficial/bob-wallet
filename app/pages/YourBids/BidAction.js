@@ -15,6 +15,7 @@ class BidAction extends Component {
     getNameInfo: PropTypes.func.isRequired,
     sendRedeem: PropTypes.func.isRequired,
     sendRegister: PropTypes.func.isRequired,
+    sendReveal: PropTypes.func.isRequired,
     showSuccess: PropTypes.func.isRequired,
     showError: PropTypes.func.isRequired,
   };
@@ -43,6 +44,23 @@ class BidAction extends Component {
 
   isSold = () => isClosed(this.props.domain);
 
+  hasUnrevealedOwnBid = () => {
+    const domain = this.props.domain || {};
+    const bids = domain.bids || [];
+    const reveals = domain.reveals || [];
+    const nameHeight = domain.info?.height ?? 0;
+
+    const hasOwnBid = bids.some(({bid, height}) => (
+      bid?.own && height >= nameHeight
+    ));
+    if (!hasOwnBid) {
+      return false;
+    }
+
+    const hasOwnReveal = reveals.some(reveal => reveal?.bid?.own);
+    return !hasOwnReveal && domain.pendingOperation !== 'REVEAL';
+  };
+
   sendRegister = async () => {
     try {
       const res = await this.props.sendRegister();
@@ -65,6 +83,17 @@ class BidAction extends Component {
     }
   };
 
+  sendReveal = async () => {
+    try {
+      const res = await this.props.sendReveal();
+      if (res !== null) {
+        this.props.showSuccess(this.context.t('revealSuccess'));
+      }
+    } catch (e) {
+      this.props.showError(e.message);
+    }
+  };
+
   render() {
     const { domain, history, name } = this.props;
     const {t} = this.context;
@@ -72,9 +101,6 @@ class BidAction extends Component {
     if (!domain) {
       return 'N/A';
     }
-
-    const info = domain.info || {};
-    const stats = info.stats || {};
 
     if (this.isOwned()) {
       return (
@@ -97,6 +123,22 @@ class BidAction extends Component {
       return (
         <div className="bid-action">
           { this.renderRedeem() }
+        </div>
+      );
+    }
+
+    if (this.isReveal() && this.hasUnrevealedOwnBid()) {
+      return (
+        <div className="bid-action">
+          <div
+            className="bid-action__link"
+            onClick={e => {
+              e.stopPropagation();
+              this.sendReveal();
+            }}
+          >
+            {t('reveal')}
+          </div>
         </div>
       );
     }
@@ -172,6 +214,7 @@ export default withRouter(
     (dispatch, ownProps) => ({
       sendRedeem: () => dispatch(nameActions.sendRedeem(ownProps.name)),
       sendRegister: () => dispatch(nameActions.sendRegister(ownProps.name)),
+      sendReveal: () => dispatch(nameActions.sendReveal(ownProps.name)),
       showError: (message) => dispatch(showError(message)),
       showSuccess: (message) => dispatch(showSuccess(message)),
       getNameInfo: (name) => dispatch(nameActions.getNameInfo(name)),

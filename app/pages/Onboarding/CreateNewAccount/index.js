@@ -228,7 +228,7 @@ class CreateNewAccount extends Component {
                   this.state.name,
                   this.state.passphrase
                 );
-                this.props.history.push('/account');
+                this.props.history.push('/overview');
               } catch (e) {
                 console.error(e);
                 this.setState({isLoading: false});

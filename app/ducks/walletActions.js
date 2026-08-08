@@ -151,6 +151,7 @@ export const unlockWallet = (name, passphrase) => async (dispatch, getState) => 
       REVEAL: [],
       CLOSED: [],
       TRANSFER: [],
+      NEED_REVEAL: [],
     }))
   }
 

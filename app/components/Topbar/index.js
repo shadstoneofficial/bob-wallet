@@ -94,7 +94,7 @@ class Topbar extends Component {
           className="topbar__logoHeader__backArrow"
           onClick={() => history.goBack()}
         />
-        <Logo onClick={() => history.push('/account')} />
+        <Logo onClick={() => history.push('/overview')} />
       </div>
     );
   }

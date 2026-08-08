@@ -1008,6 +1008,8 @@ class WalletService {
       [NAME_STATES.REVEAL]: [],
       [NAME_STATES.CLOSED]: [],
       [NAME_STATES.TRANSFER]: [],
+      // Own bids still unrevealed while the auction is in the reveal period.
+      NEED_REVEAL: [],
     };
 
     const map = {};
@@ -1017,6 +1019,7 @@ class WalletService {
     for (let i = 0; i < bids.length; i++) {
       const bid = bids[i];
       const name = bid.name.toString('utf-8');
+      const bidId = bid.prevout.hash.toString('hex') + bid.prevout.index;
 
       let json;
 
@@ -1036,8 +1039,19 @@ class WalletService {
         case NAME_STATES.REVEAL:
         case NAME_STATES.CLOSED:
         case NAME_STATES.TRANSFER:
-          index[state].push(bid.prevout.hash.toString('hex') + bid.prevout.index);
+          index[state].push(bidId);
           break;
+      }
+
+      // Unspent bid coin means the bid has not been revealed yet.
+      if (state === NAME_STATES.REVEAL && bid.own) {
+        const bidCoin = await wallet.getUnspentCoin(
+          bid.prevout.hash,
+          bid.prevout.index
+        );
+        if (bidCoin) {
+          index.NEED_REVEAL.push(bidId);
+        }
       }
     }
 
@@ -1331,6 +1345,25 @@ class WalletService {
     // Only call once now, see later about repeated calls
     return this._walletProxy(
       () => this._executeRPC('createbatch', [[['REVEAL']], {paths: true}]),
+    );
+  }
+
+  sendRevealMany = async (names) => {
+    if (!names || !names.length) {
+      throw new Error('Nothing to do.');
+    }
+
+    const uniqueNames = [...new Set(names.filter(Boolean))];
+    if (!uniqueNames.length) {
+      throw new Error('Nothing to do.');
+    }
+
+    const actions = uniqueNames.map(name => ['REVEAL', name]);
+    const chunkSize = consensus.MAX_BLOCK_RENEWALS / 6;
+    const firstChunk = actions.slice(0, chunkSize);
+
+    return this._walletProxy(
+      () => this._executeRPC('createbatch', [firstChunk, {paths: true}]),
     );
   }
 
@@ -3008,6 +3041,7 @@ const methods = {
   sendReveal: service.sendReveal,
   sendRedeem: service.sendRedeem,
   sendRevealAll: service.sendRevealAll,
+  sendRevealMany: service.sendRevealMany,
   sendRedeemAll: service.sendRedeemAll,
   sendRegisterAll: service.sendRegisterAll,
   sendRenewal: service.sendRenewal,

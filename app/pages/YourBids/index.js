@@ -19,7 +19,7 @@ import c from "classnames";
 import * as nameActions from "../../ducks/names";
 import * as notifActions from "../../ducks/notifications";
 import dbClient from "../../utils/dbClient";
-import {NAME_STATES} from "../../constants/names";
+import {BIDS_FILTER_NEED_REVEAL, NAME_STATES} from "../../constants/names";
 import {I18nContext} from "../../utils/i18n";
 
 const analytics = aClientStub(() => require('electron').ipcRenderer);
@@ -37,9 +37,13 @@ class YourBids extends Component {
   static propTypes = {
     order: PropTypes.array.isRequired,
     map: PropTypes.object.isRequired,
+    filter: PropTypes.object.isRequired,
+    history: PropTypes.object.isRequired,
+    match: PropTypes.object.isRequired,
     getYourBids: PropTypes.func.isRequired,
     sendRedeemAll: PropTypes.func.isRequired,
     sendRevealAll: PropTypes.func.isRequired,
+    sendRevealMany: PropTypes.func.isRequired,
     showError: PropTypes.func.isRequired,
     showSuccess: PropTypes.func.isRequired,
   };
@@ -53,6 +57,8 @@ class YourBids extends Component {
     itemsPerPage: 10,
     query: '',
     loading: true,
+    selectedIds: {},
+    isRevealingSelected: false,
   };
 
   async componentDidMount() {
@@ -64,6 +70,19 @@ class YourBids extends Component {
       itemsPerPage: itemsPerPage || 10,
       activeFilter: this.props.match.params.filterType || '',
     });
+  }
+
+  componentDidUpdate(prevProps) {
+    const nextFilter = this.props.match.params.filterType || '';
+    const prevFilter = prevProps.match.params.filterType || '';
+    if (nextFilter !== prevFilter && nextFilter !== this.state.activeFilter) {
+      this.setState({
+        activeFilter: nextFilter,
+        currentPageIndex: 0,
+        selectedIds: {},
+      });
+      this.fuse = null;
+    }
   }
 
   handleOnChange = async e => {
@@ -129,19 +148,128 @@ class YourBids extends Component {
     }
   };
 
+  onRevealSelected = async () => {
+    const {t} = this.context;
+    const {
+      showError,
+      showSuccess,
+      sendRevealMany,
+      getYourBids,
+      map,
+    } = this.props;
+    const {selectedIds, isRevealingSelected} = this.state;
+
+    if (isRevealingSelected) {
+      return;
+    }
+
+    const names = [...new Set(
+      Object.keys(selectedIds)
+        .filter(id => selectedIds[id])
+        .map(id => map[id]?.name)
+        .filter(Boolean)
+    )];
+
+    if (!names.length) {
+      return;
+    }
+
+    this.setState({ isRevealingSelected: true });
+
+    try {
+      const res = await sendRevealMany(names);
+      if (res !== null) {
+        showSuccess(t('revealSelectedSuccess', String(names.length)));
+        this.setState({ selectedIds: {} });
+        await getYourBids();
+      }
+    } catch (e) {
+      showError(e.message);
+    } finally {
+      this.setState({ isRevealingSelected: false });
+    }
+  };
+
+  isNeedRevealFilter = () => this.state.activeFilter === BIDS_FILTER_NEED_REVEAL;
+
+  getBidId = (bid) => {
+    if (!bid) return null;
+    if (bid.prevout?.hash != null && bid.prevout?.index != null) {
+      return `${bid.prevout.hash}${bid.prevout.index}`;
+    }
+    // Fallback for already-stringified id keys used in the filter map.
+    return null;
+  };
+
   getCurrentBids() {
     const {order, map, filter} = this.props;
     const {activeFilter} = this.state;
 
     if (activeFilter) {
-      return filter[activeFilter]?.map(id => map[id]) || [];
-    } else {
-      return order?.map(id => map[id]) || [];
+      return (filter[activeFilter] || []).map(id => map[id]).filter(Boolean);
     }
+    return order?.map(id => map[id]).filter(Boolean) || [];
   }
+
+  setFilter = (value) => {
+    this.setState({
+      activeFilter: value,
+      currentPageIndex: 0,
+      selectedIds: {},
+      query: '',
+    });
+    this.fuse = null;
+    const path = value ? `/bids/${value}` : '/bids';
+    if (this.props.history.location.pathname !== path) {
+      this.props.history.replace(path);
+    }
+  };
+
+  toggleSelected = (bidId, e) => {
+    if (e) {
+      e.stopPropagation();
+    }
+    if (!bidId) return;
+    this.setState(state => ({
+      selectedIds: {
+        ...state.selectedIds,
+        [bidId]: !state.selectedIds[bidId],
+      },
+    }));
+  };
+
+  toggleSelectAllVisible = (visibleBids, e) => {
+    if (e) {
+      e.stopPropagation();
+    }
+    const ids = visibleBids
+      .map(bid => {
+        // Prefer filter list ids from map keys
+        const fromProps = Object.keys(this.props.map).find(id => this.props.map[id] === bid);
+        return fromProps || this.getBidId(bid);
+      })
+      .filter(Boolean);
+
+    const allSelected = ids.length > 0 && ids.every(id => this.state.selectedIds[id]);
+    const next = { ...this.state.selectedIds };
+    ids.forEach(id => {
+      if (allSelected) {
+        delete next[id];
+      } else {
+        next[id] = true;
+      }
+    });
+    this.setState({ selectedIds: next });
+  };
+
+  getSelectedCount = () =>
+    Object.keys(this.state.selectedIds).filter(id => this.state.selectedIds[id]).length;
 
   render() {
     const {t} = this.context;
+    const selectedCount = this.getSelectedCount();
+    const needRevealMode = this.isNeedRevealFilter();
+
     return (
       <div className="bids">
         <div className="bids__top">
@@ -151,6 +279,17 @@ class YourBids extends Component {
             value={this.state.query}
           />
           <div className="bids__top__actions">
+            {needRevealMode && selectedCount > 0 && (
+              <button
+                className="bids__top__btn bids__top__btn--secondary"
+                onClick={this.onRevealSelected}
+                disabled={this.state.isRevealingSelected}
+              >
+                {this.state.isRevealingSelected
+                  ? t('submitting')
+                  : t('revealSelected', String(selectedCount))}
+              </button>
+            )}
             <button
               className="bids__top__btn"
               onClick={this.onRevealAll}
@@ -175,10 +314,23 @@ class YourBids extends Component {
           {this.renderFilter(t('all'), '')}
           {this.renderFilter(t('bidding'), NAME_STATES.BIDDING)}
           {this.renderFilter(t('reveal'), NAME_STATES.REVEAL)}
+          {this.renderFilter(t('awaitingReveal'), BIDS_FILTER_NEED_REVEAL)}
           {this.renderFilter(t('closed'), NAME_STATES.CLOSED)}
         </div>
-        <Table className="bids-table">
-          <Header />
+        {needRevealMode && (
+          <div className="bids__hint">
+            {t('awaitingRevealHint')}
+          </div>
+        )}
+        <Table className={c('bids-table', { 'bids-table--selectable': needRevealMode })}>
+          <Header
+            selectable={needRevealMode}
+            allSelected={false}
+            onToggleAll={(e) => {
+              const yourBids = this.getCurrentBids();
+              this.toggleSelectAllVisible(yourBids, e);
+            }}
+          />
           {this.renderRows()}
           {this.renderControls()}
         </Table>
@@ -189,14 +341,17 @@ class YourBids extends Component {
   renderFilter = (label, value) => {
     const {activeFilter} = this.state;
     const { filter, order } = this.props;
-    const count = value ? filter[value].length : order.length;
+    const count = value
+      ? (filter[value] || []).length
+      : order.length;
 
     return (
       <div
         className={c('bids__filter', {
           'bids__filter--active': activeFilter === value,
+          'bids__filter--urgent': value === BIDS_FILTER_NEED_REVEAL && count > 0,
         })}
-        onClick={() => this.setState({ activeFilter: value })}
+        onClick={() => this.setFilter(value)}
       >
         {`${label} (${count})`}
       </div>
@@ -290,9 +445,35 @@ class YourBids extends Component {
     )
   }
 
+  findBidId = (bid) => {
+    if (!bid) return null;
+    const { map } = this.props;
+    for (const id of Object.keys(map)) {
+      if (map[id] === bid) {
+        return id;
+      }
+    }
+    if (bid.prevout) {
+      const hash = typeof bid.prevout.hash === 'string'
+        ? bid.prevout.hash
+        : bid.prevout.hash?.toString?.('hex');
+      if (hash != null && bid.prevout.index != null) {
+        return `${hash}${bid.prevout.index}`;
+      }
+    }
+    return null;
+  };
+
   renderRows() {
     const { history } = this.props;
-    const { query, currentPageIndex: s, itemsPerPage: n, loading } = this.state;
+    const {
+      query,
+      currentPageIndex: s,
+      itemsPerPage: n,
+      loading,
+      selectedIds,
+    } = this.state;
+    const needRevealMode = this.isNeedRevealFilter();
 
     if (loading) {
       return <LoadingResult />;
@@ -304,11 +485,12 @@ class YourBids extends Component {
       return <EmptyResult />;
     }
 
-    if (!this.fuse) {
+    if (!this.fuse || this._fuseBids !== yourBids) {
       this.fuse = new Fuse(yourBids, {
         keys: ['name'],
         threshold: .4,
       });
+      this._fuseBids = yourBids;
     }
 
     const bids = query ? this.fuse.search(query) : yourBids;
@@ -320,15 +502,34 @@ class YourBids extends Component {
     const start = s * n;
     const end = start + n;
 
-    return bids.slice(start, end).map((bid, i) => (
-      <TableRow key={`${bid.name}-${i}`} onClick={() => history.push(`/domain/${bid.name}`)}>
-        <TableItem><BidStatus name={bid.name} /></TableItem>
-        <TableItem>{formatName(bid.name)}</TableItem>
-        <TableItem><BidTimeLeft name={bid.name} /></TableItem>
-        <TableItem>{`${+displayBalance(bid.value)} HNS`}</TableItem>
-        <TableItem><BidAction name={bid.name} /></TableItem>
-      </TableRow>
-    ));
+    return bids.slice(start, end).map((bid, i) => {
+      const bidId = this.findBidId(bid);
+      const checked = !!(bidId && selectedIds[bidId]);
+
+      return (
+        <TableRow
+          key={`${bid.name}-${bidId || i}`}
+          onClick={() => history.push(`/domain/${bid.name}`)}
+        >
+          {needRevealMode && (
+            <TableItem>
+              <input
+                type="checkbox"
+                className="bids-table__checkbox"
+                checked={checked}
+                onClick={(e) => e.stopPropagation()}
+                onChange={(e) => this.toggleSelected(bidId, e)}
+              />
+            </TableItem>
+          )}
+          <TableItem><BidStatus name={bid.name} /></TableItem>
+          <TableItem>{formatName(bid.name)}</TableItem>
+          <TableItem><BidTimeLeft name={bid.name} /></TableItem>
+          <TableItem>{`${+displayBalance(bid.value)} HNS`}</TableItem>
+          <TableItem><BidAction name={bid.name} /></TableItem>
+        </TableRow>
+      );
+    });
   }
 }
 
@@ -343,6 +544,7 @@ export default withRouter(
       getYourBids: () => dispatch(bidsActions.getYourBids()),
       sendRedeemAll: () => dispatch(nameActions.sendRedeemAll()),
       sendRevealAll: () => dispatch(nameActions.sendRevealAll()),
+      sendRevealMany: (names) => dispatch(nameActions.sendRevealMany(names)),
       sendRegisterAll: () => dispatch(nameActions.sendRegisterAll()),
       showError: (message) => dispatch(notifActions.showError(message)),
       showSuccess: (message) => dispatch(notifActions.showSuccess(message)),
@@ -351,12 +553,29 @@ export default withRouter(
 );
 
 class Header extends Component {
+  static propTypes = {
+    selectable: PropTypes.bool,
+    onToggleAll: PropTypes.func,
+  };
+
   static contextType = I18nContext;
 
   render() {
     const {t} = this.context;
+    const {selectable, onToggleAll} = this.props;
     return (
       <HeaderRow>
+        {selectable && (
+          <HeaderItem>
+            <input
+              type="checkbox"
+              className="bids-table__checkbox"
+              title={t('selectAll')}
+              onClick={onToggleAll}
+              onChange={onToggleAll}
+            />
+          </HeaderItem>
+        )}
         <HeaderItem>
           <div>{t('status')}</div>
         </HeaderItem>

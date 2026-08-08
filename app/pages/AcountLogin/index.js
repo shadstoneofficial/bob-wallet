@@ -83,7 +83,7 @@ export default class AccountLogin extends Component {
       } else if (this.props.deeplinkParams && this.props.deeplinkParams.presignJSONString) {
         this.props.history.push('/exchange');
       } else {
-        this.props.history.push('/account');
+        this.props.history.push('/overview');
       }
       await walletClient.lock();
     } catch (error) {

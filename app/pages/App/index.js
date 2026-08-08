@@ -12,6 +12,7 @@ import CreateNewAccount from '../Onboarding/CreateNewAccount';
 import ExistingAccountOptions from '../Onboarding/ExistingAccountOptions';
 import ImportSeedFlow from '../Onboarding/ImportSeedFlow';
 import Account from '../Account';
+import Overview from '../Overview';
 import GetCoins from '../GetCoins';
 import Settings from '../Settings';
 import Auction from '../Auction';
@@ -180,6 +181,12 @@ class App extends Component {
               false,
               true,
             )}
+          />
+          <ProtectedRoute
+            isLocked={isLocked}
+            wallets={wallets}
+            path="/overview"
+            render={this.routeRenderer(t('headingOverview'), Overview)}
           />
           <ProtectedRoute
             isLocked={isLocked}

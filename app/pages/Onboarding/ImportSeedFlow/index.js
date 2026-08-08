@@ -213,7 +213,7 @@ class ImportSeedFlow extends Component {
       await this.props.completeInitialization(name, passphrase);
       await this.props.fetchWallet();
       await this.props.fetchTransactions();
-      this.props.history.push('/account');
+      this.props.history.push('/overview');
     } catch (e) {
       this.props.showError(e.message);
       logger.error(`Error received from ImportSeedFlow - finishFlow]\n\n${e.message}\n${e.stack}\n`);
