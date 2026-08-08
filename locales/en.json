@@ -277,7 +277,7 @@
   "basketSkipEmptyReview": "Skipping %s name(s) with no amounts. Submitting %s bid(s) only.",
   "basketRemoveEmpty": "Remove empty rows",
   "basketRemovedEmpty": "Removed %s name(s) with no bid amounts.",
-  "basketImportingHelp": "First-time bids on a name may trigger a short wallet rescan so SPV can load auction data. Wait for Synchronized before retrying if an import error appears.",
+  "basketImportingHelp": "First-time bids may import auction data and rescan the wallet once (local SPV). Wait until Synchronized before retrying. Do not submit again while Rescanning — that rewinds the wallet further.",
   "headingReceive": "Receive",
   "headingSend": "Send",
   "headingSettings": "Settings",

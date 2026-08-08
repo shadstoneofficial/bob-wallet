@@ -209,9 +209,15 @@ export const stopWalletSync = () => async (dispatch) => {
 
 const WALLET_SYNC_STALL_LIMIT_SECONDS = 180;
 
-export const waitForWalletSync = () => async (dispatch, getState) => {
+/**
+ * @param {number} [stallLimitSeconds] - seconds without progress before failing
+ */
+export const waitForWalletSync = (stallLimitSeconds = WALLET_SYNC_STALL_LIMIT_SECONDS) => async (dispatch, getState) => {
   let lastProgressKey = '';
   let stall = 0;
+  const limit = Number.isFinite(stallLimitSeconds) && stallLimitSeconds > 0
+    ? stallLimitSeconds
+    : WALLET_SYNC_STALL_LIMIT_SECONDS;
 
   for (; ;) {
     const state = getState();
@@ -243,8 +249,10 @@ export const waitForWalletSync = () => async (dispatch, getState) => {
       stall = 0;
     }
 
-    if (stall >= WALLET_SYNC_STALL_LIMIT_SECONDS) {
-      throw new Error('Wallet sync progress has stalled.');
+    if (stall >= limit) {
+      throw new Error(
+        'Wallet sync progress has stalled. Leave Bob open until the top-right status shows Synchronized, then retry. Do not submit another basket while rescanning.'
+      );
     }
 
     await new Promise((r) => setTimeout(r, 1000));

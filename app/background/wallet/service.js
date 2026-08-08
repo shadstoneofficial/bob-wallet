@@ -1667,6 +1667,47 @@ class WalletService {
     this.rescan(start);
   };
 
+  /**
+   * Import several names for SPV auction tracking, then run ONE rescan
+   * from the earliest height. Calling importName() in a loop is harmful:
+   * each call starts its own rescan and rewinds the wallet repeatedly.
+   *
+   * @param {Array<{name: string, height: number}>} entries
+   */
+  importNames = async (entries = []) => {
+    if (!Array.isArray(entries) || !entries.length) {
+      return null;
+    }
+
+    let minHeight = null;
+    const seen = new Set();
+
+    for (const entry of entries) {
+      const name = (entry?.name || '').trim().toLowerCase();
+      if (!name || seen.has(name)) {
+        continue;
+      }
+      seen.add(name);
+
+      await this._executeRPC('importname', [name, null]);
+
+      const h = Number(entry.height);
+      if (Number.isFinite(h)) {
+        if (minHeight == null || h < minHeight) {
+          minHeight = h;
+        }
+      }
+    }
+
+    if (this.nodeService.spv) {
+      // Allow bloom filter / peer filterload to update once for all names.
+      await new Promise(resolve => setTimeout(resolve, 1500));
+    }
+
+    // Single rescan from the earliest auction height (or 0 if unknown).
+    return this.rescan(minHeight == null ? 0 : minHeight);
+  };
+
   rpcGetWalletInfo = async () => {
     return await this._executeRPC('getwalletinfo', []);
   };
@@ -3127,6 +3168,7 @@ const methods = {
   importNonce: service.importNonce,
   zap: service.zap,
   importName: service.importName,
+  importNames: service.importNames,
   rpcGetWalletInfo: service.rpcGetWalletInfo,
   loadTransaction: service.loadTransaction,
   listWallets: service.listWallets,

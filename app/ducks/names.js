@@ -310,7 +310,9 @@ export const sendBidMany = (entries) => async (dispatch, getState) => {
   });
 
   // SPV wallets often lack auction history for names you have not bid on yet.
-  // Import any missing names, then wait for one rescan before building the batch.
+  // CRITICAL: import all missing names first, then run ONE rescan from the
+  // earliest height. Calling importName() per name starts a separate rescan
+  // each time and rewinds the wallet repeatedly (the "fell back 200 blocks" bug).
   const missing = [];
   for (const entry of entries) {
     try {
@@ -324,22 +326,27 @@ export const sendBidMany = (entries) => async (dispatch, getState) => {
   }
 
   if (missing.length) {
+    const toImport = [];
+    for (const entry of missing) {
+      let height = entry.height;
+      if (height == null) {
+        const result = await nodeClient.getNameInfo(entry.name);
+        if (result?.info?.height == null) {
+          throw new Error(
+            `Cannot import ${entry.name}/ for bidding: no auction height from the node.`
+          );
+        }
+        height = result.info.height - 1;
+      }
+      toImport.push({ name: entry.name, height });
+    }
+
     try {
       await dispatch(startWalletSync());
-      for (const entry of missing) {
-        let height = entry.height;
-        if (height == null) {
-          const result = await nodeClient.getNameInfo(entry.name);
-          if (result?.info?.height == null) {
-            throw new Error(
-              `Cannot import ${entry.name}/ for bidding: no auction height from the node.`
-            );
-          }
-          height = result.info.height - 1;
-        }
-        await walletClient.importName(entry.name, height);
-      }
-      await dispatch(waitForWalletSync());
+      // One bloom filter update + ONE rescan from the earliest auction height.
+      await walletClient.importNames(toImport);
+      // Basket rescans can take several minutes over flaky P2P peers.
+      await dispatch(waitForWalletSync(600));
     } catch (e) {
       throw e;
     } finally {
@@ -347,7 +354,7 @@ export const sendBidMany = (entries) => async (dispatch, getState) => {
     }
   }
 
-  // Confirm every name is tracked after import/rescan.
+  // Confirm every name is tracked after the single rescan.
   const stillMissing = [];
   for (const entry of entries) {
     try {
@@ -364,8 +371,9 @@ export const sendBidMany = (entries) => async (dispatch, getState) => {
   if (stillMissing.length) {
     throw new Error(
       `Wallet still missing auction data for: ${stillMissing.map((n) => `${n}/`).join(', ')}. ` +
-      `Wait until the top-right status shows Synchronized (not still syncing), ` +
-      `then open each name and use Rescan Auction if needed, and retry the basket.`
+      `Bob is still catching up after importing those names (local SPV, not the helper). ` +
+      `Leave Bob open until the top-right status is Synchronized and Current Height is near the network tip, ` +
+      `then retry this basket once — do not submit again while it says Rescanning/Synchronizing.`
     );
   }
 
