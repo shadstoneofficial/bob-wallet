@@ -26,6 +26,21 @@ const analytics = aClientStub(() => require('electron').ipcRenderer);
 // Rough fee buffer: ~0.01 HNS per name in base units for preflight balance check.
 const FEE_BUFFER_PER_NAME = 10000;
 
+/** Allow only a decimal amount string (up to 6 places), no scroll-wheel drift. */
+function sanitizeAmountInput(value) {
+  const match = String(value || '').match(/^\d*\.?\d{0,6}/);
+  return match ? match[0] : '';
+}
+
+function normalizeAmountInput(value) {
+  if (value === '' || value == null) return '';
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return '';
+  // Keep integer display when possible (3000 not 3000.000000).
+  if (Number.isInteger(n)) return String(n);
+  return String(n);
+}
+
 class AuctionBasket extends Component {
   static propTypes = {
     order: PropTypes.array.isRequired,
@@ -92,12 +107,21 @@ class AuctionBasket extends Component {
 
     const result = this.props.addNamesToBasket([name]);
     if (result.limited) {
-      this.props.showError(t('basketLimitReached', String(AUCTION_BASKET_LIMIT)));
+      this.notifyBasketFull();
     } else if (result.added) {
       this.setState({ singleName: '' });
     } else if (result.skipped) {
       this.props.showError(t('basketAlreadyAdded', name));
     }
+  };
+
+  notifyBasketFull = () => {
+    const { t } = this.context;
+    const { order } = this.props;
+    // Informational capacity message — not a crash / protocol failure.
+    this.props.showError(
+      t('basketLimitReachedHelp', String(order.length), String(AUCTION_BASKET_LIMIT))
+    );
   };
 
   onAddPaste = () => {
@@ -125,26 +149,62 @@ class AuctionBasket extends Component {
       this.props.showSuccess(t('basketAddedCount', String(result.added)));
     }
     if (result.limited) {
-      this.props.showError(t('basketLimitReached', String(AUCTION_BASKET_LIMIT)));
+      this.notifyBasketFull();
     }
   };
 
-  onAddFromWatchlist = () => {
+  onAddFromWatchlist = async () => {
     const { t } = this.context;
     const names = this.props.watchingNames || [];
     if (!names.length) {
       this.props.showError(t('basketWatchlistEmpty'));
       return;
     }
-    const result = this.props.addNamesToBasket(names);
-    if (result.added) {
-      this.props.showSuccess(t('basketAddedCount', String(result.added)));
-    }
-    if (result.limited) {
-      this.props.showError(t('basketLimitReached', String(AUCTION_BASKET_LIMIT)));
-    }
-    if (!result.added && result.skipped) {
-      this.props.showError(t('basketNothingNew'));
+
+    this.setState({ checking: true });
+    try {
+      // Prefer names currently in BIDDING so watchlist import does not fill
+      // all 20 slots with OPENING / closed names you cannot bid on yet.
+      const bidding = [];
+      for (const name of names) {
+        try {
+          const info = await nodeClient.getNameInfo(name);
+          if (isBidding({
+            start: info.start,
+            info: info.info,
+            pendingOperation: this.props.names?.[name]?.pendingOperation,
+          })) {
+            bidding.push(name);
+          }
+        } catch (e) {
+          // skip lookup failures
+        }
+      }
+
+      if (!bidding.length) {
+        this.props.showError(t('basketWatchlistNoBidding'));
+        return;
+      }
+
+      const result = this.props.addNamesToBasket(bidding);
+      if (result.added) {
+        this.props.showSuccess(
+          t('basketAddedBiddingFromWatchlist', String(result.added), String(bidding.length))
+        );
+        await this.refreshStatuses();
+      }
+      if (result.limited && result.added) {
+        this.props.showSuccess(
+          t('basketFilledWithBidding', String(AUCTION_BASKET_LIMIT))
+        );
+      } else if (result.limited && !result.added) {
+        this.notifyBasketFull();
+      }
+      if (!result.added && result.skipped && !result.limited) {
+        this.props.showError(t('basketNothingNew'));
+      }
+    } finally {
+      this.setState({ checking: false });
     }
   };
 
@@ -619,23 +679,29 @@ class AuctionBasket extends Component {
                         </td>
                         <td>
                           <input
-                            type="number"
-                            min="0"
-                            step="0.01"
+                            type="text"
+                            inputMode="decimal"
+                            placeholder="0"
                             value={item.bidAmount}
                             onChange={(e) => this.props.updateBasketItem(name, {
-                              bidAmount: e.target.value,
+                              bidAmount: sanitizeAmountInput(e.target.value),
+                            })}
+                            onBlur={() => this.props.updateBasketItem(name, {
+                              bidAmount: normalizeAmountInput(item.bidAmount),
                             })}
                           />
                         </td>
                         <td>
                           <input
-                            type="number"
-                            min="0"
-                            step="0.01"
+                            type="text"
+                            inputMode="decimal"
+                            placeholder="0"
                             value={item.blindAmount}
                             onChange={(e) => this.props.updateBasketItem(name, {
-                              blindAmount: e.target.value,
+                              blindAmount: sanitizeAmountInput(e.target.value),
+                            })}
+                            onBlur={() => this.props.updateBasketItem(name, {
+                              blindAmount: normalizeAmountInput(item.blindAmount),
                             })}
                           />
                         </td>

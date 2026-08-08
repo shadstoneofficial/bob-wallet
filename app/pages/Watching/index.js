@@ -204,15 +204,10 @@ class Watching extends Component {
               <button
                 className="watching__import"
                 onClick={() => {
-                  const result = this.props.addToBasket(this.props.names || []);
-                  if (result?.added) {
-                    this.props.showSuccess(t('basketAddedCount', String(result.added)));
-                    this.props.history.push('/auction-basket');
-                  } else if (result?.limited) {
-                    this.props.showError(t('basketLimitReached', String(AUCTION_BASKET_LIMIT)));
-                  } else {
-                    this.props.showError(t('basketNothingNew'));
-                  }
+                  // Basket page prefers bidding-only when using its own button;
+                  // from Watching we still jump to the basket so user can run
+                  // "Add from watchlist" there (status-filtered) after clear.
+                  this.props.history.push('/auction-basket');
                 }}
                 disabled={isImporting || !(this.props.names || []).length}
               >
