@@ -20,6 +20,7 @@ import * as logger from '../../../utils/logClient';
 import { formatTxHash } from '../../../utils/txHash';
 import walletClient from '../../../utils/walletClient';
 import * as walletActions from '../../../ducks/walletActions';
+import { addNamesToBasket } from '../../../ducks/auctionBasket';
 import { clientStub as aClientStub } from '../../../background/analytics/client';
 import {I18nContext} from "../../../utils/i18n";
 
@@ -243,6 +244,24 @@ class BidNow extends Component {
             disabled={!isValid}
           >
             {t('reviewBid')}
+          </button>
+          <button
+            className="domains__bid-now__action__cta"
+            style={{ marginTop: '0.5rem' }}
+            onClick={() => {
+              const name = this.props.domain?.name;
+              if (!name) return;
+              const result = this.props.addToBasket(name);
+              if (result?.added) {
+                this.props.showSuccess(t('basketAddedOne', name));
+              } else if (result?.limited) {
+                this.props.showError(t('basketLimitReached', '20'));
+              } else {
+                this.props.showError(t('basketAlreadyAdded', name));
+              }
+            }}
+          >
+            {t('basketAddThisName')}
           </button>
         </div>
         <div className="domains__bid-now__action domains__bid-now__action--placing-bid">
@@ -472,6 +491,7 @@ export default connect(
     sendBid: (amount, lockup, height) => dispatch(nameActions.sendBid(name, toBaseUnits(amount), toBaseUnits(lockup), height)),
     showError: (message) => dispatch(showError(message)),
     showSuccess: (message) => dispatch(showSuccess(message)),
+    addToBasket: (n) => dispatch(addNamesToBasket([n])),
     fetchPendingTransactions: () => dispatch(walletActions.fetchPendingTransactions()),
     waitForWalletSync: () => dispatch(walletActions.waitForWalletSync()),
     startWalletSync: () => dispatch(walletActions.startWalletSync()),

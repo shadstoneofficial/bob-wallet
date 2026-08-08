@@ -7,6 +7,8 @@ import { HeaderItem, HeaderRow, Table, TableItem, TableRow } from '../../compone
 import BidStatus from '../YourBids/BidStatus';
 import BidTimeLeft from '../YourBids/BidTimeLeft';
 import * as watchingActions from '../../ducks/watching';
+import { addNamesToBasket, AUCTION_BASKET_LIMIT } from '../../ducks/auctionBasket';
+import { showError, showSuccess } from '../../ducks/notifications';
 import BidSearchInput from '../../components/BidSearchInput';
 import Fuse from '../../vendor/fuse';
 import PropTypes from 'prop-types';
@@ -197,6 +199,27 @@ class Watching extends Component {
           <div className="watching__warning-text">
             {this.getText()}
           </div>
+          {
+            !isConfirmingReset && (
+              <button
+                className="watching__import"
+                onClick={() => {
+                  const result = this.props.addToBasket(this.props.names || []);
+                  if (result?.added) {
+                    this.props.showSuccess(t('basketAddedCount', String(result.added)));
+                    this.props.history.push('/auction-basket');
+                  } else if (result?.limited) {
+                    this.props.showError(t('basketLimitReached', String(AUCTION_BASKET_LIMIT)));
+                  } else {
+                    this.props.showError(t('basketNothingNew'));
+                  }
+                }}
+                disabled={isImporting || !(this.props.names || []).length}
+              >
+                {t('basketAddWatchlist')}
+              </button>
+            )
+          }
           {
             !isConfirmingReset && (
               <button
@@ -472,6 +495,9 @@ export default withRouter(
       addNames: (names, network) => dispatch(watchingActions.addNames(names, network)),
       removeName: (name, network) => dispatch(watchingActions.removeName(name, network)),
       reset: (network) => dispatch(watchingActions.reset(network)),
+      addToBasket: (names) => dispatch(addNamesToBasket(names)),
+      showError: (message) => dispatch(showError(message)),
+      showSuccess: (message) => dispatch(showSuccess(message)),
     }),
   )(Watching),
 );

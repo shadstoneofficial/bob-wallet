@@ -1178,6 +1178,58 @@ class WalletService {
     },
   );
 
+  /**
+   * Place multiple bids in one batch transaction via createbatch.
+   * @param {Array<{name: string, bid: number, lockup: number}>} bids
+   *   bid/lockup are in base units (same as sendBid).
+   */
+  sendBidMany = async (bids = []) => {
+    if (!Array.isArray(bids) || !bids.length) {
+      throw new Error('Nothing to do.');
+    }
+
+    const MAX_BASKET = 20;
+    if (bids.length > MAX_BASKET) {
+      throw new Error(`Auction basket is limited to ${MAX_BASKET} names.`);
+    }
+
+    const seen = new Set();
+    const actions = [];
+
+    for (const entry of bids) {
+      const name = (entry?.name || '').trim().toLowerCase();
+      if (!name) {
+        throw new Error('Every basket row needs a name.');
+      }
+      if (seen.has(name)) {
+        throw new Error(`Duplicate name in basket: ${name}`);
+      }
+      seen.add(name);
+
+      const bidHns = Number(displayBalance(entry.bid));
+      const lockupHns = Number(displayBalance(entry.lockup));
+      if (!(bidHns > 0) || !Number.isFinite(bidHns)) {
+        throw new Error(`Invalid bid amount for ${name}.`);
+      }
+      if (!(lockupHns >= bidHns) || !Number.isFinite(lockupHns)) {
+        throw new Error(`Lockup must be at least the bid for ${name}.`);
+      }
+
+      actions.push(['BID', name, bidHns, lockupHns]);
+    }
+
+    return this._walletProxy(
+      () => this._executeRPC('createbatch', [actions, {paths: true}]),
+      {
+        actionName: 'bid-many',
+        diagnosticContext: {
+          count: actions.length,
+          names: actions.map((a) => a[1]),
+        },
+      },
+    );
+  };
+
   sendRegister = async (name) => {
     const {wdb} = this.node;
     const wallet = await wdb.get(this.name);
@@ -3042,6 +3094,7 @@ const methods = {
   sendRedeem: service.sendRedeem,
   sendRevealAll: service.sendRevealAll,
   sendRevealMany: service.sendRevealMany,
+  sendBidMany: service.sendBidMany,
   sendRedeemAll: service.sendRedeemAll,
   sendRegisterAll: service.sendRegisterAll,
   sendRenewal: service.sendRenewal,

@@ -1,0 +1,411 @@
+@import "../../variables.scss";
+
+.auction-basket {
+  width: 100%;
+  max-width: 58rem;
+  margin: 0 auto;
+  padding-bottom: 2.5rem;
+  cursor: default;
+
+  &__intro {
+    margin-bottom: 1.1rem;
+
+    h2 {
+      margin: 0 0 0.35rem;
+      font-size: 1.35rem;
+      font-weight: 600;
+    }
+
+    p {
+      margin: 0;
+      max-width: 42rem;
+      color: $manatee-gray;
+      font-size: 0.875rem;
+      line-height: 1.45;
+    }
+  }
+
+  &__panel {
+    margin-bottom: 1rem;
+    padding: 1rem 1.05rem;
+    border-radius: 0.85rem;
+    border: 1px solid rgba($black, 0.08);
+    background: rgba($black, 0.025);
+  }
+
+  &__panel-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.35rem 1rem;
+    margin-bottom: 0.75rem;
+
+    h3 {
+      margin: 0;
+      font-size: 0.95rem;
+      font-weight: 650;
+    }
+
+    span {
+      font-size: 0.75rem;
+      color: $manatee-gray;
+    }
+  }
+
+  &__add-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 0.65rem;
+  }
+
+  &__input {
+    flex: 1 1 12rem;
+    min-width: 10rem;
+    border: 1px solid rgba($black, 0.14);
+    border-radius: 0.5rem;
+    padding: 0.55rem 0.7rem;
+    font: inherit;
+    background: $white;
+    color: inherit;
+    outline: none;
+
+    &:focus {
+      border-color: rgba($azure-blue, 0.55);
+    }
+  }
+
+  &__textarea {
+    width: 100%;
+    min-height: 5.5rem;
+    resize: vertical;
+    border: 1px solid rgba($black, 0.14);
+    border-radius: 0.5rem;
+    padding: 0.65rem 0.75rem;
+    font: inherit;
+    font-size: 0.85rem;
+    line-height: 1.35;
+    background: $white;
+    color: inherit;
+    outline: none;
+    margin-bottom: 0.55rem;
+
+    &:focus {
+      border-color: rgba($azure-blue, 0.55);
+    }
+  }
+
+  &__btn {
+    @extend %btn-primary;
+    height: 2.2rem;
+    padding: 0 0.9rem;
+    white-space: nowrap;
+
+    &--secondary {
+      background: transparent;
+      color: $azure-blue;
+      border: 1px solid $azure-blue;
+
+      &:hover {
+        background: rgba($azure-blue, 0.08);
+      }
+    }
+
+    &--danger {
+      background: transparent;
+      color: #d12a1f;
+      border: 1px solid rgba(209, 42, 31, 0.45);
+
+      &:hover {
+        background: rgba(209, 42, 31, 0.08);
+      }
+    }
+
+    &:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+  }
+
+  &__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.35rem;
+  }
+
+  &__empty {
+    padding: 1rem;
+    border: 1px dashed rgba($black, 0.14);
+    border-radius: 0.65rem;
+    color: $manatee-gray;
+    font-size: 0.85rem;
+    font-style: italic;
+  }
+
+  &__table-wrap {
+    overflow-x: auto;
+  }
+
+  &__table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+
+    th,
+    td {
+      padding: 0.55rem 0.45rem;
+      text-align: left;
+      border-bottom: 1px solid rgba($black, 0.08);
+      vertical-align: middle;
+    }
+
+    th {
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: rgba($black, 0.45);
+      white-space: nowrap;
+    }
+
+    .num {
+      width: 6.5rem;
+    }
+
+    .status {
+      min-width: 6.5rem;
+    }
+
+    .name {
+      min-width: 7rem;
+      font-weight: 600;
+    }
+
+    input[type='number'],
+    input[type='text'] {
+      width: 100%;
+      max-width: 6.5rem;
+      border: 1px solid rgba($black, 0.14);
+      border-radius: 0.4rem;
+      padding: 0.4rem 0.45rem;
+      font: inherit;
+      font-size: 0.85rem;
+      background: $white;
+      color: inherit;
+    }
+  }
+
+  &__status {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.12rem 0.45rem;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+
+    &--ok {
+      background: rgba(11, 202, 107, 0.14);
+      color: #0a9d54;
+    }
+
+    &--bad {
+      background: rgba(255, 47, 31, 0.12);
+      color: #d12a1f;
+    }
+
+    &--warn {
+      background: rgba(240, 180, 41, 0.14);
+      color: #9a7000;
+    }
+
+    &--loading {
+      background: rgba(36, 128, 253, 0.12);
+      color: $azure-blue;
+    }
+  }
+
+  &__row-error {
+    color: #d12a1f;
+    font-size: 0.72rem;
+    max-width: 10rem;
+  }
+
+  &__linkish {
+    border: none;
+    background: none;
+    color: $azure-blue;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.8rem;
+    padding: 0;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+
+  &__summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr));
+    gap: 0.55rem;
+    margin-bottom: 0.85rem;
+  }
+
+  &__stat {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    padding: 0.7rem 0.75rem;
+    border-radius: 0.65rem;
+    border: 1px solid rgba($black, 0.08);
+    background: rgba($white, 0.7);
+
+    label {
+      font-size: 0.64rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: rgba($black, 0.42);
+    }
+
+    strong {
+      font-size: 1rem;
+      font-weight: 700;
+    }
+
+    span {
+      font-size: 0.72rem;
+      color: $manatee-gray;
+    }
+  }
+
+  &__warn-box {
+    margin: 0.75rem 0;
+    padding: 0.75rem 0.85rem;
+    border-radius: 0.65rem;
+    border: 1px solid rgba(240, 180, 41, 0.4);
+    background: rgba(240, 180, 41, 0.1);
+    font-size: 0.82rem;
+    line-height: 1.4;
+    color: inherit;
+
+    ul {
+      margin: 0.4rem 0 0;
+      padding-left: 1.1rem;
+    }
+  }
+
+  &__confirm {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+  }
+
+  &__checkbox {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.45rem;
+    font-size: 0.82rem;
+    line-height: 1.35;
+    max-width: 32rem;
+
+    input {
+      margin-top: 0.2rem;
+    }
+  }
+
+  &__footer-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    justify-content: flex-end;
+    margin-top: 0.85rem;
+  }
+}
+
+body.bob-theme-dark {
+  .auction-basket {
+    &__intro p,
+    &__panel-header span {
+      color: rgba($white, 0.55);
+    }
+
+    &__panel {
+      background: #151b23;
+      border-color: rgba($white, 0.08);
+    }
+
+    &__input,
+    &__textarea,
+    &__table input[type='number'],
+    &__table input[type='text'] {
+      background: #0d1117;
+      border-color: rgba($white, 0.14);
+      color: #e6edf3;
+    }
+
+    &__table {
+      th {
+        color: rgba($white, 0.45);
+      }
+
+      th,
+      td {
+        border-bottom-color: rgba($white, 0.08);
+      }
+    }
+
+    &__empty {
+      border-color: rgba($white, 0.14);
+      color: rgba($white, 0.55);
+    }
+
+    &__stat {
+      background: rgba($white, 0.03);
+      border-color: rgba($white, 0.09);
+
+      label {
+        color: rgba($white, 0.45);
+      }
+
+      strong {
+        color: #f0f6fc;
+      }
+
+      span {
+        color: rgba($white, 0.5);
+      }
+    }
+
+    &__warn-box {
+      background: rgba(240, 180, 41, 0.1);
+      border-color: rgba(240, 180, 41, 0.32);
+      color: #ffe9a8;
+    }
+
+    &__status--ok {
+      background: rgba(11, 202, 107, 0.14);
+      color: #3dd68c;
+    }
+
+    &__status--bad {
+      background: rgba(255, 92, 77, 0.16);
+      color: #ff9a90;
+    }
+
+    &__status--warn {
+      background: rgba(240, 180, 41, 0.14);
+      color: #ffe9a8;
+    }
+
+    &__row-error {
+      color: #ff9a90;
+    }
+  }
+}

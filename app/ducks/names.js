@@ -260,6 +260,66 @@ export const sendBid = (name, amount, lockup, height) => async (dispatch) => {
   return res;
 };
 
+/**
+ * Place multiple bids in one batch transaction (Auction Basket).
+ * @param {Array<{name: string, bid: number|string, lockup: number|string, height?: number}>} entries
+ *   bid/lockup in base units.
+ */
+export const sendBidMany = (entries) => async (dispatch, getState) => {
+  if (!entries || !entries.length) {
+    return null;
+  }
+
+  const { wallet } = getState();
+  if (wallet.watchOnly) {
+    throw new Error('Auction Basket bidding is not available for watch-only wallets.');
+  }
+  if (wallet.type === 'ledger' || wallet.type === 'multisig') {
+    throw new Error('Auction Basket bidding is currently limited to standard hot wallets.');
+  }
+
+  await new Promise((resolve, reject) => {
+    dispatch(getPassphrase(resolve, reject));
+  });
+
+  // Import any SPV name state once, then sync once (not per name).
+  const needsImport = entries.filter((e) => e.height != null && e.name);
+  if (needsImport.length) {
+    try {
+      await dispatch(startWalletSync());
+      for (const entry of needsImport) {
+        await walletClient.importName(entry.name, entry.height);
+      }
+      await dispatch(waitForWalletSync());
+    } catch (e) {
+      throw e;
+    } finally {
+      await dispatch(stopWalletSync());
+    }
+  }
+
+  for (const entry of entries) {
+    await assertAuctionTracked(entry.name);
+  }
+
+  const payload = entries.map((entry) => ({
+    name: entry.name,
+    bid: entry.bid,
+    lockup: entry.lockup,
+  }));
+
+  const res = await walletClient.sendBidMany(payload);
+  if (!res) {
+    throw new Error('Basket bid transaction was not fully signed or broadcast.');
+  }
+
+  for (const entry of entries) {
+    await namesDb.storeName(entry.name);
+  }
+  await dispatch(fetchPendingTransactions());
+  return res;
+};
+
 export const sendReveal = (name) => async (dispatch) => {
   if (!name) {
     return;
