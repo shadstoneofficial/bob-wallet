@@ -22,65 +22,85 @@ const analytics = aClientStub(() => require('electron').ipcRenderer);
 
 /**
  * Whether this name can receive a createopen right now.
- * OPEN is only for names not yet in an active auction lifecycle.
+ * Fail-closed: only names with no live name state (or fully expired) are openable.
+ * Registered/owned names (e.g. videotapes/) must never show "Ready to open".
  */
 function classifyOpenEligibility(result, height, pendingOp) {
+  const start = result?.start;
+  const info = result?.info;
+  const h = height || 0;
   const domain = {
-    start: result?.start,
-    info: result?.info,
+    start,
+    info,
     pendingOperation: pendingOp,
   };
 
-  if (!result?.start) {
-    return { status: 'UNKNOWN', canOpen: false, error: 'Unknown' };
+  if (!start) {
+    return { status: 'UNKNOWN', canOpen: false, error: 'Unknown name' };
   }
 
-  if (isReserved(domain)) {
+  if (start.reserved || isReserved(domain)) {
     return { status: 'RESERVED', canOpen: false, error: 'Reserved' };
   }
 
-  if (isLockedUp(domain)) {
+  // Locked only applies when there is no name state yet.
+  if ((start.locked || isLockedUp(domain)) && !info) {
     return { status: 'LOCKED', canOpen: false, error: 'Locked' };
   }
 
-  if (result.start.start > (height || 0)) {
-    return { status: 'NOT_YET', canOpen: false, error: 'Not yet' };
+  if (start.start > h) {
+    return { status: 'NOT_YET', canOpen: false, error: 'Not yet claimable' };
   }
 
   if (pendingOp === 'OPEN') {
-    return { status: 'PENDING_OPEN', canOpen: false, error: 'Open pending' };
+    return { status: 'PENDING_OPEN', canOpen: false, error: 'Open pending in wallet' };
   }
 
-  if (isOpening(domain)) {
-    return { status: 'OPENING', canOpen: false, error: 'Already opening' };
-  }
+  // Any non-expired name state means OPEN is invalid (opening/bidding/reveal/registered).
+  if (info) {
+    const state = info.state;
+    const expired = !!info.expired;
 
-  if (isBidding(domain)) {
-    return { status: 'BIDDING', canOpen: false, error: 'Already bidding — use Auction Basket' };
-  }
+    if (!expired) {
+      if (state === 'OPENING' || isOpening(domain)) {
+        return { status: 'OPENING', canOpen: false, error: 'Already opening' };
+      }
+      if (state === 'BIDDING' || isBidding(domain)) {
+        return {
+          status: 'BIDDING',
+          canOpen: false,
+          error: 'Already bidding — use Auction Basket',
+        };
+      }
+      if (state === 'REVEAL') {
+        return { status: 'REVEAL', canOpen: false, error: 'In reveal' };
+      }
+      // CLOSED / registered / owned — common case for stale open lists
+      if (state === 'CLOSED' || isClosed(domain) || info.owner) {
+        return {
+          status: 'OWNED',
+          canOpen: false,
+          error: 'Registered / owned (not available)',
+        };
+      }
+      // Unknown non-expired state: do not allow OPEN
+      return {
+        status: state || 'ACTIVE',
+        canOpen: false,
+        error: `Not available${state ? ` (${state})` : ''}`,
+      };
+    }
 
-  if (isClosed(domain) && result.info && !result.info.expired) {
-    return { status: 'CLOSED', canOpen: false, error: 'Closed / owned' };
-  }
-
-  // Available to open: no live auction info, or expired and free to re-open.
-  if (isAvailable(domain) && !result.info) {
-    return { status: 'AVAILABLE', canOpen: true, error: '' };
-  }
-
-  if (result.info?.expired) {
+    // Fully expired: may be re-opened
     return { status: 'EXPIRED', canOpen: true, error: '' };
   }
 
-  if (!result.info) {
+  // No name state on chain → free to OPEN
+  if (isAvailable(domain) || !info) {
     return { status: 'AVAILABLE', canOpen: true, error: '' };
   }
 
-  return {
-    status: result.info.state || 'UNAVAILABLE',
-    canOpen: false,
-    error: result.info.state || 'Not available',
-  };
+  return { status: 'UNAVAILABLE', canOpen: false, error: 'Not available' };
 }
 
 class OpenBasket extends Component {
@@ -307,9 +327,16 @@ class OpenBasket extends Component {
     const { t } = this.context;
     try {
       const rowMeta = await this.refreshStatuses();
-      if (!this.canReview(rowMeta)) {
+      const openable = this.getOpenableNames(rowMeta);
+      const blocked = this.props.order.length - openable.length;
+      if (!openable.length) {
         this.props.showError(t('openBasketNothingToOpen'));
         return;
+      }
+      if (blocked > 0) {
+        this.props.showSuccess(
+          t('openBasketPreflightDropped', String(blocked), String(openable.length))
+        );
       }
       this.setState({ step: 'review', accepted: false });
     } catch (e) {
@@ -322,6 +349,7 @@ class OpenBasket extends Component {
     const {
       sendOpenMany,
       clearOpenBasket,
+      removeFromOpenBasket,
       showError,
       showSuccess,
       history,
@@ -338,13 +366,29 @@ class OpenBasket extends Component {
       return;
     }
 
+    // Always re-verify on-chain status immediately before signing.
     const rowMeta = await this.refreshStatuses();
-    const names = this.getOpenableNames(rowMeta);
+    let names = this.getOpenableNames(rowMeta);
 
     if (!names.length) {
       showError(t('openBasketNothingToOpen'));
       this.setState({ step: 'edit' });
       return;
+    }
+
+    const blocked = this.props.order.filter((n) => !names.includes(n));
+    if (blocked.length) {
+      // Drop names that failed the fresh check so the UI matches what we submit.
+      for (const name of blocked) {
+        removeFromOpenBasket(name);
+      }
+      showError(
+        t('openBasketRemovedBeforeSubmit', String(blocked.length), blocked.map((n) => `${n}/`).join(', '))
+      );
+      if (!names.length) {
+        this.setState({ step: 'edit' });
+        return;
+      }
     }
 
     this.setState({ submitting: true });
@@ -355,11 +399,32 @@ class OpenBasket extends Component {
         analytics.track('open basket', { count: names.length });
         clearOpenBasket();
         this.setState({ step: 'edit', accepted: false, rowMeta: {} });
-        // OPENING filter on bids is closest existing list; watching also fine
         history.push('/watching');
       }
     } catch (e) {
-      showError(e.message || t('openBasketSubmitFailed'));
+      const msg = e.message || t('openBasketSubmitFailed');
+      // HSD: "Name is not available: videotapes."
+      const match = msg.match(/Name is not available:\s*([a-z0-9-]+)/i);
+      if (match) {
+        const bad = match[1].toLowerCase();
+        removeFromOpenBasket(bad);
+        this.setState((state) => ({
+          step: 'edit',
+          rowMeta: {
+            ...state.rowMeta,
+            [bad]: {
+              status: 'OWNED',
+              canOpen: false,
+              error: 'Registered / owned (not available)',
+            },
+          },
+        }));
+        showError(
+          t('openBasketChainRejected', `${bad}/`, msg)
+        );
+      } else {
+        showError(msg);
+      }
     } finally {
       this.setState({ submitting: false });
     }
