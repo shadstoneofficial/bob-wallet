@@ -170,6 +170,12 @@ class Sidebar extends Component {
             {t('headingAuctionBasket')}
           </NavLink>
           <NavLink
+            to="/open-basket"
+            className={isActive => `sidebar__action ${isActive ? "sidebar__action--selected" : ''}`}
+          >
+            {t('headingOpenBasket')}
+          </NavLink>
+          <NavLink
             to="/watching"
             className={isActive => `sidebar__action ${isActive ? "sidebar__action--selected" : ''}`}
           >

@@ -22,6 +22,7 @@ import YourBids from '../YourBids';
 import Watching from '../Watching';
 import Expiring from '../Expiring';
 import AuctionBasket from '../AuctionBasket';
+import OpenBasket from '../OpenBasket';
 import SearchTLD from '../SearchTLD';
 import * as nodeActions from "../../ducks/node";
 import * as walletActions from '../../ducks/walletActions';
@@ -254,6 +255,12 @@ class App extends Component {
             wallets={wallets}
             path="/auction-basket"
             render={this.routeRenderer(t('headingAuctionBasket'), AuctionBasket)}
+          />
+          <ProtectedRoute
+            isLocked={isLocked}
+            wallets={wallets}
+            path="/open-basket"
+            render={this.routeRenderer(t('headingOpenBasket'), OpenBasket)}
           />
           <ProtectedRoute
             isLocked={isLocked}

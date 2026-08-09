@@ -257,6 +257,43 @@ export const sendOpen = name => async (dispatch) => {
   return res;
 };
 
+/**
+ * Open multiple name auctions in one batch transaction (Open Basket).
+ * @param {string[]} names
+ */
+export const sendOpenMany = (names) => async (dispatch, getState) => {
+  if (!names || !names.length) {
+    return null;
+  }
+
+  const { wallet } = getState();
+  if (wallet.watchOnly) {
+    throw new Error('Open Basket is not available for watch-only wallets.');
+  }
+  if (wallet.type === 'ledger' || wallet.type === 'multisig') {
+    throw new Error('Open Basket is currently limited to standard hot wallets.');
+  }
+
+  await new Promise((resolve, reject) => {
+    dispatch(getPassphrase(resolve, reject));
+  });
+
+  const unique = [...new Set(
+    names.map((n) => String(n || '').trim().toLowerCase()).filter(Boolean)
+  )];
+
+  const res = await walletClient.sendOpenMany(unique);
+  if (!res) {
+    throw new Error('Open basket transaction was not fully signed or broadcast.');
+  }
+
+  for (const name of unique) {
+    await namesDb.storeName(name);
+  }
+  await dispatch(fetchPendingTransactions());
+  return res;
+};
+
 export const sendBid = (name, amount, lockup, height) => async (dispatch) => {
   if (!name) {
     return;

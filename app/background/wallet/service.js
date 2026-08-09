@@ -1163,6 +1163,48 @@ class WalletService {
     () => this._executeRPC('createopen', [name])
   );
 
+  /**
+   * Open multiple name auctions in one batch transaction via createbatch.
+   * OPEN only — cannot be combined with BID in the same transaction.
+   * @param {string[]} names
+   */
+  sendOpenMany = async (names = []) => {
+    if (!Array.isArray(names) || !names.length) {
+      throw new Error('Nothing to do.');
+    }
+
+    const MAX_BASKET = 20;
+    if (names.length > MAX_BASKET) {
+      throw new Error(`Open basket is limited to ${MAX_BASKET} names.`);
+    }
+
+    const seen = new Set();
+    const actions = [];
+
+    for (const raw of names) {
+      const name = String(raw || '').trim().toLowerCase();
+      if (!name) {
+        throw new Error('Every open-basket row needs a name.');
+      }
+      if (seen.has(name)) {
+        throw new Error(`Duplicate name in open basket: ${name}`);
+      }
+      seen.add(name);
+      actions.push(['OPEN', name]);
+    }
+
+    return this._walletProxy(
+      () => this._executeRPC('createbatch', [actions, {paths: true}]),
+      {
+        actionName: 'open-many',
+        diagnosticContext: {
+          count: actions.length,
+          names: actions.map((a) => a[1]),
+        },
+      },
+    );
+  };
+
   sendBid = (name, amount, lockup) => this._walletProxy(
     () => this._executeRPC(
       'createbid',
@@ -3131,6 +3173,7 @@ const methods = {
   rescan: service.rescan,
   deepClean: service.deepClean,
   sendOpen: service.sendOpen,
+  sendOpenMany: service.sendOpenMany,
   sendBid: service.sendBid,
   sendRegister: service.sendRegister,
   sendUpdate: service.sendUpdate,
