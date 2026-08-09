@@ -27,6 +27,7 @@ import {
   applyRegisterAuthority,
   getRegisterAuthority,
 } from './registerValidation';
+import {buildRevealActions, isAwaitingReveal} from './revealBatch';
 import {get, put} from "../db/service";
 import hsdLedger from 'hsd-ledger';
 import {NAME_STATES} from "../../constants/names";
@@ -1013,6 +1014,7 @@ class WalletService {
     };
 
     const map = {};
+    const nameStates = new Map();
 
     const wallet = await this.node.wdb.get(this.name);
 
@@ -1022,12 +1024,15 @@ class WalletService {
       const bidId = bid.prevout.hash.toString('hex') + bid.prevout.index;
 
       let json;
+      let ns;
 
-      if (map[name]) {
+      if (nameStates.has(name)) {
+        ns = nameStates.get(name);
         json = map[name];
       } else {
-        const ns = await wallet.getNameStateByName(name);
+        ns = await wallet.getNameStateByName(name);
         json = ns?.getJSON(this.lastKnownChainHeight, this.network);
+        nameStates.set(name, ns || null);
         map[name] = json;
       }
 
@@ -1045,11 +1050,17 @@ class WalletService {
 
       // Unspent bid coin means the bid has not been revealed yet.
       if (state === NAME_STATES.REVEAL && bid.own) {
-        const bidCoin = await wallet.getUnspentCoin(
-          bid.prevout.hash,
-          bid.prevout.index
-        );
-        if (bidCoin) {
+        const [bidCoin, bidTx] = await Promise.all([
+          wallet.getUnspentCoin(bid.prevout.hash, bid.prevout.index),
+          wallet.getTX(bid.prevout.hash),
+        ]);
+        if (isAwaitingReveal({
+          state,
+          own: bid.own,
+          hasUnspentBid: !!bidCoin,
+          bidHeight: bidTx?.height,
+          auctionHeight: ns?.height,
+        })) {
           index.NEED_REVEAL.push(bidId);
         }
       }
@@ -1446,21 +1457,10 @@ class WalletService {
   }
 
   sendRevealMany = async (names) => {
-    if (!names || !names.length) {
-      throw new Error('Nothing to do.');
-    }
-
-    const uniqueNames = [...new Set(names.filter(Boolean))];
-    if (!uniqueNames.length) {
-      throw new Error('Nothing to do.');
-    }
-
-    const actions = uniqueNames.map(name => ['REVEAL', name]);
-    const chunkSize = consensus.MAX_BLOCK_RENEWALS / 6;
-    const firstChunk = actions.slice(0, chunkSize);
+    const actions = buildRevealActions(names);
 
     return this._walletProxy(
-      () => this._executeRPC('createbatch', [firstChunk, {paths: true}]),
+      () => this._executeRPC('createbatch', [actions, {paths: true}]),
     );
   }
 

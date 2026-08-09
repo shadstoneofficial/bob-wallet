@@ -1199,7 +1199,7 @@ export default class Settings extends Component {
                       spvHelperApiStatus: '',
                       spvHelperApiError: '',
                     })}
-                    placeholder="https://api.handshakeapi.com/hsd"
+                    placeholder="https://spv.learnhns.com/hsd"
                   />
                   <div className="settings__channel-card__actions">
                     <button

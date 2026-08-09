@@ -85,6 +85,16 @@
     border-top: 1px solid rgba($black, 0.1);
     background-color: rgba($white, 0.5);
 
+    &__version {
+      @extend %h6;
+      color: $manatee-gray;
+      font-family: monospace;
+      padding: .5rem .75rem .35rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
     &__row {
       @extend %col-nowrap;
       padding: .25rem .75rem .5rem;

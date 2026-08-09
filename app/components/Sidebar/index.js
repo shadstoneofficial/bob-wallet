@@ -9,6 +9,7 @@ import {I18nContext} from "../../utils/i18n";
 import { Logo } from '../Logo';
 import {clientStub} from "../../background/node/client";
 import {NETWORKS} from "../../constants/networks";
+const pkg = require('../../../package.json');
 const nodeClient = clientStub(() => require('electron').ipcRenderer);
 
 @withRouter
@@ -262,6 +263,9 @@ class Sidebar extends Component {
 
     return (
       <div className="sidebar__footer">
+        <div className="sidebar__footer__version" title={`Bob LearnHNS ${pkg.version}`}>
+          Bob LearnHNS v{pkg.version}
+        </div>
         {updateAvailable ? (
           <div className="sidebar__footer__row">
             <button

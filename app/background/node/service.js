@@ -16,6 +16,11 @@ import { prefixHash } from '../../db/names';
 import { del, get, put } from '../db/service';
 import {dispatchToMainWindow} from "../../mainWindow";
 import {
+  DEFAULT_SPV_HELPER_API_BASE_URL,
+  normalizeSpvHelperApiBaseUrl,
+  resolveStoredSpvHelperApiBaseUrl,
+} from './spvHelper';
+import {
   SET_NODE_API,
   SET_CUSTOM_RPC_STATUS,
   START,
@@ -38,19 +43,7 @@ const NODE_API_KEY = 'nodeApiKey';
 const NODE_NO_DNS = 'nodeNoDns1';
 const SPV_MODE = 'nodeSpvMode';
 const SPV_HELPER_API_BASE_URL = 'nodeSpvHelperApiBaseUrl';
-const DEFAULT_SPV_HELPER_API_BASE_URL = 'https://api.handshakeapi.com/hsd';
 const LEARNHNS_TEST_PORT_OFFSET = 1000;
-
-function normalizeSpvHelperApiBaseUrl(value) {
-  const raw = String(value || '').trim();
-  if (!raw) {
-    return DEFAULT_SPV_HELPER_API_BASE_URL;
-  }
-
-  const withProtocol = raw.includes('://') ? raw : `https://${raw}`;
-  const url = new URL(withProtocol);
-  return url.href.replace(/\/+$/, '');
-}
 
 export class NodeService extends EventEmitter {
   constructor() {
@@ -102,7 +95,7 @@ export class NodeService extends EventEmitter {
       return DEFAULT_SPV_HELPER_API_BASE_URL;
     }
 
-    return normalizeSpvHelperApiBaseUrl(baseUrl);
+    return resolveStoredSpvHelperApiBaseUrl(baseUrl);
   }
 
   async getSpvHelperApiSettings() {
