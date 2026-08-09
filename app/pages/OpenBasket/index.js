@@ -21,6 +21,21 @@ import '../AuctionBasket/auction-basket.scss';
 const analytics = aClientStub(() => require('electron').ipcRenderer);
 
 /**
+ * HSD getnameinfo often sets info.expired=true even for live registered names
+ * that still have a renewal window (blocksUntilExpire > 0). Prefer stats + registered.
+ */
+function isNameFullyExpired(info) {
+  if (!info) return false;
+  if (info.stats && typeof info.stats.blocksUntilExpire === 'number') {
+    return info.stats.blocksUntilExpire <= 0;
+  }
+  if (info.registered) {
+    return false;
+  }
+  return !!info.expired;
+}
+
+/**
  * Whether this name can receive a createopen right now.
  * Fail-closed: only names with no live name state (or fully expired) are openable.
  * Registered/owned names (e.g. videotapes/) must never show "Ready to open".
@@ -56,51 +71,55 @@ function classifyOpenEligibility(result, height, pendingOp) {
     return { status: 'PENDING_OPEN', canOpen: false, error: 'Open pending in wallet' };
   }
 
-  // Any non-expired name state means OPEN is invalid (opening/bidding/reveal/registered).
   if (info) {
     const state = info.state;
-    const expired = !!info.expired;
 
-    if (!expired) {
-      if (state === 'OPENING' || isOpening(domain)) {
-        return { status: 'OPENING', canOpen: false, error: 'Already opening' };
-      }
-      if (state === 'BIDDING' || isBidding(domain)) {
-        return {
-          status: 'BIDDING',
-          canOpen: false,
-          error: 'Already bidding — use Auction Basket',
-        };
-      }
-      if (state === 'REVEAL') {
-        return { status: 'REVEAL', canOpen: false, error: 'In reveal' };
-      }
-      // CLOSED / registered / owned — common case for stale open lists
-      if (state === 'CLOSED' || isClosed(domain) || info.owner) {
-        return {
-          status: 'OWNED',
-          canOpen: false,
-          error: 'Registered / owned (not available)',
-        };
-      }
-      // Unknown non-expired state: do not allow OPEN
+    // Explicit ownership / registration always blocks OPEN (even if expired=true).
+    if (info.registered || (info.owner && !isNameFullyExpired(info))) {
       return {
-        status: state || 'ACTIVE',
+        status: 'OWNED',
         canOpen: false,
-        error: `Not available${state ? ` (${state})` : ''}`,
+        error: 'Registered / owned (not available)',
       };
     }
 
-    // Fully expired: may be re-opened
-    return { status: 'EXPIRED', canOpen: true, error: '' };
+    if (state === 'OPENING' || isOpening(domain)) {
+      return { status: 'OPENING', canOpen: false, error: 'Already opening' };
+    }
+    if (state === 'BIDDING' || isBidding(domain)) {
+      return {
+        status: 'BIDDING',
+        canOpen: false,
+        error: 'Already bidding — use Auction Basket',
+      };
+    }
+    if (state === 'REVEAL') {
+      return { status: 'REVEAL', canOpen: false, error: 'In reveal' };
+    }
+
+    // CLOSED but still in renewal window = owned, not free to open.
+    if ((state === 'CLOSED' || isClosed(domain)) && !isNameFullyExpired(info)) {
+      return {
+        status: 'OWNED',
+        canOpen: false,
+        error: 'Registered / owned (not available)',
+      };
+    }
+
+    // Truly past expiration — free to re-open.
+    if (isNameFullyExpired(info)) {
+      return { status: 'EXPIRED', canOpen: true, error: '' };
+    }
+
+    return {
+      status: state || 'ACTIVE',
+      canOpen: false,
+      error: `Not available${state ? ` (${state})` : ''}`,
+    };
   }
 
   // No name state on chain → free to OPEN
-  if (isAvailable(domain) || !info) {
-    return { status: 'AVAILABLE', canOpen: true, error: '' };
-  }
-
-  return { status: 'UNAVAILABLE', canOpen: false, error: 'Not available' };
+  return { status: 'AVAILABLE', canOpen: true, error: '' };
 }
 
 class OpenBasket extends Component {
