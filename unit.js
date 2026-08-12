@@ -53,3 +53,5 @@ require('./app/utils/tests/marketplaceAuctions.spec');
 require('./app/utils/tests/marketplaceRequest.spec');
 require('./app/pages/Exchange/tests/marketplaceSpv.spec');
 require('./app/utils/tests/urlPolicy.spec');
+require('./app/background/hip2/tests/alias.spec');
+require('./app/components/AddressInput/tests/index.spec');

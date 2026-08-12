@@ -3,25 +3,34 @@
 // - https://github.com/lukeburns/hip2-dane/blob/main/index.js
 
 import isValidAddress from '../../utils/verifyAddress';
+import {
+  aliasError,
+  normalizeHostname,
+  parseHNSAddressTXT,
+  shouldFallbackToTXT,
+} from './alias';
 
 const hdns = require('hdns');
 const https = require('https');
+const {codes, types} = require('bns/lib/wire');
 
 const MAX_LENGTH = 90;
 
 const verifyTLSA = async (cert, host) => {
   try {
     const tlsa = await hdns.resolveTLSA(host, 'tcp', 443);
-    const valid = hdns.verifyTLSA(tlsa[0], cert.raw);
-
-    return valid;
+    return hdns.verifyTLSA(tlsa[0], cert.raw);
   } catch (e) {
+    if (e.code === 'ENODATA' || e.code === 'ENOTFOUND') {
+      throw aliasError('TLSA record not found', 'ETLSANOTFOUND');
+    }
+
     console.error(e);
-    return false;
+    throw e;
   }
 };
 
-export async function getAddress(host, network) {
+async function getHIP2Address(host, network) {
   let certificate = undefined;
 
   return new Promise(async (resolve, reject) => {
@@ -62,34 +71,74 @@ export async function getAddress(host, network) {
       })
 
       res.on('end', async () => {
-        const dane = await verifyTLSA(certificate, host);
-        if (!dane) {
-          const error = new Error('invalid DANE');
-          error.code = 'EINSECURE';
+        try {
+          const dane = await verifyTLSA(certificate, host);
+          if (!dane) {
+            const error = new Error('invalid DANE');
+            error.code = 'EINSECURE';
+            return reject(error);
+          }
+
+          if (res.statusCode >= 400) {
+            const error = new Error(res.statusMessage);
+            error.code = res.statusCode;
+            return reject(error);
+          }
+
+          const addr = data.trim();
+
+          if (!isValidAddress(addr, network)) {
+            const error = new Error('invalid address');
+            error.code = 'EINVALID';
+            return reject(error);
+          }
+
+          return resolve(addr);
+        } catch (error) {
           return reject(error);
         }
-
-        if (res.statusCode >= 400) {
-          const error = new Error(res.statusMessage);
-          error.code = res.statusCode;
-          return reject(error);
-        }
-
-        const addr = data.trim();
-
-        if (!isValidAddress(addr, network)) {
-          const error = new Error('invalid address');
-          error.code = 'EINVALID';
-          return reject(error);
-        }
-
-        return resolve(data.trim());
       });
     });
 
     req.on('error', reject);
     req.end();
   });
+}
+
+export async function getTXTAddress(host, network) {
+  const response = await hdns.resolveRaw(host, 'TXT');
+
+  if (response.code === codes.NXDOMAIN) {
+    throw aliasError('HNS TXT record not found', 'ETXTNOTFOUND');
+  }
+
+  if (response.code !== codes.NOERROR) {
+    throw aliasError('TXT lookup failed', 'EDNS');
+  }
+
+  if (!response.ad) {
+    throw aliasError('TXT response is not authenticated', 'EINSECURE');
+  }
+
+  const records = response.collect(host, types.TXT).map((record) => {
+    return Buffer.concat(record.data.txt).toString('utf8');
+  });
+
+  return parseHNSAddressTXT(records, network);
+}
+
+export async function getAddress(input, network) {
+  const host = normalizeHostname(input);
+
+  try {
+    return await getHIP2Address(host, network);
+  } catch (error) {
+    if (!shouldFallbackToTXT(error)) {
+      throw error;
+    }
+
+    return await getTXTAddress(host, network);
+  }
 }
 
 export const { setServers } = hdns;

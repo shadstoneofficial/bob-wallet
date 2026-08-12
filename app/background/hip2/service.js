@@ -3,6 +3,7 @@ import { get, put } from '../db/service';
 import { dispatchToMainWindow } from '../../mainWindow';
 import { service } from '../node/service';
 import { setServers, getAddress } from './hip2';
+import { normalizeHostname } from './alias';
 import isValidAddress from '../../utils/verifyAddress';
 
 const HIP2_PORT = 'hip2/port';
@@ -26,15 +27,16 @@ async function setPort(port) {
 
 async function fetchAddress(host) {
   const network = service.network.type;
+  const hostname = normalizeHostname(host);
 
   // Host should not be a Handshake address
-  if (isValidAddress(host, network)) {
+  if (isValidAddress(hostname, network)) {
     const error = new Error('alias cannot be a valid address');
     error.code = 'ECOLLISION';
     throw error;
   }
 
-  return await getAddress(host, network);
+  return await getAddress(hostname, network);
 }
 
 const sName = 'Hip2';

@@ -3,23 +3,17 @@ import { connect } from 'react-redux';
 import PropTypes from 'prop-types';
 import isValidAddress from '../../utils/verifyAddress';
 import { I18nContext } from '../../utils/i18n';
-import { debounce } from '../../utils/throttle';
 import hip2 from "../../utils/hip2Client";
+import {normalizeHostname} from '../../background/hip2/alias';
 import Alert from '../Alert';
 import LockSVG from '../../assets/images/lock.svg';
 import RingsSVG from '../../assets/images/rings.svg';
 import './address-input.scss';
 
 
-@connect(
-  state => ({
-    isSynchronized: state.node.isRunning && (state.node.chain || {}).progress >= 0.999,
-    noDns: state.node.noDns,
-    hip2Port: state.hip2.port,
-    network: state.wallet.network,
-  })
-)
-class AddressInput extends Component {
+export class AddressInput extends Component {
+  resolveOnNextChange = false;
+
   static propTypes = {
     isSynchronized: PropTypes.bool.isRequired,
     noDns: PropTypes.bool.isRequired,
@@ -78,7 +72,10 @@ class AddressInput extends Component {
         address: addr,
         errorMessage: !isValid ? t('invalidAddress') : '',
       });
-      onAddress?.({domain: currentInput, address: isValid ? addr : ''});
+      onAddress?.({
+        domain: normalizeHostname(currentInput),
+        address: isValid ? addr : '',
+      });
     } catch (error) {
       // prevent latency attacks
       const currentInput = this.state.input.slice(1);
@@ -89,6 +86,7 @@ class AddressInput extends Component {
         EINVALID: t('hip2InvalidAddress'),
         ELARGE: t('hip2InvalidAddress'),
         ECOLLISION: t('hip2InvalidAlias'),
+        EINVALIDALIAS: t('hip2InvalidAlias'),
         EINSECURE: t('hip2InvalidTLSA'),
       }[code] || t('hip2AddressNotFound');
 
@@ -96,9 +94,44 @@ class AddressInput extends Component {
       onAddress?.({domain: '', address: ''});
     }
   }
-  resolveHip2Address = debounce(this._resolveHip2Address, 125);
 
-  onInputChange = (input) => {
+  resolveCurrentHip2Address = () => {
+    const {input, loading, address} = this.state;
+
+    if (!input.startsWith('@') || input.length === 1 || loading || address) {
+      return;
+    }
+
+    const hostname = input.slice(1);
+    this.setState({loading: true, errorMessage: ''}, () => {
+      this._resolveHip2Address(hostname);
+    });
+  }
+
+  handleInputChange = (event) => {
+    const resolveImmediately = this.resolveOnNextChange
+      || event.nativeEvent?.inputType === 'insertFromPaste';
+
+    this.resolveOnNextChange = false;
+    this.onInputChange(event.target.value, resolveImmediately);
+  }
+
+  handlePaste = () => {
+    this.resolveOnNextChange = true;
+  }
+
+  handleInputKeyDown = (event) => {
+    if (event.key === 'Backspace') {
+      this.resetInput();
+    }
+
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      this.resolveCurrentHip2Address();
+    }
+  }
+
+  onInputChange = (input, resolveImmediately = false) => {
     const {t} = this.context;
     const {isSynchronized, noDns, network, onAddress} = this.props;
 
@@ -157,15 +190,19 @@ class AddressInput extends Component {
       return;
     };
 
-    // resolve HIP-2
+    // Keep typed aliases pending until Enter or blur. Pasted aliases resolve
+    // immediately because the paste operation supplies the complete value.
     this.setState({
       input: input,
       address: '',
-      loading: true,
+      loading: false,
       errorMessage: '',
+    }, () => {
+      if (resolveImmediately) {
+        this.resolveCurrentHip2Address();
+      }
     });
     onAddress?.({domain: '', address: ''});
-    this.resolveHip2Address(trimmedInput);
   }
 
   resetInput = () => {
@@ -216,8 +253,10 @@ class AddressInput extends Component {
           <input
             type="text"
             value={trimmedInput}
-            onChange={(e) => this.onInputChange(e.target.value)}
-            onKeyDown={(e) => e.key === 'Backspace' && this.resetInput()}
+            onChange={this.handleInputChange}
+            onKeyDown={this.handleInputKeyDown}
+            onPaste={this.handlePaste}
+            onBlur={this.resolveCurrentHip2Address}
             placeholder={placeholder}
             spellCheck="false"
           />
@@ -235,4 +274,11 @@ class AddressInput extends Component {
   }
 }
 
-export default AddressInput;
+export default connect(
+  state => ({
+    isSynchronized: state.node.isRunning && (state.node.chain || {}).progress >= 0.999,
+    noDns: state.node.noDns,
+    hip2Port: state.hip2.port,
+    network: state.wallet.network,
+  })
+)(AddressInput);
