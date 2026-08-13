@@ -7,6 +7,7 @@ import {
   aliasError,
   normalizeHostname,
   parseHNSAddressTXT,
+  selectAliasError,
   shouldFallbackToTXT,
 } from './alias';
 
@@ -137,7 +138,11 @@ export async function getAddress(input, network) {
       throw error;
     }
 
-    return await getTXTAddress(host, network);
+    try {
+      return await getTXTAddress(host, network);
+    } catch (txtError) {
+      throw selectAliasError(error, txtError);
+    }
   }
 }
 

@@ -88,6 +88,13 @@ export class AddressInput extends Component {
         ECOLLISION: t('hip2InvalidAlias'),
         EINVALIDALIAS: t('hip2InvalidAlias'),
         EINSECURE: t('hip2InvalidTLSA'),
+        ENOTFOUND: t('hip2ConnectionFailed'),
+        EAI_AGAIN: t('hip2ConnectionFailed'),
+        ECONNREFUSED: t('hip2ConnectionFailed'),
+        ECONNRESET: t('hip2ConnectionFailed'),
+        ETIMEOUT: t('hip2ConnectionFailed'),
+        ETIMEDOUT: t('hip2ConnectionFailed'),
+        EDNS: t('hip2DNSFailed'),
       }[code] || t('hip2AddressNotFound');
 
       this.setState({loading: false, errorMessage: errorText});

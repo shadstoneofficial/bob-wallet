@@ -70,6 +70,23 @@
     margin-bottom: 0.75rem;
   }
 
+  &__alias-help {
+    align-self: flex-start;
+    margin-top: 0.45rem;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: $azure-blue;
+    font-size: 0.72rem;
+    font-weight: 600;
+    cursor: pointer;
+
+    &:hover,
+    &:focus {
+      text-decoration: underline;
+    }
+  }
+
   &__input {
     @extend %box-input;
     @extend %row-nowrap;

@@ -50,3 +50,24 @@ test('pasted HIP-2 aliases resolve immediately', t => {
   t.equal(resolve.firstCall.args[0], 'hnsbroker.hns.bio');
   t.end();
 });
+
+test('alias failures show specific security and connection messages', async t => {
+  const component = createAddressInput();
+  component.state.input = '@hnsbroker.hns.bio';
+  const fetchAddress = sinon.stub(hip2, 'fetchAddress');
+
+  const securityError = new Error('invalid DANE');
+  securityError.code = 'EINSECURE';
+  fetchAddress.rejects(securityError);
+  await component._resolveHip2Address('hnsbroker.hns.bio');
+  t.equal(component.state.errorMessage, 'hip2InvalidTLSA');
+
+  const connectionError = new Error('host lookup failed');
+  connectionError.code = 'ENOTFOUND';
+  fetchAddress.rejects(connectionError);
+  await component._resolveHip2Address('hnsbroker.hns.bio');
+  t.equal(component.state.errorMessage, 'hip2ConnectionFailed');
+
+  fetchAddress.restore();
+  t.end();
+});

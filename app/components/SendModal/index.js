@@ -234,6 +234,13 @@ class SendModal extends Component {
                 hip2Domain: domain,
               })}
             />
+            <button
+              type="button"
+              className="send__alias-help"
+              onClick={() => shell.openExternal('https://bobwallet.org/docs/wallet-aliases')}
+            >
+              {t('hip2LearnMore')}
+            </button>
           </div>
           <div className="send__amount">
             <div className="send__label">{t('amount')}</div>

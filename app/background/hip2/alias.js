@@ -96,9 +96,32 @@ export function shouldFallbackToTXT(error) {
   return new Set([
     'ETLSANOTFOUND',
     'ENOTFOUND',
+    'EAI_AGAIN',
     'ENODATA',
     'ECONNREFUSED',
+    'ECONNRESET',
     'ETIMEOUT',
+    'ETIMEDOUT',
     404,
   ]).has(error && error.code);
+}
+
+export function selectAliasError(hip2Error, txtError) {
+  const connectionErrors = new Set([
+    'ENOTFOUND',
+    'EAI_AGAIN',
+    'ECONNREFUSED',
+    'ECONNRESET',
+    'ETIMEOUT',
+    'ETIMEDOUT',
+  ]);
+
+  // A missing optional TXT fallback should not hide the more useful reason
+  // that the primary HIP-2 request could not reach its host.
+  if (txtError && txtError.code === 'ETXTNOTFOUND'
+      && connectionErrors.has(hip2Error && hip2Error.code)) {
+    return hip2Error;
+  }
+
+  return txtError;
 }

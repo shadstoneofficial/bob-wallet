@@ -5,6 +5,7 @@ import {EventEmitter} from 'events';
 import {
   normalizeHostname,
   parseHNSAddressTXT,
+  selectAliasError,
   shouldFallbackToTXT,
 } from '../alias';
 import {getAddress, getTXTAddress} from '../hip2';
@@ -107,10 +108,31 @@ test('HNS TXT parser rejects wrong-network, missing, and ambiguous records', t =
 test('TXT fallback policy never bypasses integrity failures', t => {
   t.equal(shouldFallbackToTXT({code: 'ETLSANOTFOUND'}), true);
   t.equal(shouldFallbackToTXT({code: 'ENOTFOUND'}), true);
+  t.equal(shouldFallbackToTXT({code: 'EAI_AGAIN'}), true);
+  t.equal(shouldFallbackToTXT({code: 'ECONNRESET'}), true);
+  t.equal(shouldFallbackToTXT({code: 'ETIMEDOUT'}), true);
   t.equal(shouldFallbackToTXT({code: 404}), true);
   t.equal(shouldFallbackToTXT({code: 'EINSECURE'}), false);
   t.equal(shouldFallbackToTXT({code: 'EINVALID'}), false);
   t.equal(shouldFallbackToTXT({code: 'EBADSIGNATURE'}), false);
+  t.end();
+});
+
+test('missing TXT fallback does not hide a HIP-2 connection error', t => {
+  const hip2Error = new Error('host lookup failed');
+  hip2Error.code = 'ENOTFOUND';
+  const txtError = new Error('HNS TXT record not found');
+  txtError.code = 'ETXTNOTFOUND';
+
+  t.equal(selectAliasError(hip2Error, txtError), hip2Error);
+
+  const missingTLSA = new Error('TLSA record not found');
+  missingTLSA.code = 'ETLSANOTFOUND';
+  t.equal(
+    selectAliasError(missingTLSA, txtError),
+    txtError,
+    'true record absence remains an alias-not-found result',
+  );
   t.end();
 });
 
