@@ -236,6 +236,11 @@ export class AddressInput extends Component {
 
     const isHip2Input = input.startsWith('@');
     const trimmedInput = isHip2Input ? input.slice(1) : input;
+    const canResolveAlias = isHip2Input
+      && Boolean(trimmedInput)
+      && !loading
+      && !address;
+    const showResolveHint = canResolveAlias && !errorMessage;
 
     let placeholder = t('recipientAddressHip2Enabled');
 
@@ -275,14 +280,33 @@ export class AddressInput extends Component {
             placeholder={placeholder}
             spellCheck="false"
           />
+          {canResolveAlias &&
+            <button
+              type="button"
+              className="addr-input__resolve"
+              onMouseDown={event => event.preventDefault()}
+              onClick={this.resolveCurrentHip2Address}
+              aria-label={t('hip2ResolveAlias')}
+            >
+              {t('hip2ResolveAlias')}
+            </button>
+          }
         </div>
 
+        {showResolveHint &&
+          <div className="addr-input__hint">{t('hip2ResolveHint')}</div>
+        }
+
         {/* Error */}
-        <Alert type="error" message={errorMessage} />
+        <Alert type="error" className="addr-input__message" message={errorMessage} />
 
         {/* HIP-2: address */}
         {isHip2Input &&
-          <Alert type="info" message={address && `↪ ${address}`} />
+          <Alert
+            type="info"
+            className="addr-input__message addr-input__result"
+            message={address && `↪ ${address}`}
+          />
         }
       </div>
     );

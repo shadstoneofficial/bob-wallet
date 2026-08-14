@@ -403,6 +403,8 @@
   "hip2TLSAMismatch": "The alias certificate does not match its TLSA record. Do not send; the alias owner must fix it.",
   "hip2TXTInsecure": "The alias TXT fallback is not authenticated by DNSSEC. Do not send; the alias owner must fix it.",
   "hip2LearnMore": "How @ aliases work and what errors mean",
+  "hip2ResolveAlias": "Resolve alias",
+  "hip2ResolveHint": "Press Enter or select Resolve alias.",
   "hnsPaid": "HNS Paid",
   "homeDirectory": "Home Directory",
   "host": "Host",

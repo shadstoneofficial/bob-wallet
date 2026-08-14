@@ -196,6 +196,8 @@
   "hip2TLSAMismatch": "Le certificat de l'alias ne correspond pas à son enregistrement TLSA. N'envoyez rien ; le propriétaire doit le corriger.",
   "hip2TXTInsecure": "Le repli TXT de l'alias n'est pas authentifié par DNSSEC. N'envoyez rien ; le propriétaire doit le corriger.",
   "hip2LearnMore": "Fonctionnement des alias @ et signification des erreurs",
+  "hip2ResolveAlias": "Résoudre l’alias",
+  "hip2ResolveHint": "Appuyez sur Entrée ou sélectionnez Résoudre l’alias.",
   "hnsPaid": "HNS payé",
   "homeDirectory": "Répertoire d'accueil",
   "host": "Hôte",

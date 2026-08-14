@@ -196,6 +196,8 @@
   "hip2TLSAMismatch": "El certificado del alias no coincide con su registro TLSA. No envíes; el propietario debe corregirlo.",
   "hip2TXTInsecure": "La alternativa TXT del alias no está autenticada por DNSSEC. No envíes; el propietario debe corregirlo.",
   "hip2LearnMore": "Cómo funcionan los alias @ y qué significan los errores",
+  "hip2ResolveAlias": "Resolver alias",
+  "hip2ResolveHint": "Pulsa Intro o selecciona Resolver alias.",
   "hnsPaid": "HNS Pagago",
   "homeDirectory": "Directorio de inicio",
   "host": "Host",

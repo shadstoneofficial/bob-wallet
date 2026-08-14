@@ -1,5 +1,12 @@
 # Bob Wallet alias resolution fixes
 
+> **2.3.3 policy update:** The original downgrade-protection decision in this
+> document treated a TLSA mismatch as a hard stop before TXT lookup. After
+> review with HNSBroker/Wil, authenticated HNS TXT records are now treated as
+> an independent secure channel that does not use HTTPS or TLSA. The current
+> agreed behavior and build notes are documented in
+> [`bob-learnhns-2.3.3-alias-followup.md`](./bob-learnhns-2.3.3-alias-followup.md).
+
 ## Background
 
 HNSBroker reported two problems that currently make Bob Wallet aliases unreliable:

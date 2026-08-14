@@ -197,6 +197,8 @@
   "hip2TLSAMismatch": "XXXXX",
   "hip2TXTInsecure": "XXXXX",
   "hip2LearnMore": "XXXXX",
+  "hip2ResolveAlias": "XXXXX",
+  "hip2ResolveHint": "XXXXX",
   "hnsPaid": "XXXXX",
   "homeDirectory": "XXXXX",
   "host": "XXXXX",

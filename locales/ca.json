@@ -196,6 +196,8 @@
   "hip2TLSAMismatch": "El certificat de l'àlies no coincideix amb el registre TLSA. No envieu; el propietari l'ha de corregir.",
   "hip2TXTInsecure": "L'alternativa TXT de l'àlies no està autenticada per DNSSEC. No envieu; el propietari l'ha de corregir.",
   "hip2LearnMore": "Com funcionen els àlies @ i què signifiquen els errors",
+  "hip2ResolveAlias": "Resol l'àlies",
+  "hip2ResolveHint": "Premeu Retorn o seleccioneu Resol l'àlies.",
   "hnsPaid": "HNS Pagat",
   "homeDirectory": "Directori d'inici",
   "host": "Host",

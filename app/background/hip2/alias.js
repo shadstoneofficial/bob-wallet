@@ -93,33 +93,25 @@ export function parseHNSAddressTXT(records, network) {
 }
 
 export function shouldFallbackToTXT(error) {
-  return new Set([
-    'ETLSANOTFOUND',
-    'ENOTFOUND',
-    'EAI_AGAIN',
-    'ENODATA',
-    'ECONNREFUSED',
-    'ECONNRESET',
-    'ETIMEOUT',
-    'ETIMEDOUT',
-    404,
-  ]).has(error && error.code);
+  // Authenticated HNS TXT records are independent of HTTPS and TLSA.
+  // Once hostname validation has succeeded, every HIP-2 failure may safely
+  // try this separately authenticated resolution channel.
+  return Boolean(error);
 }
 
 export function selectAliasError(hip2Error, txtError) {
-  const connectionErrors = new Set([
-    'ENOTFOUND',
-    'EAI_AGAIN',
-    'ECONNREFUSED',
-    'ECONNRESET',
-    'ETIMEOUT',
-    'ETIMEDOUT',
+  const hip2AbsenceErrors = new Set([
+    'ETLSANOTFOUND',
+    'ENODATA',
+    404,
   ]);
 
-  // A missing optional TXT fallback should not hide the more useful reason
-  // that the primary HIP-2 request could not reach its host.
+  // A missing TXT record should only become the final "not found" result
+  // when HIP-2 was also genuinely absent. Otherwise retain the HIP-2 error,
+  // including TLSA mismatch and connection failures, because it is more
+  // useful than saying that the optional TXT channel was empty.
   if (txtError && txtError.code === 'ETXTNOTFOUND'
-      && connectionErrors.has(hip2Error && hip2Error.code)) {
+      && !hip2AbsenceErrors.has(hip2Error && hip2Error.code)) {
     return hip2Error;
   }
 

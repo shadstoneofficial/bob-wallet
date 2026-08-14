@@ -105,16 +105,18 @@ test('HNS TXT parser rejects wrong-network, missing, and ambiguous records', t =
   t.end();
 });
 
-test('TXT fallback policy never bypasses integrity failures', t => {
+test('TXT fallback is independent of every HIP-2 failure', t => {
   t.equal(shouldFallbackToTXT({code: 'ETLSANOTFOUND'}), true);
   t.equal(shouldFallbackToTXT({code: 'ENOTFOUND'}), true);
   t.equal(shouldFallbackToTXT({code: 'EAI_AGAIN'}), true);
   t.equal(shouldFallbackToTXT({code: 'ECONNRESET'}), true);
   t.equal(shouldFallbackToTXT({code: 'ETIMEDOUT'}), true);
   t.equal(shouldFallbackToTXT({code: 404}), true);
-  t.equal(shouldFallbackToTXT({code: 'EINSECURE'}), false);
-  t.equal(shouldFallbackToTXT({code: 'EINVALID'}), false);
-  t.equal(shouldFallbackToTXT({code: 'EBADSIGNATURE'}), false);
+  t.equal(shouldFallbackToTXT({code: 'EINSECURE'}), true);
+  t.equal(shouldFallbackToTXT({code: 'ETLSAMISMATCH'}), true);
+  t.equal(shouldFallbackToTXT({code: 'EINVALID'}), true);
+  t.equal(shouldFallbackToTXT({code: 'EBADSIGNATURE'}), true);
+  t.equal(shouldFallbackToTXT(null), false);
   t.end();
 });
 
@@ -176,6 +178,7 @@ test('HIP-2 uses one normalized hostname for HTTPS and TLSA', async t => {
   const request = stubHTTPSResponse(MAIN_ADDRESS);
   const resolveTLSA = sinon.stub(hdns, 'resolveTLSA').resolves([{}]);
   const verifyTLSA = sinon.stub(hdns, 'verifyTLSA').returns(true);
+  const resolveRaw = sinon.stub(hdns, 'resolveRaw');
 
   const address = await getAddress('@HNSBroker.HNS.BIO.', 'main');
 
@@ -189,7 +192,29 @@ test('HIP-2 uses one normalized hostname for HTTPS and TLSA', async t => {
     'tcp',
     443,
   ]);
+  t.equal(resolveRaw.callCount, 0, 'successful HIP-2 remains first choice');
 
+  resolveRaw.restore();
+  verifyTLSA.restore();
+  resolveTLSA.restore();
+  request.restore();
+  t.end();
+});
+
+test('invalid HIP-2 body can resolve through independent authenticated TXT', async t => {
+  const request = stubHTTPSResponse('not-an-hns-address');
+  const resolveTLSA = sinon.stub(hdns, 'resolveTLSA').resolves([{}]);
+  const verifyTLSA = sinon.stub(hdns, 'verifyTLSA').returns(true);
+  const resolveRaw = sinon.stub(hdns, 'resolveRaw').resolves({
+    code: codes.NOERROR,
+    ad: true,
+    collect: () => [{data: {txt: [Buffer.from(`hns=${MAIN_ADDRESS}`)]}}],
+  });
+
+  t.equal(await getAddress('@hnsbroker.hns.bio', 'main'), MAIN_ADDRESS);
+  t.equal(resolveRaw.callCount, 1, 'authenticated TXT was queried');
+
+  resolveRaw.restore();
   verifyTLSA.restore();
   resolveTLSA.restore();
   request.restore();
@@ -216,20 +241,44 @@ test('authenticated TLSA absence falls back to authenticated TXT', async t => {
   t.end();
 });
 
-test('TLSA mismatch is a hard failure and never falls back', async t => {
+test('TLSA mismatch can resolve through independent authenticated TXT', async t => {
   const request = stubHTTPSResponse(MAIN_ADDRESS);
   const resolveTLSA = sinon.stub(hdns, 'resolveTLSA').resolves([{}]);
   const verifyTLSA = sinon.stub(hdns, 'verifyTLSA').returns(false);
-  const resolveRaw = sinon.stub(hdns, 'resolveRaw');
+  const resolveRaw = sinon.stub(hdns, 'resolveRaw').resolves({
+    code: codes.NOERROR,
+    ad: true,
+    collect: () => [{data: {txt: [Buffer.from(`hns:${MAIN_ADDRESS}`)]}}],
+  });
+
+  t.equal(await getAddress('@hnsbroker.hns.bio', 'main'), MAIN_ADDRESS);
+  t.equal(resolveRaw.callCount, 1, 'authenticated TXT was queried');
+
+  resolveRaw.restore();
+  verifyTLSA.restore();
+  resolveTLSA.restore();
+  request.restore();
+  t.end();
+});
+
+test('TLSA mismatch remains visible when TXT is absent', async t => {
+  const request = stubHTTPSResponse(MAIN_ADDRESS);
+  const resolveTLSA = sinon.stub(hdns, 'resolveTLSA').resolves([{}]);
+  const verifyTLSA = sinon.stub(hdns, 'verifyTLSA').returns(false);
+  const resolveRaw = sinon.stub(hdns, 'resolveRaw').resolves({
+    code: codes.NOERROR,
+    ad: true,
+    collect: () => [],
+  });
 
   try {
     await getAddress('@hnsbroker.hns.bio', 'main');
-    t.fail('TLSA mismatch should reject the alias');
+    t.fail('the alias should fail without a secure result');
   } catch (error) {
     t.equal(error.code, 'ETLSAMISMATCH');
   }
 
-  t.equal(resolveRaw.callCount, 0, 'TXT fallback was not queried');
+  t.equal(resolveRaw.callCount, 1, 'TXT was still checked independently');
 
   resolveRaw.restore();
   verifyTLSA.restore();
