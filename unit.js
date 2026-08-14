@@ -46,6 +46,7 @@ require('./app/background/wallet/tests/liquidityHtlc.spec');
 require('./app/background/wallet/tests/registerValidation.spec');
 require('./app/background/wallet/tests/revealBatch.spec');
 require('./app/background/node/tests/spvHelper.spec');
+require('./app/ducks/tests/nodeReducer.spec');
 require('./app/deeplink/tests/index.spec');
 require('./app/utils/tests/paidNameTransfer.spec');
 require('./app/utils/tests/shakedexListingAction.spec');

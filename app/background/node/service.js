@@ -226,6 +226,8 @@ export class NodeService extends EventEmitter {
             network: this.networkName,
             apiKey: this.apiKey,
             noDns: this.noDns,
+            nsPort: this.getNsPort(),
+            rsPort: this.getRsPort(),
           },
         });
         break;
@@ -241,6 +243,8 @@ export class NodeService extends EventEmitter {
             network: this.networkName,
             apiKey: null,
             noDns: true,
+            nsPort: this.getNsPort(),
+            rsPort: this.getRsPort(),
           },
         });
         break;

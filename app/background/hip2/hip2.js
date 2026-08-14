@@ -122,7 +122,9 @@ export async function getTXTAddress(host, network) {
   }
 
   const records = response.collect(host, types.TXT).map((record) => {
-    return Buffer.concat(record.data.txt).toString('utf8');
+    // bns decodes TXT character-strings as JavaScript strings. Joining the
+    // chunks preserves multi-string records without assuming Buffer values.
+    return record.data.txt.join('');
   });
 
   return parseHNSAddressTXT(records, network);

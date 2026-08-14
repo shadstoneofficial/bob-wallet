@@ -12,7 +12,7 @@ import {getAddress, getTXTAddress} from '../hip2';
 
 const hdns = require('hdns');
 const https = require('https');
-const {codes} = require('bns/lib/wire');
+const {codes, Message, Record, TXTRecord, types} = require('bns/lib/wire');
 
 const MAIN_ADDRESS = 'hs1q5e06h2fcwx9sx38k6skzwkzmm54meudhphkytx';
 const OTHER_MAIN_ADDRESS = 'hs1q0000000000000000000000000000000000000000';
@@ -141,20 +141,30 @@ test('missing TXT fallback does not hide a HIP-2 connection error', t => {
 test('secure TXT lookup requires AD and joins TXT chunks', async t => {
   const resolveRaw = sinon.stub(hdns, 'resolveRaw');
 
-  resolveRaw.resolves({
-    code: codes.NOERROR,
-    ad: true,
-    collect: () => [{
-      data: {
-        txt: [Buffer.from('hns:'), Buffer.from(MAIN_ADDRESS)],
-      },
-    }],
-  });
+  const response = new Message();
+  response.code = codes.NOERROR;
+  response.ad = true;
+
+  for (const chunks of [
+    ['x:hnsbroker'],
+    ['hns:', MAIN_ADDRESS],
+  ]) {
+    const record = new Record();
+    record.name = 'hnsbroker.';
+    record.type = types.TXT;
+    record.data = new TXTRecord();
+    record.data.txt = chunks;
+    response.answer.push(record);
+  }
+
+  // Encode and decode the response so this test uses the same string-valued
+  // TXT chunks returned by bns in a real DNS lookup.
+  resolveRaw.resolves(Message.decode(response.compress()));
 
   t.equal(
-    await getTXTAddress('hnsbroker.hns.bio', 'main'),
+    await getTXTAddress('hnsbroker', 'main'),
     MAIN_ADDRESS,
-    'authenticated multi-chunk TXT record resolves',
+    'authenticated root-TLD TXT resolves after unrelated records',
   );
 
   resolveRaw.resolves({

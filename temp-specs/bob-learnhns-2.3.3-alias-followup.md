@@ -101,3 +101,21 @@ Implemented locally on 2026-08-14:
 - Update the website download page, release links, and checksums only after final release artifacts exist.
 - Run the complete unit suite and production renderer build before tagging.
 - Build all supported macOS, Windows, and Linux artifacts; sign, notarize, staple, and Gatekeeper-check both macOS DMGs.
+
+## 2.3.4 incident: real TXT wire values and displayed resolver ports
+
+Live testing of 2.3.3 with `@hnsbroker` proved that the local resolver returned
+the authenticated on-chain `hns:` TXT record, but Bob rejected it. The real
+`bns` decoder exposes each TXT character-string as a JavaScript string. The
+2.3.3 implementation used `Buffer.concat(record.data.txt)`, which threw
+`ERR_INVALID_ARG_TYPE` on the first unrelated TXT record before reaching the
+wallet record. Its mock test incorrectly supplied Buffer chunks and therefore
+did not reproduce the runtime representation.
+
+The same investigation showed LearnHNS listening on `10891/10892` while
+Settings displayed `9891/9892`. Node startup passed network and DNS state to
+Redux but omitted the actual port values, leaving the upstream defaults visible.
+
+The 2.3.4 correction joins the decoded TXT string chunks, exercises an
+encoded-and-decoded `bns` response containing unrelated and multi-chunk TXT
+records, and publishes the node's actual root and recursive ports to Settings.

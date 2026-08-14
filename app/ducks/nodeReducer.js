@@ -74,6 +74,8 @@ export default function nodeReducer(state = getInitialState(), action = {}) {
         network: action.payload.network,
         apiKey: action.payload.apiKey,
         noDns: action.payload.noDns,
+        nsPort: action.payload.nsPort ?? state.nsPort,
+        rsPort: action.payload.rsPort ?? state.rsPort,
       };
     case STOP:
       return {
