@@ -2,7 +2,7 @@
 
 ## Status
 
-Agreed with HNSBroker/Wil on 2026-08-14. This document is the implementation and build-note source for the next Bob LearnHNS patch release.
+Agreed with HNSBroker/Wil on 2026-08-14. Release 2.3.3 was approved on 2026-08-14; this document is its implementation and build-note source.
 
 ## Goal
 
@@ -96,7 +96,7 @@ Implemented locally on 2026-08-14:
 
 ## Release checklist
 
-- Keep `package.json` at 2.3.2 until a 2.3.3 build is explicitly approved.
+- Set `package.json` and the lockfile to 2.3.3 before tagging `v2.3.3`.
 - Before publishing 2.3.3, update `bobwallet.org/docs/wallet-aliases` so it explains that authenticated TXT is independent of TLSA and documents the Resolve alias control.
 - Update the website download page, release links, and checksums only after final release artifacts exist.
 - Run the complete unit suite and production renderer build before tagging.
