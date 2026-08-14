@@ -51,6 +51,12 @@ export class AddressInput extends Component {
     });
   }
 
+  componentDidUpdate = (previousProps) => {
+    if (previousProps.hip2Port !== this.props.hip2Port) {
+      hip2.setServers([`127.0.0.1:${this.props.hip2Port}`]);
+    }
+  }
+
   componentWillUnmount = () => {
     document.removeEventListener('keydown', this.handleEscape);
   }
@@ -85,8 +91,10 @@ export class AddressInput extends Component {
       const errorText = {
         EINVALID: t('hip2InvalidAddress'),
         ELARGE: t('hip2InvalidAddress'),
-        ECOLLISION: t('hip2InvalidAlias'),
+        ECOLLISION: t('hip2AmbiguousAlias'),
         EINVALIDALIAS: t('hip2InvalidAlias'),
+        ETLSAMISMATCH: t('hip2TLSAMismatch'),
+        ETXTINSECURE: t('hip2TXTInsecure'),
         EINSECURE: t('hip2InvalidTLSA'),
         ENOTFOUND: t('hip2ConnectionFailed'),
         EAI_AGAIN: t('hip2ConnectionFailed'),

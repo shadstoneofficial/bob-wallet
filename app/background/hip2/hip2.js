@@ -76,7 +76,7 @@ async function getHIP2Address(host, network) {
           const dane = await verifyTLSA(certificate, host);
           if (!dane) {
             const error = new Error('invalid DANE');
-            error.code = 'EINSECURE';
+            error.code = 'ETLSAMISMATCH';
             return reject(error);
           }
 
@@ -118,7 +118,7 @@ export async function getTXTAddress(host, network) {
   }
 
   if (!response.ad) {
-    throw aliasError('TXT response is not authenticated', 'EINSECURE');
+    throw aliasError('TXT response is not authenticated', 'ETXTINSECURE');
   }
 
   const records = response.collect(host, types.TXT).map((record) => {

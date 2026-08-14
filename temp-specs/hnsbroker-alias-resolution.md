@@ -136,7 +136,7 @@ Implementation and automated verification were completed on 2026-08-12:
 - The project test suite passes all 160 tests.
 - Production Babel transpilation succeeds for the modified background and renderer modules.
 
-Live verification used Bob’s running validating resolver on `127.0.0.1:10892`:
+The initial live verification on 2026-08-12 used Bob’s running validating resolver on `127.0.0.1:10892`:
 
 - `_443._tcp.hnsbroker.hns.bio` returned an authenticated TLSA record.
 - Running the updated resolver with `@hnsbroker.hns.bio.` reached that normalized TLSA name and did not produce `EBADQUESTION`.
@@ -158,8 +158,82 @@ We also fixed the partial-alias behavior. Typed aliases now resolve when the use
 
 We added the requested TXT fallback. Bob tries HIP-2 first and, when HIP-2 is genuinely unavailable, accepts an authenticated TXT record using `hns:<address>` or `hns=<address>`. It validates the address and does not fall back after a failed or mismatched TLSA record.
 
-During live testing, Bob now queried the correct `_443._tcp.hnsbroker.hns.bio` name and your HIP-2 endpoint returned an HNS address successfully. We did find one current configuration issue: the TLSA SPKI hash being published (`F803…DCA9`) does not match the certificate presently served by `hnsbroker.hns.bio` (`B44B…52C1`). The updated Bob therefore correctly reports invalid DANE rather than the former bad-question error. The TLSA record will need to be refreshed to match the current certificate. We also did not find an HNS TXT record at the hostname during this test.
+After you refreshed the TLSA record, we verified that its `B44B…52C1` SPKI hash matches the certificate currently served by `hnsbroker.hns.bio`, and that the HIP-2 endpoint returns a valid HNS address. Thank you for correcting that configuration.
+
+We then found a separate Bob LearnHNS 2.3.1 problem: its Handshake recursive resolver runs on port `10892`, while the HIP-2 client still defaults to `9892`. That is why current upstream Bob can resolve your alias while Bob LearnHNS 2.3.1 cannot. We have corrected Bob LearnHNS so the alias client automatically follows the node's actual recursive resolver port. The correct Send-field syntax remains `@hnsbroker.hns.bio`.
 
 Your logs and explanation were very helpful. The fix is covered by automated tests and a live lookup through Bob’s validating resolver.
 
 Thanks again.
+
+## 2026-08-14 incident addendum: Bob LearnHNS resolver-port mismatch
+
+### Corrected current diagnosis
+
+HNSBroker/Wil refreshed the TLSA record after the initial test. A new live check on 2026-08-14 established that the external alias configuration is now valid:
+
+- `_443._tcp.hnsbroker.hns.bio` publishes an authenticated TLSA SPKI SHA-256 value of `B44B…52C1`.
+- The certificate currently served by `hnsbroker.hns.bio` has the same `B44B…52C1` SPKI SHA-256 value.
+- `https://hnsbroker.hns.bio/.well-known/wallets/HNS` returns HTTP 200 and the valid mainnet address `hs1qkm58x2cfm40tu7gh5kc2dfkm4cq2tzekzr5ge5`.
+- Running the current resolver directly through Bob's validating DNS service returns that address successfully.
+- No HNS-address TXT fallback record was present during the check.
+
+The remaining Bob LearnHNS 2.3.1 failure is therefore local to the application. Bob LearnHNS identifies the fork by setting `BOB_LEARNHNS_TEST=true`. The node service applies the LearnHNS port offset and starts its recursive DNS resolver on `10892`, but the HIP-2 service independently defaults to `9892`. The Send page consequently sends alias DNS queries to a port where the LearnHNS recursive resolver is not listening.
+
+This explains the otherwise contradictory reports:
+
+- Old upstream Bob succeeds because its node resolver and HIP-2 client both use `9892`.
+- Bob LearnHNS 2.3.1 fails because its node resolver uses `10892` while its HIP-2 client defaults to `9892`.
+- Synchronization status is unrelated to this port mismatch.
+- Entering `hnsbroker.hns.bio` without `@` correctly produces “Invalid Address” because Bob treats it as a literal payment address.
+- The correct alias input is `@hnsbroker.hns.bio`.
+
+The `punycode` deprecation and old Linux VAAPI warnings Wil supplied are unrelated to DNS, TLSA, DANE, or HIP-2 resolution. Reinstalling the same 2.3.1 binary cannot correct the hardcoded default.
+
+### Log limitation
+
+The supplied `bob-debug-main00.log` contains normal HSD node and wallet activity but no HIP-2, TLSA, DANE, alias hostname, or alias resolver-port diagnostics. Packaged production IPC logging currently suppresses this information. A future diagnostics improvement should include privacy-safe alias resolution stage, error code, and resolver endpoint details without recording wallet-sensitive data.
+
+### Implemented correction
+
+- When no custom alias resolver has been saved, the HIP-2 service now obtains its default from `NodeService.getRsPort()` instead of hardcoding `9892`.
+- This makes upstream Bob use `9892` and Bob LearnHNS use `10892` automatically.
+- An explicitly configured custom alias resolver port remains supported.
+- `AddressInput` now refreshes the HIP-2 client's server whenever the resolved port changes, including initialization and changes made in Settings.
+- Regression tests cover the normal port, the LearnHNS offset port, custom-port preservation, and live propagation of a port change into the Send field.
+- The complete automated suite passes all 184 tests after the resolver, error-message, and privacy-safe logging corrections.
+
+### Error-message and documentation follow-up
+
+Before packaging the patch release, Bob's alias errors were separated by cause and responsibility:
+
+- A TLSA/certificate mismatch explicitly says not to send and that the alias owner must fix the TLSA record.
+- An unauthenticated TXT fallback explicitly identifies DNSSEC and says the alias owner must fix it.
+- Missing, invalid, and ambiguous published addresses identify the alias configuration as the problem.
+- Invalid input tells the sender to include `@` and provides an example.
+- Host connection failures tell the sender to check the name and connection before retrying.
+- DNS lookup failures direct the sender to Bob's DNS and Alias Resolver settings.
+
+The Send page link text now explains that the linked page covers both alias operation and errors. The public `bobwallet.org/docs/wallet-aliases` page mirrors the in-app messages, identifies who can fix each condition, and includes a temporary Bob LearnHNS 2.3.1 resolver-port advisory.
+
+### Privacy-safe terminal action logging
+
+HNSBroker/Wil confirmed that alias resolution succeeds after changing Bob LearnHNS 2.3.1's Alias Resolver setting to `10892`. He also reported that the AppImage terminal no longer shows Bob's actions and now displays only Node's `punycode` warning, Linux's VAAPI warning, and the node-start message.
+
+The missing action output was traced to the Electron security-hardening change in commit `a02fa99`. Packaged IPC logging was disabled because the legacy logger included complete request parameters and responses. Restoring that format would risk exposing hostnames, wallet addresses, amounts, passwords, seeds, and transaction payloads in terminals and copied support logs.
+
+The patch release instead restores privacy-safe operational visibility:
+
+- Packaged builds log the IPC service and method when an action starts.
+- Completion logs show success or a sanitized error code plus elapsed milliseconds.
+- Parameters, return values, error messages, stack traces, hostnames, addresses, amounts, and transaction data are excluded.
+- Bob prints the active local alias resolver port during initialization and when the setting changes.
+- Automated tests verify that request values, response values, and error messages cannot appear in the action-log output.
+
+Example safe output:
+
+```text
+[Bob alias] Local resolver port: 10892
+[Bob action] Hip2.fetchAddress started
+[Bob action] Hip2.fetchAddress succeeded (42 ms)
+```

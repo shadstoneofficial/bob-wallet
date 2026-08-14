@@ -4,21 +4,21 @@ import { dispatchToMainWindow } from '../../mainWindow';
 import { service } from '../node/service';
 import { setServers, getAddress } from './hip2';
 import { normalizeHostname } from './alias';
+import { selectAliasResolverPort } from './port';
 import isValidAddress from '../../utils/verifyAddress';
 
 const HIP2_PORT = 'hip2/port';
 
 async function getPort() {
   const hip2Port = await get(HIP2_PORT);
-  if (hip2Port !== null) {
-    return hip2Port;
-  }
-
-  return 9892;
+  const port = selectAliasResolverPort(hip2Port, service.getRsPort());
+  console.log(`[Bob alias] Local resolver port: ${port}`);
+  return port;
 }
 
 async function setPort(port) {
   await put(HIP2_PORT, port);
+  console.log(`[Bob alias] Local resolver port changed to: ${port}`);
   dispatchToMainWindow({
     type: SET_HIP2_PORT,
     payload: port

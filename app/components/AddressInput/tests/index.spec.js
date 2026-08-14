@@ -51,6 +51,19 @@ test('pasted HIP-2 aliases resolve immediately', t => {
   t.end();
 });
 
+test('HIP-2 client follows resolver port changes', t => {
+  const component = createAddressInput();
+  const setServers = sinon.stub(hip2, 'setServers').resolves();
+  const previousProps = component.props;
+
+  component.props = {...component.props, hip2Port: 10892};
+  component.componentDidUpdate(previousProps);
+
+  t.deepEqual(setServers.firstCall.args[0], ['127.0.0.1:10892']);
+  setServers.restore();
+  t.end();
+});
+
 test('alias failures show specific security and connection messages', async t => {
   const component = createAddressInput();
   component.state.input = '@hnsbroker.hns.bio';
@@ -61,6 +74,18 @@ test('alias failures show specific security and connection messages', async t =>
   fetchAddress.rejects(securityError);
   await component._resolveHip2Address('hnsbroker.hns.bio');
   t.equal(component.state.errorMessage, 'hip2InvalidTLSA');
+
+  const tlsaError = new Error('TLSA mismatch');
+  tlsaError.code = 'ETLSAMISMATCH';
+  fetchAddress.rejects(tlsaError);
+  await component._resolveHip2Address('hnsbroker.hns.bio');
+  t.equal(component.state.errorMessage, 'hip2TLSAMismatch');
+
+  const txtSecurityError = new Error('TXT is not authenticated');
+  txtSecurityError.code = 'ETXTINSECURE';
+  fetchAddress.rejects(txtSecurityError);
+  await component._resolveHip2Address('hnsbroker.hns.bio');
+  t.equal(component.state.errorMessage, 'hip2TXTInsecure');
 
   const connectionError = new Error('host lookup failed');
   connectionError.code = 'ENOTFOUND';

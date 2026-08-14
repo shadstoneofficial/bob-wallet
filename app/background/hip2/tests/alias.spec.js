@@ -165,7 +165,7 @@ test('secure TXT lookup requires AD and joins TXT chunks', async t => {
     await getTXTAddress('hnsbroker.hns.bio', 'main');
     t.fail('unauthenticated TXT response should be rejected');
   } catch (error) {
-    t.equal(error.code, 'EINSECURE');
+    t.equal(error.code, 'ETXTINSECURE');
   }
 
   resolveRaw.restore();
@@ -226,7 +226,7 @@ test('TLSA mismatch is a hard failure and never falls back', async t => {
     await getAddress('@hnsbroker.hns.bio', 'main');
     t.fail('TLSA mismatch should reject the alias');
   } catch (error) {
-    t.equal(error.code, 'EINSECURE');
+    t.equal(error.code, 'ETLSAMISMATCH');
   }
 
   t.equal(resolveRaw.callCount, 0, 'TXT fallback was not queried');

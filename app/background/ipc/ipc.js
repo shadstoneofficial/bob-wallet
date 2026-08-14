@@ -24,6 +24,20 @@ function log() {
   console.log(...arguments);
 }
 
+export function formatActionLog(methodName, status, duration, errorCode) {
+  let message = `[Bob action] ${methodName} ${status}`;
+
+  if (errorCode !== undefined && errorCode !== null) {
+    message += ` [${String(errorCode).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 40) || 'ERROR'}]`;
+  }
+
+  if (Number.isFinite(duration)) {
+    message += ` (${Math.max(0, Math.round(duration))} ms)`;
+  }
+
+  return message;
+}
+
 // used to scrub sensitive info from RPC calls
 function sanitizeData(data, method) {
   if (method.suppressLogging) {
@@ -44,7 +58,11 @@ function sanitizeRes(res, method) {
   return res;
 }
 
-export function makeServer(ipcMain, authorize = () => true) {
+export function makeServer(
+  ipcMain,
+  authorize = () => true,
+  actionLogger = message => console.log(message),
+) {
   const methods = {};
 
   const handler = (event, data) => {
@@ -63,6 +81,9 @@ export function makeServer(ipcMain, authorize = () => true) {
       return event.sender.send(SIGIL, makeError(-32601, 'method not found', data.id));
     }
 
+    const actionStarted = Date.now();
+    actionLogger(formatActionLog(data.method, 'started'));
+
     let params;
     if (!Array.isArray(data.params)) {
       params = [data.params];
@@ -72,11 +93,22 @@ export function makeServer(ipcMain, authorize = () => true) {
 
     const cb = (err, res) => {
       if (err) {
+        actionLogger(formatActionLog(
+          data.method,
+          'failed',
+          Date.now() - actionStarted,
+          err.code || 'ERROR',
+        ));
         log('Sending IPC method error.', sanitizeData(data, method), err);
         log('Stack:', err.stack);
         Sentry.captureException(err);
         return event.sender.send(SIGIL, makeError(err.code || -1, err.message, data.id));
       }
+      actionLogger(formatActionLog(
+        data.method,
+        'succeeded',
+        Date.now() - actionStarted,
+      ));
       log('Sending IPC method response.', sanitizeData(data, method), sanitizeRes(res, method));
       return event.sender.send(SIGIL, makeResponse(res, data.id));
     };
