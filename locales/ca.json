@@ -187,6 +187,7 @@
   "highestBid": "Oferta més alta",
   "highestLockup": "Bloqueig més alt",
   "hip2AddressNotFound": "No hi ha cap adreça HNS segura publicada per a aquest àlies. Demaneu al propietari que configuri HIP-2 o un registre TXT HNS amb DNSSEC.",
+  "hip2AliasSuggestion": "Això sembla un àlies de cartera. Seleccioneu Resol l’àlies per cercar-lo de manera segura.",
   "hip2AmbiguousAlias": "Aquest àlies publica diverses adreces HNS. Demaneu al propietari que en publiqui només una.",
   "hip2ConnectionFailed": "No s'ha pogut accedir a l'amfitrió de l'àlies. Comproveu el nom i la connexió i torneu-ho a provar.",
   "hip2DNSFailed": "Ha fallat la consulta DNS de l'àlies. Comproveu la configuració DNS de Bob o torneu-ho a provar més tard.",

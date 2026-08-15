@@ -10,20 +10,41 @@ import {
   selectAliasError,
   shouldFallbackToTXT,
 } from './alias';
+import {collectSecureRecords} from './secure-dns';
 
 const hdns = require('hdns');
 const https = require('https');
+const bnsTLSA = require('bns/lib/tlsa');
 const {codes, types} = require('bns/lib/wire');
 
 const MAX_LENGTH = 90;
+const HIP2_TIMEOUT_MS = 10000;
 
 const verifyTLSA = async (cert, host) => {
   try {
-    const tlsa = await hdns.resolveTLSA(host, 'tcp', 443);
-    return hdns.verifyTLSA(tlsa[0], cert.raw);
+    const records = await hdns.resolveTLSA(host, 'tcp', 443);
+    return hdns.verifyTLSA(records[0], cert.raw);
   } catch (e) {
     if (e.code === 'ENODATA' || e.code === 'ENOTFOUND') {
       throw aliasError('TLSA record not found', 'ETLSANOTFOUND');
+    }
+
+    if (e.code === 'EINSECURE') {
+      const name = bnsTLSA.encodeName(host, 'tcp', 443);
+      const response = await hdns.resolveRaw(name, types.TLSA);
+      const records = await collectSecureRecords(
+        response,
+        name,
+        types.TLSA,
+        hdns.resolveRaw,
+      );
+
+      if (!records) throw e;
+      if (records.length === 0) {
+        throw aliasError('TLSA record not found', 'ETLSANOTFOUND');
+      }
+
+      return records.some(record => bnsTLSA.verify(record, cert.raw));
     }
 
     console.error(e);
@@ -35,6 +56,17 @@ async function getHIP2Address(host, network) {
   let certificate = undefined;
 
   return new Promise(async (resolve, reject) => {
+    let settled = false;
+    let timeout;
+    const finish = (handler, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      handler(value);
+    };
+    const succeed = value => finish(resolve, value);
+    const fail = error => finish(reject, error);
+
     const options = {
       rejectUnauthorized: false,
       lookup: hdns.legacy,
@@ -65,7 +97,7 @@ async function getHIP2Address(host, network) {
           }
           const error = new Error('response too large');
           error.code = 'ELARGE';
-          return reject(error);
+          return fail(error);
         }
 
         data += chunk;
@@ -77,13 +109,13 @@ async function getHIP2Address(host, network) {
           if (!dane) {
             const error = new Error('invalid DANE');
             error.code = 'ETLSAMISMATCH';
-            return reject(error);
+            return fail(error);
           }
 
           if (res.statusCode >= 400) {
             const error = new Error(res.statusMessage);
             error.code = res.statusCode;
-            return reject(error);
+            return fail(error);
           }
 
           const addr = data.trim();
@@ -91,17 +123,24 @@ async function getHIP2Address(host, network) {
           if (!isValidAddress(addr, network)) {
             const error = new Error('invalid address');
             error.code = 'EINVALID';
-            return reject(error);
+            return fail(error);
           }
 
-          return resolve(addr);
+          return succeed(addr);
         } catch (error) {
-          return reject(error);
+          return fail(error);
         }
       });
     });
 
-    req.on('error', reject);
+    timeout = setTimeout(() => {
+      const error = new Error('HIP-2 request timed out');
+      error.code = 'ETIMEDOUT';
+      req.destroy();
+      fail(error);
+    }, HIP2_TIMEOUT_MS);
+
+    req.on('error', fail);
     req.end();
   });
 }
@@ -117,17 +156,24 @@ export async function getTXTAddress(host, network) {
     throw aliasError('TXT lookup failed', 'EDNS');
   }
 
-  if (!response.ad) {
+  const records = await collectSecureRecords(
+    response,
+    host,
+    types.TXT,
+    hdns.resolveRaw,
+  );
+
+  if (!records) {
     throw aliasError('TXT response is not authenticated', 'ETXTINSECURE');
   }
 
-  const records = response.collect(host, types.TXT).map((record) => {
+  const values = records.map((record) => {
     // bns decodes TXT character-strings as JavaScript strings. Joining the
     // chunks preserves multi-string records without assuming Buffer values.
     return record.data.txt.join('');
   });
 
-  return parseHNSAddressTXT(records, network);
+  return parseHNSAddressTXT(values, network);
 }
 
 export async function getAddress(input, network) {

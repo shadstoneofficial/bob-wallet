@@ -187,6 +187,7 @@
   "highestBid": "Puja más alta",
   "highestLockup": "Bloqueo más alto",
   "hip2AddressNotFound": "No hay una dirección HNS segura publicada para este alias. Pide al propietario que configure HIP-2 o un registro TXT HNS con DNSSEC.",
+  "hip2AliasSuggestion": "Parece un alias de monedero. Selecciona Resolver alias para buscarlo de forma segura.",
   "hip2AmbiguousAlias": "Este alias publica varias direcciones HNS. Pide al propietario que publique solo una.",
   "hip2ConnectionFailed": "No se pudo acceder al host del alias. Comprueba el nombre y tu conexión e inténtalo de nuevo.",
   "hip2DNSFailed": "Falló la búsqueda DNS del alias. Comprueba la configuración DNS de Bob o inténtalo más tarde.",

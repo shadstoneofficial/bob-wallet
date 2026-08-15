@@ -4,7 +4,10 @@ import PropTypes from 'prop-types';
 import isValidAddress from '../../utils/verifyAddress';
 import { I18nContext } from '../../utils/i18n';
 import hip2 from "../../utils/hip2Client";
-import {normalizeHostname} from '../../background/hip2/alias';
+import {
+  looksLikeHostname,
+  normalizeHostname,
+} from '../../background/hip2/alias';
 import Alert from '../Alert';
 import LockSVG from '../../assets/images/lock.svg';
 import RingsSVG from '../../assets/images/rings.svg';
@@ -123,6 +126,19 @@ export class AddressInput extends Component {
     });
   }
 
+  resolveSuggestedAlias = () => {
+    const {input} = this.state;
+
+    if (!looksLikeHostname(input)) return;
+
+    this.setState({
+      input: `@${input.trim()}`,
+      address: '',
+      loading: false,
+      errorMessage: '',
+    }, this.resolveCurrentHip2Address);
+  }
+
   handleInputChange = (event) => {
     const resolveImmediately = this.resolveOnNextChange
       || event.nativeEvent?.inputType === 'insertFromPaste';
@@ -181,11 +197,14 @@ export class AddressInput extends Component {
     // resolve regular
     if (!isHip2Input) {
       const isValid = isValidAddress(input, network);
+      const isAliasSuggestion = !isValid && looksLikeHostname(input);
       this.setState({
         input: input,
         address: input,
         loading: false,
-        errorMessage: !(input.length < 3 || isValid) ? t('invalidAddress') : '',
+        errorMessage: isAliasSuggestion
+          ? t('hip2AliasSuggestion')
+          : !(input.length < 3 || isValid) ? t('invalidAddress') : '',
       });
       onAddress?.({domain: '', address: isValid ? input : ''});
       return;
@@ -240,6 +259,10 @@ export class AddressInput extends Component {
       && Boolean(trimmedInput)
       && !loading
       && !address;
+    const canResolveSuggestedAlias = !isHip2Input
+      && looksLikeHostname(input)
+      && isSynchronized
+      && !noDns;
     const showResolveHint = canResolveAlias && !errorMessage;
 
     let placeholder = t('recipientAddressHip2Enabled');
@@ -286,6 +309,17 @@ export class AddressInput extends Component {
               className="addr-input__resolve"
               onMouseDown={event => event.preventDefault()}
               onClick={this.resolveCurrentHip2Address}
+              aria-label={t('hip2ResolveAlias')}
+            >
+              {t('hip2ResolveAlias')}
+            </button>
+          }
+          {canResolveSuggestedAlias &&
+            <button
+              type="button"
+              className="addr-input__resolve"
+              onMouseDown={event => event.preventDefault()}
+              onClick={this.resolveSuggestedAlias}
               aria-label={t('hip2ResolveAlias')}
             >
               {t('hip2ResolveAlias')}

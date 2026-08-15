@@ -3,6 +3,7 @@ import sinon from 'sinon';
 import {EventEmitter} from 'events';
 
 import {
+  looksLikeHostname,
   normalizeHostname,
   parseHNSAddressTXT,
   selectAliasError,
@@ -12,11 +13,71 @@ import {getAddress, getTXTAddress} from '../hip2';
 
 const hdns = require('hdns');
 const https = require('https');
-const {codes, Message, Record, TXTRecord, types} = require('bns/lib/wire');
+const dnssec = require('bns/lib/dnssec');
+const tlsa = require('bns/lib/tlsa');
+const {algs, keyFlags} = require('bns/lib/constants');
+const {
+  codes,
+  Message,
+  Record,
+  TLSARecord,
+  TXTRecord,
+  types,
+} = require('bns/lib/wire');
 
 const MAIN_ADDRESS = 'hs1q5e06h2fcwx9sx38k6skzwkzmm54meudhphkytx';
 const OTHER_MAIN_ADDRESS = 'hs1q0000000000000000000000000000000000000000';
 const TESTNET_ADDRESS = 'ts1q8tlzrx9lq9an302cju5q6msjnr06564sd9fnj9';
+
+function delegatedFixture(zoneName, records) {
+  const zone = zoneName.endsWith('.') ? zoneName : `${zoneName}.`;
+  const privateKey = dnssec.createPrivate(algs.ECDSAP256SHA256);
+  const key = dnssec.makeKey(
+    zone,
+    algs.ECDSAP256SHA256,
+    privateKey,
+    keyFlags.ZONE | keyFlags.SEP,
+  );
+  const ds = dnssec.createDS(key);
+
+  const dsMessage = new Message();
+  dsMessage.code = codes.NOERROR;
+  dsMessage.ad = true;
+  dsMessage.answer.push(ds);
+
+  const keyMessage = new Message();
+  keyMessage.code = codes.NOERROR;
+  keyMessage.ad = false;
+  keyMessage.answer.push(key, dnssec.sign(key, privateKey, [key]));
+
+  const answerMessage = new Message();
+  answerMessage.code = codes.NOERROR;
+  answerMessage.ad = false;
+  answerMessage.answer.push(
+    ...records,
+    dnssec.sign(key, privateKey, records),
+  );
+
+  return {answerMessage, dsMessage, keyMessage};
+}
+
+function txtRecord(name, value) {
+  const record = new Record();
+  record.name = name.endsWith('.') ? name : `${name}.`;
+  record.type = types.TXT;
+  record.data = new TXTRecord();
+  record.data.txt = [value];
+  return record;
+}
+
+function stubDelegatedQueries(resolveRaw, fixture, targetType) {
+  resolveRaw.callsFake(async (name, type) => {
+    if (type === targetType || type === 'TXT') return fixture.answerMessage;
+    if (type === types.DS) return fixture.dsMessage;
+    if (type === types.DNSKEY) return fixture.keyMessage;
+    throw new Error(`unexpected DNS query ${name} ${type}`);
+  });
+}
 
 function stubHTTPSResponse(body, statusCode = 200) {
   let requestedURL = '';
@@ -66,6 +127,16 @@ test('HIP-2 hostname normalization removes UI-only syntax', t => {
       `${invalid || '<empty>'} is rejected`,
     );
   }
+  t.end();
+});
+
+test('domain-like recipient detection is conservative', t => {
+  t.equal(looksLikeHostname('janice.agent'), true);
+  t.equal(looksLikeHostname('Janice.Agent.'), true);
+  t.equal(looksLikeHostname('hs1q5e06h2fcwx9sx38k6skzwkzmm54meudhphkytx'), false);
+  t.equal(looksLikeHostname('user@example'), false);
+  t.equal(looksLikeHostname('https://janice.agent'), false);
+  t.equal(looksLikeHostname('@janice.agent'), false);
   t.end();
 });
 
@@ -184,6 +255,105 @@ test('secure TXT lookup requires AD and joins TXT chunks', async t => {
   t.end();
 });
 
+test('delegated TXT lookup validates through an authenticated parent DS', async t => {
+  const resolveRaw = sinon.stub(hdns, 'resolveRaw');
+  const records = [
+    txtRecord('janice.agent.', 'name:Janice'),
+    txtRecord('janice.agent.', `hns:${MAIN_ADDRESS}`),
+  ];
+  const fixture = delegatedFixture('janice.agent.', records);
+  stubDelegatedQueries(resolveRaw, fixture, types.TXT);
+
+  t.equal(
+    await getTXTAddress('janice.agent', 'main'),
+    MAIN_ADDRESS,
+    'valid child signatures are accepted only through the authenticated DS',
+  );
+  t.equal(resolveRaw.callCount, 3, 'TXT, parent DS, and child DNSKEY queried');
+
+  resolveRaw.restore();
+  t.end();
+});
+
+test('delegated TXT lookup rejects incomplete or tampered trust chains', async t => {
+  const resolveRaw = sinon.stub(hdns, 'resolveRaw');
+  const records = [txtRecord('janice.agent.', `hns:${MAIN_ADDRESS}`)];
+  const fixture = delegatedFixture('janice.agent.', records);
+  const authenticatedDS = fixture.dsMessage;
+  stubDelegatedQueries(resolveRaw, fixture, types.TXT);
+
+  fixture.dsMessage.ad = false;
+  try {
+    await getTXTAddress('janice.agent', 'main');
+    t.fail('an unauthenticated parent DS must be rejected');
+  } catch (error) {
+    t.equal(error.code, 'ETXTINSECURE');
+  }
+
+  authenticatedDS.ad = true;
+  const unrelatedFixture = delegatedFixture('janice.agent.', records);
+  fixture.dsMessage = unrelatedFixture.dsMessage;
+  try {
+    await getTXTAddress('janice.agent', 'main');
+    t.fail('a child key that does not match the authenticated DS must be rejected');
+  } catch (error) {
+    t.equal(error.code, 'ETXTINSECURE');
+  }
+
+  fixture.dsMessage = authenticatedDS;
+  const answerSignature = fixture.answerMessage.answer.find(
+    record => record.type === types.RRSIG,
+  );
+  const validExpiration = answerSignature.data.expiration;
+  answerSignature.data.expiration = 1;
+  try {
+    await getTXTAddress('janice.agent', 'main');
+    t.fail('an expired child RRset signature must be rejected');
+  } catch (error) {
+    t.equal(error.code, 'ETXTINSECURE');
+  }
+  answerSignature.data.expiration = validExpiration;
+
+  records[0].data.txt = [`hns:${OTHER_MAIN_ADDRESS}`];
+  try {
+    await getTXTAddress('janice.agent', 'main');
+    t.fail('a TXT RRset changed after signing must be rejected');
+  } catch (error) {
+    t.equal(error.code, 'ETXTINSECURE');
+  }
+
+  resolveRaw.restore();
+  t.end();
+});
+
+test('delegated TLSA validates through parent DS before HIP-2 use', async t => {
+  const request = stubHTTPSResponse(MAIN_ADDRESS);
+  const insecure = new Error('recursive resolver omitted AD');
+  insecure.code = 'EINSECURE';
+  const resolveTLSA = sinon.stub(hdns, 'resolveTLSA').rejects(insecure);
+  const verifyTLSARecord = sinon.stub(tlsa, 'verify').returns(true);
+  const resolveRaw = sinon.stub(hdns, 'resolveRaw');
+  const record = new Record();
+  record.name = tlsa.encodeName('janice.agent', 'tcp', 443);
+  record.type = types.TLSA;
+  record.data = new TLSARecord();
+  record.data.usage = 3;
+  record.data.selector = 0;
+  record.data.matchingType = 0;
+  record.data.certificate = Buffer.from('certificate');
+  const fixture = delegatedFixture('janice.agent.', [record]);
+  stubDelegatedQueries(resolveRaw, fixture, types.TLSA);
+
+  t.equal(await getAddress('@janice.agent', 'main'), MAIN_ADDRESS);
+  t.equal(resolveRaw.callCount, 3, 'TLSA, parent DS, and child DNSKEY queried');
+
+  resolveRaw.restore();
+  verifyTLSARecord.restore();
+  resolveTLSA.restore();
+  request.restore();
+  t.end();
+});
+
 test('HIP-2 uses one normalized hostname for HTTPS and TLSA', async t => {
   const request = stubHTTPSResponse(MAIN_ADDRESS);
   const resolveTLSA = sinon.stub(hdns, 'resolveTLSA').resolves([{}]);
@@ -248,6 +418,30 @@ test('authenticated TLSA absence falls back to authenticated TXT', async t => {
   resolveRaw.restore();
   resolveTLSA.restore();
   request.restore();
+  t.end();
+});
+
+test('stalled HIP-2 hosting times out and falls back to authenticated TXT', async t => {
+  const clock = sinon.useFakeTimers();
+  const request = new EventEmitter();
+  request.destroy = () => {};
+  request.end = () => {};
+  const get = sinon.stub(https, 'get').returns(request);
+  const resolveRaw = sinon.stub(hdns, 'resolveRaw').resolves({
+    code: codes.NOERROR,
+    ad: true,
+    collect: () => [{data: {txt: [`hns:${MAIN_ADDRESS}`]}}],
+  });
+
+  const resolution = getAddress('@janice.agent', 'main');
+  await clock.tickAsync(10001);
+
+  t.equal(await resolution, MAIN_ADDRESS);
+  t.equal(resolveRaw.callCount, 1, 'secure TXT is queried after HTTPS timeout');
+
+  resolveRaw.restore();
+  get.restore();
+  clock.restore();
   t.end();
 });
 

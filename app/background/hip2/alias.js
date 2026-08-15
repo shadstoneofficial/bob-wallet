@@ -53,6 +53,20 @@ export function normalizeHostname(input) {
   return hostname;
 }
 
+export function looksLikeHostname(input) {
+  if (typeof input !== 'string') return false;
+
+  const value = input.trim();
+  if (!value.includes('.') || value.startsWith('@')) return false;
+
+  try {
+    normalizeHostname(value);
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
 export function parseHNSAddressTXT(records, network) {
   const valid = new Set();
   let recognized = false;

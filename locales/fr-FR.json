@@ -187,6 +187,7 @@
   "highestBid": "Enchère la plus élevée",
   "highestLockup": "Verrouillage le plus élevé",
   "hip2AddressNotFound": "Aucune adresse HNS sécurisée n'est publiée pour cet alias. Demandez au propriétaire de configurer HIP-2 ou un enregistrement TXT HNS protégé par DNSSEC.",
+  "hip2AliasSuggestion": "Cela ressemble à un alias de portefeuille. Sélectionnez Résoudre l’alias pour le rechercher en toute sécurité.",
   "hip2AmbiguousAlias": "Cet alias publie plusieurs adresses HNS. Demandez au propriétaire de n'en publier qu'une.",
   "hip2ConnectionFailed": "Impossible d'atteindre l'hôte de l'alias. Vérifiez le nom et votre connexion, puis réessayez.",
   "hip2DNSFailed": "La recherche DNS de l'alias a échoué. Vérifiez les paramètres DNS de Bob ou réessayez plus tard.",

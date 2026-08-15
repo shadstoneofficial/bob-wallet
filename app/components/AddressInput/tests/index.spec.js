@@ -107,6 +107,24 @@ test('pasted HIP-2 aliases resolve immediately', t => {
   t.end();
 });
 
+test('domain-like input offers explicit alias resolution', t => {
+  const component = createAddressInput();
+  const resolve = sinon.stub(component, '_resolveHip2Address');
+
+  component.onInputChange('janice.agent');
+  t.equal(component.state.errorMessage, 'hip2AliasSuggestion');
+
+  const rendered = component.render();
+  const button = findByClassName(rendered, 'addr-input__resolve');
+  t.ok(button, 'domain-like input exposes Resolve alias');
+
+  button.props.onClick();
+  t.equal(component.state.input, '@janice.agent');
+  t.equal(resolve.callCount, 1, 'the explicit action starts alias resolution');
+  t.equal(resolve.firstCall.args[0], 'janice.agent');
+  t.end();
+});
+
 test('HIP-2 client follows resolver port changes', t => {
   const component = createAddressInput();
   const setServers = sinon.stub(hip2, 'setServers').resolves();

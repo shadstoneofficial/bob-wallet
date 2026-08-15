@@ -188,6 +188,7 @@
   "highestBid": "XXXXX",
   "highestLockup": "XXXXX",
   "hip2AddressNotFound": "XXXXX",
+  "hip2AliasSuggestion": "XXXXX",
   "hip2AmbiguousAlias": "XXXXX",
   "hip2ConnectionFailed": "XXXXX",
   "hip2DNSFailed": "XXXXX",
