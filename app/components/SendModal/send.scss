@@ -435,6 +435,19 @@
       filter: grayscale(1);
     }
   }
+
+  &__confirm__alias {
+    @extend %link;
+    text-decoration: underline;
+    text-decoration-thickness: 0.08em;
+    text-underline-offset: 0.12em;
+
+    &:focus-visible {
+      border-radius: 0.15rem;
+      outline: 2px solid rgba($azure-blue, 0.65);
+      outline-offset: 2px;
+    }
+  }
 }
 
 @keyframes spin {

@@ -649,6 +649,23 @@ body.bob-theme-dark {
     border: 1px solid rgba(47, 129, 247, 0.22);
   }
 
+  .send__confirm__alias {
+    color: #79c0ff;
+
+    &:hover,
+    &:focus {
+      color: #a5d6ff;
+    }
+
+    &:active {
+      color: #58a6ff;
+    }
+
+    &:focus-visible {
+      outline-color: rgba(121, 192, 255, 0.82);
+    }
+  }
+
   .send__progress-bar__dot--empty {
     background-color: #0d1117;
   }

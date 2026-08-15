@@ -280,3 +280,20 @@
     }
   }
 }
+
+body.bob-theme-dark {
+  .watching-table__create-row__form__input {
+    background-color: #0d1117;
+    box-shadow: 0 0 0 1.25px rgba($white, 0.16);
+    color: #e6edf3;
+
+    input {
+      background-color: #0d1117;
+      color: #e6edf3;
+    }
+
+    &:focus-within {
+      box-shadow: 0 0 0 1.25px rgba($azure-blue, 0.75);
+    }
+  }
+}

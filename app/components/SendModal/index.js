@@ -340,7 +340,11 @@ class SendModal extends Component {
                 <span>
                   <span className="send__confirm__secure">
                     <img src={LockSVG} />
-                    <a href={`https://${hip2Domain}`} onClick={this.openLinkHandler}>
+                    <a
+                      className="send__confirm__alias"
+                      href={`https://${hip2Domain}`}
+                      onClick={this.openLinkHandler}
+                    >
                       {hip2Domain}
                     </a>
                   </span>
