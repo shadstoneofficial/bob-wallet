@@ -100,7 +100,7 @@ export const setAuctionPage = (page) => ({
   payload: page,
 });
 
-export const getExchangeAuctions = () => async (dispatch, getState) => {
+export const getExchangeAuctions = (availability = 'available') => async (dispatch, getState) => {
   dispatch({
     type: GET_EXCHANGE_AUCTIONS,
   });
@@ -114,7 +114,7 @@ export const getExchangeAuctions = () => async (dispatch, getState) => {
   } = getState();
 
   try {
-    auctions = await shakedex.getExchangeAuctions(currentPage);
+    auctions = await shakedex.getExchangeAuctions(currentPage, availability);
   } catch (e) {
     const error = classifyMarketplaceError(e);
     dispatch({

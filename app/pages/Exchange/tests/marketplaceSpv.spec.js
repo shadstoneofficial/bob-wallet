@@ -69,12 +69,11 @@ function renderExchange(props) {
 test('SPV mode renders successfully loaded public marketplace rows', (t) => {
   const html = renderExchange(getProps({
     auctions: [{
-      id: 'pending-spv-listing',
+      id: 'active-spv-listing',
       name: 'visible-in-spv',
-      pending: true,
-      buyable: false,
-      expectedPrice: 1000000,
-      blocksUntilFinalize: 2,
+      pending: false,
+      buyable: true,
+      bids: [{price: 1000000, lockTime: 2000000000}],
     }],
     total: 298,
   }));

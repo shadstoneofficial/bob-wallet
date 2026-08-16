@@ -166,7 +166,7 @@ export class Exchange extends Component {
       marketStatusCheckedAt: null,
       marketChannelHost: DEFAULT_SHAKEDEX_CHANNEL_HOST,
       marketplaceQuery: '',
-      marketplaceAvailabilityFilter: 'all',
+      marketplaceAvailabilityFilter: 'available',
       marketplaceModeFilter: 'all',
       marketplaceSort: 'name',
       listingsQuery: '',
@@ -292,8 +292,8 @@ export class Exchange extends Component {
     }
   }
 
-  async fetchShakedex() {
-    return this.props.getExchangeAuctions();
+  async fetchShakedex(availability = this.state.marketplaceAvailabilityFilter) {
+    return this.props.getExchangeAuctions(availability);
   }
 
   async fetchChannelSettings() {
@@ -662,19 +662,22 @@ export class Exchange extends Component {
     ));
   }
 
-  clearMarketplaceFilters = () => this.setState({
-    marketplaceQuery: '',
-    marketplaceAvailabilityFilter: 'all',
-    marketplaceModeFilter: 'all',
-    marketplaceSort: 'name',
-  });
+  clearMarketplaceFilters = () => {
+    this.props.setAuctionPage(1);
+    this.setState({
+      marketplaceQuery: '',
+      marketplaceAvailabilityFilter: 'available',
+      marketplaceModeFilter: 'all',
+      marketplaceSort: 'name',
+    }, () => this.fetchShakedex('available'));
+  };
 
   getMarketplaceAvailabilityItems() {
     const { t } = this.context;
 
     return [
-      { label: t('allListings'), value: 'all' },
       { label: t('availableNow'), value: 'available' },
+      { label: t('allListings'), value: 'all' },
       { label: t('pending'), value: 'pending' },
     ];
   }
@@ -1436,6 +1439,9 @@ export class Exchange extends Component {
     const marketBaseUrl = getShakedexChannelBaseUrl({host: this.state.marketChannelHost});
     const downloadableListingProofs = this.getDownloadableListingProofs();
     const readyToGenerateListings = this.getReadyToGenerateListings();
+    const listingsNeedingAction = this.props.listings.filter(listing => (
+      isSellerListingNeedsAction(listing, {network: this.props.network})
+    ));
     const visibleListings = this.getVisibleListings();
     const listingStatusItems = this.getListingsStatusItems();
     const listingSortItems = this.getListingsSortItems();
@@ -1540,6 +1546,14 @@ export class Exchange extends Component {
             <div className="exchange__button-header" ref={this.sellerListingsRef}>
               <h2>{t('yourListings')}</h2>
               <div className="exchange__button-header-actions">
+                {!!listingsNeedingAction.length && (
+                  <button
+                    className="exchange__button-header-button exchange__button-header-button--secondary"
+                    onClick={() => this.setState({listingsStatusFilter: 'needs-action'})}
+                  >
+                    {`${t('sellerListingsNeedsAction')} (${listingsNeedingAction.length})`}
+                  </button>
+                )}
                 {!!readyToGenerateListings.length && (
                   <button
                     className="exchange__button-header-button exchange__button-header-button--secondary"
@@ -1876,7 +1890,7 @@ export class Exchange extends Component {
     const currentModeIndex = modeItems.findIndex(item => item.value === this.state.marketplaceModeFilter);
     const currentSortIndex = sortItems.findIndex(item => item.value === this.state.marketplaceSort);
     const isFiltered = Boolean(this.state.marketplaceQuery.trim())
-      || this.state.marketplaceAvailabilityFilter !== 'all'
+      || this.state.marketplaceAvailabilityFilter !== 'available'
       || this.state.marketplaceModeFilter !== 'all'
       || this.state.marketplaceSort !== 'name';
 
@@ -1893,7 +1907,12 @@ export class Exchange extends Component {
           className="exchange-marketplace-filters__availability"
           items={availabilityItems}
           currentIndex={Math.max(currentAvailabilityIndex, 0)}
-          onChange={(marketplaceAvailabilityFilter) => this.setState({ marketplaceAvailabilityFilter })}
+          onChange={(marketplaceAvailabilityFilter) => {
+            this.props.setAuctionPage(1);
+            this.setState({ marketplaceAvailabilityFilter }, () => {
+              this.fetchShakedex(marketplaceAvailabilityFilter);
+            });
+          }}
         />
         <Dropdown
           className="exchange-marketplace-filters__mode"
@@ -2502,7 +2521,7 @@ export default connect(
   }),
   (dispatch) => ({
     setAuctionPage: (page) => dispatch(setAuctionPage(page)),
-    getExchangeAuctions: () => dispatch(getExchangeAuctions()),
+    getExchangeAuctions: (availability) => dispatch(getExchangeAuctions(availability)),
     getExchangeFullfillments: (page) => dispatch(getExchangeFullfillments(page)),
     getExchangeListings: (page) => dispatch(getExchangeListings(page)),
     finalizeExchangeBid: (fulfillment) => dispatch(finalizeExchangeBid(fulfillment)),

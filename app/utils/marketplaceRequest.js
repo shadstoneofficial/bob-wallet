@@ -24,12 +24,21 @@ export function normalizeMarketplacePage(value) {
   return Number.isSafeInteger(page) && page > 0 ? page : 1;
 }
 
-export function getMarketplaceAuctionsPath(page = 1, perPage = MARKETPLACE_PAGE_SIZE) {
+export function normalizeMarketplaceAvailability(value) {
+  return ['available', 'pending', 'all'].includes(value) ? value : 'available';
+}
+
+export function getMarketplaceAuctionsPath(
+  page = 1,
+  perPage = MARKETPLACE_PAGE_SIZE,
+  availability = 'available',
+) {
   const safePage = normalizeMarketplacePage(page);
   const safePerPage = Number.isSafeInteger(perPage) && perPage > 0
     ? perPage
     : MARKETPLACE_PAGE_SIZE;
-  return `api/v2/auctions?page=${safePage}&per_page=${safePerPage}`;
+  const safeAvailability = normalizeMarketplaceAvailability(availability);
+  return `api/v2/auctions?page=${safePage}&per_page=${safePerPage}&availability=${safeAvailability}`;
 }
 
 export function normalizeMarketplaceResponse(response = {}) {
@@ -49,8 +58,8 @@ export function normalizeMarketplaceResponse(response = {}) {
   };
 }
 
-export async function fetchMarketplaceAuctions(client, page = 1) {
-  const response = await client.get(getMarketplaceAuctionsPath(page));
+export async function fetchMarketplaceAuctions(client, page = 1, availability = 'available') {
+  const response = await client.get(getMarketplaceAuctionsPath(page, MARKETPLACE_PAGE_SIZE, availability));
   return normalizeMarketplaceResponse(response);
 }
 

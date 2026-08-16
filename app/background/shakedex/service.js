@@ -169,10 +169,10 @@ export async function iteratePrefix(prefix, cb) {
   await iter.each(cb);
 }
 
-export async function getExchangeAuctions(currentPage = 1) {
+export async function getExchangeAuctions(currentPage = 1, availability = 'available') {
   const marketClient = await getMarketClient();
   try {
-    return await fetchMarketplaceAuctions(marketClient, currentPage);
+    return await fetchMarketplaceAuctions(marketClient, currentPage, availability);
   } catch (error) {
     if (/timed?\s*out|timeout/i.test(`${error && error.message || ''}`)) {
       error.code = 'MARKETPLACE_TIMEOUT';

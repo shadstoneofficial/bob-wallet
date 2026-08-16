@@ -104,8 +104,12 @@ test('marketplace pagination requests the selected page and uses server total', 
     },
   }, 3);
 
-  t.equal(requestedPath, 'api/v2/auctions?page=3&per_page=20');
-  t.equal(getMarketplaceAuctionsPath(-5), 'api/v2/auctions?page=1&per_page=20');
+  t.equal(requestedPath, 'api/v2/auctions?page=3&per_page=20&availability=available');
+  t.equal(getMarketplaceAuctionsPath(-5), 'api/v2/auctions?page=1&per_page=20&availability=available');
+  t.equal(
+    getMarketplaceAuctionsPath(1, 20, 'pending'),
+    'api/v2/auctions?page=1&per_page=20&availability=pending',
+  );
   t.equal(result.total, 298);
   t.equal(result.auctions[0].name, 'page-three');
   t.end();
