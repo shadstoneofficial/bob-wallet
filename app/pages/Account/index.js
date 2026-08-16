@@ -19,6 +19,7 @@ import * as nodeActions from "../../ducks/node";
 import { fetchTransactions } from "../../ducks/walletActions";
 import throttle from "lodash.throttle";
 import {I18nContext} from "../../utils/i18n";
+import {formatRegisterSuccess} from '../../utils/transactionNotifications';
 
 const analytics = aClientStub(() => require("electron").ipcRenderer);
 
@@ -162,11 +163,7 @@ export default class Account extends Component {
         this.props.fetchTransactions();
         this._updateStatsAndBalance();
         if (action === 'register' && res && res.txid) {
-          const txLabel = res.txids && res.txids.length > 1 ? 'Txs' : 'Tx';
-          this.props.showSuccess(
-            `Register transaction submitted for ${res.names.join(', ')}. ` +
-            `${txLabel}: ${res.txid}. It will show as registered after it confirms on-chain.`
-          );
+          this.props.showSuccess(formatRegisterSuccess(res));
         } else if (action === 'finalize' && res && (res.hash || res.txid)) {
           const txid = res.hash || res.txid;
           const names = Array.isArray(args) && args.length

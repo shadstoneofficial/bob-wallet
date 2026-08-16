@@ -59,9 +59,19 @@ export default class Notification extends Component {
     const name = c('notification', `notification--${this.props.type}`);
 
     return (
-      <div className={name} ref={(ref) => (this.el = ref)}>
-        <div className="notification__close" onClick={this.clear}/>
-        {this.renderMessage()}
+      <div
+        aria-live={this.props.type === 'error' ? 'assertive' : 'polite'}
+        className={name}
+        ref={(ref) => (this.el = ref)}
+        role={this.props.type === 'error' ? 'alert' : 'status'}
+      >
+        <button
+          aria-label="Dismiss notification"
+          className="notification__close"
+          onClick={this.clear}
+          type="button"
+        />
+        <div className="notification__message">{this.renderMessage()}</div>
         {this.renderCreateIssue()}
       </div>
     );

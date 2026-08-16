@@ -21,6 +21,7 @@ import * as notifActions from "../../ducks/notifications";
 import dbClient from "../../utils/dbClient";
 import {BIDS_FILTER_NEED_REVEAL, NAME_STATES} from "../../constants/names";
 import {I18nContext} from "../../utils/i18n";
+import {formatRegisterSuccess} from '../../utils/transactionNotifications';
 
 const analytics = aClientStub(() => require('electron').ipcRenderer);
 
@@ -100,11 +101,7 @@ class YourBids extends Component {
       const res = await sendRegisterAll();
       if (res !== null) {
         if (res && res.txid) {
-          const txLabel = res.txids && res.txids.length > 1 ? 'Txs' : 'Tx';
-          showSuccess(
-            `Register transaction submitted for ${res.names.join(', ')}. ` +
-            `${txLabel}: ${res.txid}. It will show as registered after it confirms on-chain.`
-          );
+          showSuccess(formatRegisterSuccess(res));
         } else {
           showSuccess(this.context.t('registerSuccess'));
         }
