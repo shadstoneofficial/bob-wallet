@@ -1,0 +1,13 @@
+{
+  "$schema": "https://learnhns.com/schemas/activate-proposal-v1.schema.json",
+  "kind": "activate-proposal",
+  "version": 1,
+  "source": { "application": "learnhns-web", "origin": "https://learnhns.com/activate/", "generatedAt": "2026-08-18T00:00:00.000Z" },
+  "target": { "name": "example", "network": "main", "publishingLayer": "handshake-onchain" },
+  "canonicalResource": { "source": "handshake-chain", "encoding": "hex", "value": "00", "requirement": "exact-match" },
+  "operations": [
+    { "op": "upsert-hnsbio-txt", "key": "name", "value": "Example Name" },
+    { "op": "upsert-hnsbio-txt", "key": "bio", "value": "Building useful names" }
+  ],
+  "preservation": { "strategy": "preserve-unmentioned" }
+}

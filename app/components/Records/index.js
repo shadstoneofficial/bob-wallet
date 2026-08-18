@@ -17,8 +17,13 @@ import { showSuccess } from '../../ducks/notifications';
 import { clientStub as aClientStub } from '../../background/analytics/client';
 import './records.scss';
 import {clearDeeplinkParams} from "../../ducks/app";
-import {deserializeRecord} from '../../utils/recordHelpers'
+import {deserializeRecord, serializeRecord} from '../../utils/recordHelpers';
 import {I18nContext} from "../../utils/i18n";
+import fs from 'fs';
+import nodeClient from '../../utils/nodeClient';
+import {assertCanonicalStillCurrent, parseActivateProposal} from '../../utils/activateProposal';
+
+const {dialog} = require('electron');
 
 const analytics = aClientStub(() => require('electron').ipcRenderer);
 
@@ -40,6 +45,10 @@ export class Records extends Component {
     clearDeeplinkParams: PropTypes.func.isRequired,
     transferring: PropTypes.bool.isRequired,
     editable: PropTypes.bool,
+    network: PropTypes.string.isRequired,
+    loadCanonicalNameInfo: PropTypes.func.isRequired,
+    openProposalFile: PropTypes.func.isRequired,
+    readProposalFile: PropTypes.func.isRequired,
   };
 
   shouldComponentUpdate(nextProps, nextState, nextContext) {
@@ -52,6 +61,8 @@ export class Records extends Component {
       isUpdating: false,
       errorMessage: '',
       updatedResource: DEFAULT_RESOURCE,
+      importReview: null,
+      isImporting: false,
     };
   }
 
@@ -125,6 +136,11 @@ export class Records extends Component {
     this.setState({isUpdating: true});
     try {
       const {updatedResource} = this.state;
+      if (this.state.importReview) {
+        const result = await this.props.loadCanonicalNameInfo(this.props.name);
+        if (!result || !result.info) throw new Error('Bob could not reload canonical name information before submit.');
+        assertCanonicalStillCurrent(this.state.importReview, result.info.data || '00');
+      }
       const res = await this.props.sendUpdate(this.props.name, updatedResource);
       this.setState({isUpdating: false});
       if (res !== null) {
@@ -145,6 +161,7 @@ export class Records extends Component {
     updatedResource.records.push(record);
     this.setState({
       updatedResource,
+      importReview: null,
     });
   };
 
@@ -153,6 +170,7 @@ export class Records extends Component {
     updatedResource.records.splice(i, 1);
     this.setState({
       updatedResource,
+      importReview: null,
     });
   };
 
@@ -161,7 +179,52 @@ export class Records extends Component {
     updatedResource.records[i] = record;
     this.setState({
       updatedResource,
+      importReview: null,
     });
+  };
+
+  onImportProposal = async () => {
+    if (!this.props.domain || !this.props.domain.isOwner) {
+      this.setState({errorMessage: 'Only the owner of this name can import a proposal.'});
+      return;
+    }
+    if (this.props.pendingData) {
+      this.setState({errorMessage: 'Wait for the pending name update before importing a proposal.'});
+      return;
+    }
+
+    this.setState({isImporting: true, errorMessage: ''});
+    try {
+      const result = await this.props.openProposalFile({
+        properties: ['openFile'],
+        filters: [{name: 'LearnHNS activation proposal', extensions: ['json']}],
+      });
+      if (result.canceled || !result.filePaths || !result.filePaths[0]) {
+        this.setState({isImporting: false});
+        return;
+      }
+
+      const contents = await this.props.readProposalFile(result.filePaths[0]);
+      const nameInfo = await this.props.loadCanonicalNameInfo(this.props.name);
+      if (!nameInfo || !nameInfo.info) throw new Error('Bob could not independently load canonical name information.');
+      const importReview = parseActivateProposal(contents, {
+        expectedName: this.props.name,
+        expectedNetwork: this.props.network,
+        currentResourceHex: nameInfo.info.data || '00',
+      });
+
+      this.setState({
+        updatedResource: importReview.afterResource,
+        importReview,
+        isImporting: false,
+        errorMessage: '',
+      });
+    } catch (error) {
+      this.setState({
+        isImporting: false,
+        errorMessage: error.message,
+      });
+    }
   };
 
   renderRows() {
@@ -216,6 +279,13 @@ export class Records extends Component {
           {this.state.errorMessage}
         </div>
         <button
+          className="records-table__action-row__import-btn"
+          disabled={this.state.isImporting || this.state.isUpdating || Boolean(this.props.pendingData)}
+          onClick={this.onImportProposal}
+        >
+          {this.state.isImporting ? 'Importing…' : 'Import LearnHNS proposal'}
+        </button>
+        <button
           className="records-table__action-row__submit-btn"
           disabled={!this.hasChanged() || this.state.isUpdating}
           onClick={this.sendUpdate}
@@ -224,12 +294,47 @@ export class Records extends Component {
         </button>
         <button
           className="records-table__action-row__dismiss-link"
-          onClick={() => this.setState({updatedResource: DEFAULT_RESOURCE})}
+          onClick={() => this.setState({updatedResource: DEFAULT_RESOURCE, importReview: null, errorMessage: ''})}
           disabled={!this.hasChanged() || this.state.isUpdating}
         >
           Discard Changes
         </button>
       </TableRow>
+    );
+  }
+
+  renderImportReview() {
+    const review = this.state.importReview;
+    if (!review) return null;
+
+    const renderResource = (resource, label) => (
+      <div className="activate-import-review__resource">
+        <h4>{label} <span>{resource.records.length} record{resource.records.length === 1 ? '' : 's'}</span></h4>
+        {resource.records.length === 0
+          ? <div className="activate-import-review__empty">No records</div>
+          : resource.records.map((record, index) => (
+            <div className="activate-import-review__record" key={`${label}-${record.type}-${index}`}>
+              <b>{record.type}</b>
+              <code>{record.type === 'TXT' ? (record.txt || []).map(value => JSON.stringify(value)).join(' ') : serializeRecord(record)}</code>
+            </div>
+          ))}
+      </div>
+    );
+
+    return (
+      <section className="activate-import-review" aria-label="LearnHNS proposal review">
+        <div className="activate-import-review__header">
+          <div>
+            <strong>LearnHNS activation proposal staged</strong>
+            <p>Review only. Import did not unlock, sign, broadcast, or update this name. Submit remains a separate wallet action.</p>
+          </div>
+          <span>v{review.proposal.version}</span>
+        </div>
+        <div className="activate-import-review__grid">
+          {renderResource(review.beforeResource, 'Canonical before')}
+          {renderResource(review.afterResource, 'Complete result')}
+        </div>
+      </section>
     );
   }
 
@@ -315,6 +420,7 @@ export class Records extends Component {
 
     return (
       <div>
+        {this.renderImportReview()}
         <Table
           className={cn('records-table', {
             'records-table--pending': pendingData,
@@ -352,6 +458,9 @@ export default withRouter(
       sendUpdate: (name, json) => dispatch(nameActions.sendUpdate(name, json)),
       showSuccess: (message) => dispatch(showSuccess(message)),
       clearDeeplinkParams: () => dispatch(clearDeeplinkParams()),
+      loadCanonicalNameInfo: name => nodeClient.getNameInfo(name),
+      openProposalFile: options => dialog.showOpenDialog(options),
+      readProposalFile: path => fs.promises.readFile(path),
     }),
   )(Records),
 );

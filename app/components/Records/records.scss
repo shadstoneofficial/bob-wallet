@@ -198,6 +198,7 @@
     justify-content: flex-end;
 
     &__add-btn,
+    &__import-btn,
     &__submit-btn {
       padding: 0.25rem 0.5rem;
       width: 5rem;
@@ -212,6 +213,14 @@
 
     &__add-btn {
       @extend %btn-secondary;
+    }
+
+    &__import-btn {
+      @extend %btn-secondary;
+      width: auto;
+      padding: 0.25rem 0.65rem;
+      font-size: 0.75rem;
+      margin-right: 1rem;
     }
 
     &__submit-btn {
@@ -236,6 +245,7 @@
       font-size: 0.8rem;
       color: $orange-red;
       margin-right: 1rem;
+      flex: 1 1 auto;
     }
   }
 
@@ -265,6 +275,87 @@
       height: 100%;
       width: 100%;
     }
+  }
+}
+
+.activate-import-review {
+  border: 1px solid rgba($electric-violet, 0.35);
+  border-radius: 0.5rem;
+  background: rgba($electric-violet, 0.035);
+  padding: 1rem;
+  margin: 1rem 0 0;
+
+  &__header {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: flex-start;
+
+    strong {
+      display: block;
+      font-size: 0.9rem;
+    }
+
+    p {
+      color: $manatee-gray;
+      font-size: 0.75rem;
+      line-height: 1.45;
+      margin: 0.3rem 0 0;
+    }
+
+    > span {
+      color: $electric-violet;
+      border: 1px solid rgba($electric-violet, 0.3);
+      border-radius: 1rem;
+      padding: 0.15rem 0.45rem;
+      font-size: 0.7rem;
+    }
+  }
+
+  &__grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 0.75rem;
+    margin-top: 0.9rem;
+  }
+
+  &__resource {
+    min-width: 0;
+    background: $white;
+    border: 1px solid $grey;
+    border-radius: 0.35rem;
+    padding: 0.7rem;
+
+    h4 {
+      font-size: 0.75rem;
+      margin: 0 0 0.5rem;
+
+      span {
+        color: $manatee-gray;
+        font-weight: normal;
+      }
+    }
+  }
+
+  &__record {
+    display: grid;
+    grid-template-columns: 4.5rem minmax(0, 1fr);
+    gap: 0.5rem;
+    border-top: 1px solid $athens-gray;
+    padding: 0.4rem 0;
+    font-size: 0.7rem;
+
+    b { color: $electric-violet; }
+    code { overflow-wrap: anywhere; white-space: normal; }
+  }
+
+  &__empty {
+    color: $manatee-gray;
+    font-size: 0.7rem;
+  }
+
+  @media (max-width: 760px) {
+    &__grid { grid-template-columns: 1fr; }
   }
 }
 
