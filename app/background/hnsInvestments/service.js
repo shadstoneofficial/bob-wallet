@@ -5,6 +5,7 @@ import http from 'http';
 import path from 'path';
 import { service as walletService } from '../wallet/service';
 import * as shakedexService from '../shakedex/service';
+import {balanceSnapshot} from './balanceSnapshot';
 
 const BRIDGE_MANIFEST = 'hns-investments-bridge.json';
 const TOKEN_BYTES = 32;
@@ -243,9 +244,7 @@ async function getCoinBalances() {
     const wallet = await walletService.node.wdb.get(walletInfo.wid);
     const account = await wallet.getAccount('default');
     const balance = await wallet.getBalance(account.accountIndex);
-    const lockedConfirmed = balance.lockedConfirmed || 0;
-    const lockedUnconfirmed = balance.lockedUnconfirmed || 0;
-    const spendable = balance.unconfirmed - lockedUnconfirmed;
+    const snapshot = balanceSnapshot(balance);
 
     balances.push({
       walletId: walletInfo.wid,
@@ -253,11 +252,11 @@ async function getCoinBalances() {
       walletEncrypted: !!walletInfo.encrypted,
       walletWatchOnly: !!walletInfo.watchOnly,
       accountName: account.name || 'default',
-      confirmedHns: dollarydooToHns(balance.confirmed),
-      unconfirmedHns: dollarydooToHns(balance.unconfirmed),
-      lockedConfirmedHns: dollarydooToHns(lockedConfirmed),
-      lockedUnconfirmedHns: dollarydooToHns(lockedUnconfirmed),
-      spendableHns: dollarydooToHns(spendable),
+      confirmedHns: dollarydooToHns(snapshot.confirmed),
+      unconfirmedHns: dollarydooToHns(snapshot.unconfirmed),
+      lockedConfirmedHns: dollarydooToHns(snapshot.lockedConfirmed),
+      lockedUnconfirmedHns: dollarydooToHns(snapshot.lockedUnconfirmed),
+      spendableHns: dollarydooToHns(snapshot.spendable),
     });
   }
 

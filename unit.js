@@ -45,6 +45,7 @@ require('./app/pages/MyDomain/tests/Records.spec');
 require('./app/background/wallet/tests/liquidityHtlc.spec');
 require('./app/background/wallet/tests/registerValidation.spec');
 require('./app/background/wallet/tests/revealBatch.spec');
+require('./app/background/hnsInvestments/tests/balanceSnapshot.spec');
 require('./app/background/node/tests/spvHelper.spec');
 require('./app/ducks/tests/nodeReducer.spec');
 require('./app/deeplink/tests/index.spec');
