@@ -6,6 +6,7 @@ import path from 'path';
 import { service as walletService } from '../wallet/service';
 import * as shakedexService from '../shakedex/service';
 import {balanceSnapshot} from './balanceSnapshot';
+import {nameStateSnapshot} from './nameSnapshot';
 
 const BRIDGE_MANIFEST = 'hns-investments-bridge.json';
 const TOKEN_BYTES = 32;
@@ -51,11 +52,12 @@ function normalizeName(value) {
   return String(value);
 }
 
-function normalizeNameState(domain, wallet) {
+function normalizeNameState(domain, wallet, height, network) {
   const owner = domain.owner || {};
+  const ownership = nameStateSnapshot(domain, height, network);
   return {
     name: normalizeName(domain.name),
-    status: domain.transfer ? 'transfer-pending-or-history' : 'owned',
+    ...ownership,
     walletId: wallet.wid,
     walletDisplayName: wallet.displayName || wallet.wid,
     walletEncrypted: !!wallet.encrypted,
@@ -153,6 +155,7 @@ async function getPortfolio() {
 
   const wallets = await walletService.listWallets();
   const names = [];
+  const height = walletService.node.wdb.height || 0;
 
   for (const walletInfo of wallets) {
     const wallet = await walletService.node.wdb.get(walletInfo.wid);
@@ -166,7 +169,7 @@ async function getPortfolio() {
         : null;
 
       if (!coin) continue;
-      names.push(normalizeNameState(domain, walletInfo));
+      names.push(normalizeNameState(domain, walletInfo, height, wallet.network));
     }
   }
 
@@ -174,7 +177,7 @@ async function getPortfolio() {
     ok: true,
     scannedAt: new Date().toISOString(),
     network: walletService.networkName || null,
-    height: walletService.node.wdb.height || 0,
+    height,
     wallets: wallets.map((wallet) => ({
       wid: wallet.wid,
       displayName: wallet.displayName || wallet.wid,
