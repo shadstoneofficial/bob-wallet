@@ -6,6 +6,51 @@ import { connect } from "react-redux";
 import "./sync-status.scss";
 import {I18nContext} from "../../utils/i18n";
 
+export function getSyncStatusText(props, t) {
+  const {
+    isSynchronized,
+    isSynchronizing,
+    progress,
+    isCustomRPCConnected,
+    isChangingNodeStatus,
+    isTestingCustomRPC,
+    walletSync,
+    walletHeight,
+    rescanHeight,
+    storageBlocked,
+  } = props;
+
+  if (storageBlocked) {
+    return t('storageErrorSyncStatus');
+  }
+
+  if (walletSync) {
+    const percentText = Math.floor((walletHeight * 100) / rescanHeight);
+    return isCustomRPCConnected
+      ? `${t('rescanningFromRPC')}... (${percentText}%)`
+      : `${t('rescanning')}... (${percentText}%)`;
+  }
+
+  if (isSynchronizing) {
+    const progressText = progress ? "(" + (progress * 100).toFixed(2) + "%)" : "";
+    return isCustomRPCConnected
+      ? `${t('synchronizingFromRPC')}... ${progressText}`
+      : `${t('synchronizing')}... ${progressText}`;
+  }
+
+  if (isSynchronized) {
+    return isCustomRPCConnected
+      ? t('synchronizedFromRPC')
+      : t('synchronized');
+  }
+
+  if (isChangingNodeStatus || isTestingCustomRPC) {
+    return t('pleaseWait');
+  }
+
+  return t('noConnection');
+}
+
 @withRouter
 @connect((state) => {
   const {
@@ -29,6 +74,7 @@ import {I18nContext} from "../../utils/i18n";
     walletHeight: state.wallet.walletHeight,
     rescanHeight: state.wallet.rescanHeight,
     chainHeight: state.node.chain.height,
+    storageBlocked: state.storage.blocked,
   };
 })
 class SyncStatus extends Component {
@@ -43,6 +89,7 @@ class SyncStatus extends Component {
     walletHeight: PropTypes.number.isRequired,
     rescanHeight: PropTypes.number,
     chainHeight: PropTypes.number.isRequired,
+    storageBlocked: PropTypes.bool.isRequired,
   };
 
   static contextType = I18nContext;
@@ -56,20 +103,21 @@ class SyncStatus extends Component {
       isRunning,
       walletSync,
       progress,
+      storageBlocked,
     } = this.props;
 
     return (
       <React.Fragment>
         <div
           className={c("sync-status", {
-            "sync-status--success": isSynchronized,
-            "sync-status--failure": !isRunning,
+            "sync-status--success": isSynchronized && !storageBlocked,
+            "sync-status--failure": !isRunning || storageBlocked,
             "sync-status--loading":
-              walletSync ||
+              !storageBlocked && (walletSync ||
               isChangingNodeStatus ||
               isTestingCustomRPC ||
               isSynchronizing ||
-              progress < 1,
+              progress < 1),
           })}
         >
           {this.getSyncText()}
@@ -79,46 +127,8 @@ class SyncStatus extends Component {
   }
 
   getSyncText() {
-    const {
-      isSynchronized,
-      isSynchronizing,
-      progress,
-      isCustomRPCConnected,
-      isChangingNodeStatus,
-      isTestingCustomRPC,
-      walletSync,
-      walletHeight,
-      rescanHeight,
-      chainHeight,
-    } = this.props;
-
     const {t} = this.context;
-
-    if (walletSync) {
-      const percentText = Math.floor((walletHeight * 100) / rescanHeight);
-      return isCustomRPCConnected
-        ? `${t('rescanningFromRPC')}... (${percentText}%)`
-        : `${t('rescanning')}... (${percentText}%)`;
-    }
-
-    if (isSynchronizing) {
-      const progressText = progress ? "(" + (progress * 100).toFixed(2) + "%)" : "";
-      return isCustomRPCConnected
-        ? `${t('synchronizingFromRPC')}... ${progressText}`
-        : `${t('synchronizing')}... ${progressText}`;
-    }
-
-    if (isSynchronized) {
-      return isCustomRPCConnected
-        ? t('synchronizedFromRPC')
-        : t('synchronized');
-    }
-
-    if (isChangingNodeStatus || isTestingCustomRPC) {
-      return t('pleaseWait');
-    }
-
-    return t('noConnection');
+    return getSyncStatusText(this.props, t);
   }
 }
 

@@ -31,6 +31,7 @@ import {buildRevealActions, isAwaitingReveal} from './revealBatch';
 import {get, put} from "../db/service";
 import hsdLedger from 'hsd-ledger';
 import {NAME_STATES} from "../../constants/names";
+import {storageHealth} from '../storage/service';
 
 const WalletNode = require('hsd/lib/wallet/node');
 const TX = require('hsd/lib/primitives/tx');
@@ -88,7 +89,17 @@ class WalletService {
     this.heightBeforeRescan = null; // null = not rescanning
     this.conn = {type: null};
     this.findNonceStop = false;
+    this.rescanMaySubmitTransaction = false;
   }
+
+  _onWalletDBError = (error) => {
+    if (!storageHealth.reportError(error, {
+      source: 'walletdb',
+      transactionAttempted: this.rescanMaySubmitTransaction,
+    })) {
+      console.error('walletdb error', error);
+    }
+  };
 
   /**
    * Wallet as a plugin to the hsd full node is the default configuration
@@ -131,9 +142,7 @@ class WalletService {
     // TODO: This may not work because the plugin is open() already by now
     this.node.http.post('/unsafe-update-account-depth', this.handleUnsafeUpdateAccountDepth);
 
-    this.node.wdb.on('error', e => {
-      console.error('walletdb error', e);
-    });
+    this.node.wdb.on('error', this._onWalletDBError);
 
     this.node.wdb.on('block connect', this.onNewBlock);
 
@@ -228,9 +237,7 @@ class WalletService {
 
     this.node.http.post('/unsafe-update-account-depth', this.handleUnsafeUpdateAccountDepth);
 
-    this.node.wdb.on('error', e => {
-      console.error('walletdb error', e);
-    });
+    this.node.wdb.on('error', this._onWalletDBError);
 
     this.node.wdb.on('block connect', this.onNewBlock);
 
@@ -426,9 +433,17 @@ class WalletService {
     return this.node.wdb.backup(path);
   };
 
-  rescan = async (height = 0) => {
+  rescan = async (height = 0, options = {}) => {
+    const transactionAttempted = !!options.transactionAttempted;
+    const storagePath = await this.nodeService.getDir();
+    await storageHealth.preflight(storagePath, {
+      source: 'wallet-rescan-preflight',
+      transactionAttempted,
+    });
+
     this.heightBeforeRescan = this.lastKnownChainHeight;
     this.lastKnownChainHeight = height;
+    this.rescanMaySubmitTransaction = transactionAttempted;
 
     dispatchToMainWindow({type: START_SYNC_WALLET});
     dispatchToMainWindow({
@@ -440,7 +455,17 @@ class WalletService {
       payload: this.heightBeforeRescan,
     });
 
-    return this.node.wdb.rescan(height);
+    try {
+      return await this.node.wdb.rescan(height);
+    } catch (error) {
+      storageHealth.reportError(error, {
+        source: 'wallet-rescan',
+        transactionAttempted,
+      });
+      throw error;
+    } finally {
+      this.rescanMaySubmitTransaction = false;
+    }
   };
 
   deepClean = async () => {
@@ -1697,7 +1722,7 @@ class WalletService {
     return this.client.zap(this.name, 'default', 1);
   };
 
-  importName = async (name, start) => {
+  importName = async (name, start, options = {}) => {
     await this._executeRPC('importname', [name, null]);
 
     // wait 1 sec (for filterload to update on peer)
@@ -1706,7 +1731,7 @@ class WalletService {
     }
 
     // rescan
-    this.rescan(start);
+    return this.rescan(start, options);
   };
 
   /**
@@ -1716,7 +1741,7 @@ class WalletService {
    *
    * @param {Array<{name: string, height: number}>} entries
    */
-  importNames = async (entries = []) => {
+  importNames = async (entries = [], options = {}) => {
     if (!Array.isArray(entries) || !entries.length) {
       return null;
     }
@@ -1747,7 +1772,7 @@ class WalletService {
     }
 
     // Single rescan from the earliest auction height (or 0 if unknown).
-    return this.rescan(minHeight == null ? 0 : minHeight);
+    return this.rescan(minHeight == null ? 0 : minHeight, options);
   };
 
   rpcGetWalletInfo = async () => {
@@ -2289,6 +2314,23 @@ class WalletService {
   };
 
   _walletProxy = async (createFn, options) => {
+    try {
+      const storagePath = await this.nodeService.getDir();
+      await storageHealth.preflight(storagePath, {
+        source: 'transaction-preflight',
+        transactionAttempted: true,
+      });
+      return await this._walletProxyUnchecked(createFn, options);
+    } catch (error) {
+      storageHealth.reportError(error, {
+        source: 'transaction-preparation',
+        transactionAttempted: true,
+      });
+      throw error;
+    }
+  };
+
+  _walletProxyUnchecked = async (createFn, options) => {
     const {
       broadcast = true,
       returnOnlyIfFullySigned = true, // if we don't have all signatures, return null

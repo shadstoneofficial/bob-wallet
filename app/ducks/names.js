@@ -305,7 +305,7 @@ export const sendBid = (name, amount, lockup, height) => async (dispatch) => {
   if (height) {
     try {
       await dispatch(startWalletSync());
-      await walletClient.importName(name, height);
+      await walletClient.importName(name, height, {transactionAttempted: true});
       await dispatch(waitForWalletSync());
     } catch (e) {
       throw e;
@@ -381,7 +381,7 @@ export const sendBidMany = (entries) => async (dispatch, getState) => {
     try {
       await dispatch(startWalletSync());
       // One bloom filter update + ONE rescan from the earliest auction height.
-      await walletClient.importNames(toImport);
+      await walletClient.importNames(toImport, {transactionAttempted: true});
       // Basket rescans can take several minutes over flaky P2P peers.
       await dispatch(waitForWalletSync(600));
     } catch (e) {

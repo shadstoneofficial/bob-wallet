@@ -221,6 +221,15 @@ export const waitForWalletSync = (stallLimitSeconds = WALLET_SYNC_STALL_LIMIT_SE
 
   for (; ;) {
     const state = getState();
+    if (state.storage?.blocked) {
+      const transactionMessage = state.storage.transactionAttempted
+        ? ' The transaction may not have been submitted. Check transaction history after resolving the storage issue.'
+        : '';
+      throw new Error(
+        `Bob cannot continue because your device is low on storage.${transactionMessage}`
+      );
+    }
+
     const nodeHeight = state.node.chain.height;
     const {walletHeight, rescanHeight, walletSync} = state.wallet;
 

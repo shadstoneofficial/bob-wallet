@@ -14,6 +14,7 @@ import exchange from './exchange.js';
 import claims from './claims.js';
 import auctionBasket from './auctionBasket.js';
 import openBasket from './openBasket.js';
+import storage from './storageReducer';
 
 export default function createRootReducer(history) {
   const root = combineReducers({
@@ -32,6 +33,7 @@ export default function createRootReducer(history) {
     claims,
     auctionBasket,
     openBasket,
+    storage,
   });
 
   return (state, action) => {

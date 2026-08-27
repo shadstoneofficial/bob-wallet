@@ -62,3 +62,7 @@ require('./app/background/ipc/tests/ipc.spec');
 require('./app/background/hip2/tests/alias.spec');
 require('./app/background/hip2/tests/port.spec');
 require('./app/components/AddressInput/tests/index.spec');
+require('./app/background/storage/tests/health.spec');
+require('./app/components/SyncStatus/tests/index.spec');
+require('./app/ducks/tests/storageReducer.spec');
+require('./app/ducks/tests/walletActions.spec');

@@ -121,6 +121,7 @@ if (isPrimaryInstance) {
       require('./background/logger/service').start(server);
       await dbService.start(server);
       await require('./background/node/service').start(server);
+      await require('./background/storage/service').start(server);
       await require('./background/wallet/service').start(server);
       await require('./background/analytics/service').start(server);
       await require('./background/connections/service').start(server);

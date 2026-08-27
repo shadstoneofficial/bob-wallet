@@ -48,6 +48,7 @@ import {fetchLocale, fetchTheme, fetchShowUsdValue, initHip2, checkForUpdates} f
 import Multisig from "../Multisig";
 import {I18nContext} from "../../utils/i18n";
 import {EXPLORERS} from "../../constants/explorers";
+import StorageErrorBanner from '../../components/StorageErrorBanner';
 const connClient = cClientStub(() => require('electron').ipcRenderer);
 const settingClient = sClientStub(() => require('electron').ipcRenderer);
 
@@ -145,6 +146,7 @@ class App extends Component {
         {/*<WalletSync />*/}
         <IdleModal />
         <PassphraseModal />
+        <StorageErrorBanner />
         {this.renderContent()}
       </div>
     );

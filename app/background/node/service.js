@@ -32,6 +32,7 @@ import {
   COMPACTING_TREE,
 } from "../../ducks/nodeReducer";
 import pkg from '../../../package.json';
+import {storageHealth} from '../storage/service';
 
 const Network = require('hsd/lib/protocol/network');
 
@@ -337,6 +338,16 @@ export class NodeService extends EventEmitter {
 
     this.hsd.use(plugin);
 
+    const reportStorageError = error => {
+      if (!storageHealth.reportError(error, {source: 'hsd'})) {
+        console.error('hsd error', error);
+      }
+    };
+    this.hsd.on('error', reportStorageError);
+    if (this.hsd.chain && typeof this.hsd.chain.on === 'function') {
+      this.hsd.chain.on('error', reportStorageError);
+    }
+
     this.hsd.on('tree compact start', () => {
       dispatchToMainWindow({
         type: COMPACTING_TREE,
@@ -559,7 +570,20 @@ export class NodeService extends EventEmitter {
   }
 
   async broadcastRawTx(tx) {
-    return this._execRPC('sendrawtransaction', [tx]);
+    const storagePath = await this.getDir();
+    await storageHealth.preflight(storagePath, {
+      source: 'transaction-broadcast-preflight',
+      transactionAttempted: true,
+    });
+    try {
+      return await this._execRPC('sendrawtransaction', [tx]);
+    } catch (error) {
+      storageHealth.reportError(error, {
+        source: 'transaction-broadcast',
+        transactionAttempted: true,
+      });
+      throw error;
+    }
   }
 
   async sendRawAirdrop(data) {
