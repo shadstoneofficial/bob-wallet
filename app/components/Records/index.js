@@ -28,9 +28,16 @@ const {dialog} = require('electron');
 const analytics = aClientStub(() => require('electron').ipcRenderer);
 
 const DEFAULT_RESOURCE = {
-  __isDefault__: true,
   records: [],
 };
+
+function cloneResource(resource) {
+  return resource ? JSON.parse(JSON.stringify(resource)) : null;
+}
+
+function makeDefaultResource() {
+  return cloneResource(DEFAULT_RESOURCE);
+}
 
 export class Records extends Component {
   static contextType = I18nContext;
@@ -47,6 +54,9 @@ export class Records extends Component {
     editable: PropTypes.bool,
     network: PropTypes.string.isRequired,
     loadCanonicalNameInfo: PropTypes.func.isRequired,
+    refreshCanonicalNameInfo: PropTypes.func.isRequired,
+    canonicalLoading: PropTypes.bool,
+    canonicalError: PropTypes.string,
     openProposalFile: PropTypes.func.isRequired,
     readProposalFile: PropTypes.func.isRequired,
   };
@@ -57,78 +67,80 @@ export class Records extends Component {
 
   constructor(props) {
     super(props);
+    const canonicalResource = cloneResource(props.resource);
     this.state = {
       isUpdating: false,
       errorMessage: '',
-      updatedResource: DEFAULT_RESOURCE,
+      updatedResource: canonicalResource || makeDefaultResource(),
+      canonicalResource,
+      resourceName: props.name,
+      isDirty: false,
+      isRefreshingRecords: false,
+      refreshError: '',
       importReview: null,
       isImporting: false,
     };
   }
 
   static getDerivedStateFromProps(props, state) {
-    let updatedResource = JSON.parse(JSON.stringify(state.updatedResource));
-    const isDefault = updatedResource.__isDefault__;
+    const nameChanged = props.name !== state.resourceName;
+    const canonicalChanged = !deepEqual(props.resource || null, state.canonicalResource);
+    let nextState = null;
 
-    if (isDefault) {
-      if (props.resource) {
-        updatedResource = props.resource;
-      }
+    if (nameChanged) {
+      const canonicalResource = cloneResource(props.resource);
+      nextState = {
+        resourceName: props.name,
+        canonicalResource,
+        updatedResource: canonicalResource || makeDefaultResource(),
+        isDirty: false,
+        refreshError: '',
+        importReview: null,
+      };
+    } else if (canonicalChanged) {
+      const canonicalResource = cloneResource(props.resource);
+      nextState = {
+        canonicalResource,
+        ...(!state.isDirty ? {
+          updatedResource: canonicalResource || makeDefaultResource(),
+        } : {}),
+      };
     }
 
     if (!!Object.keys(props.deeplinkParams).length && props.domain && props.domain.isOwner) {
       props.clearDeeplinkParams();
-
-      if (props.resource) {
-        updatedResource = props.resource;
-      }
+      const baseResource = cloneResource(
+        (nextState && nextState.updatedResource) || state.updatedResource || props.resource
+      ) || makeDefaultResource();
 
       const {raw, ...params} = props.deeplinkParams
 
       if (raw) {
         const { records } = Resource.decode(new Buffer(raw, 'hex')).toJSON();
-        updatedResource.records.push(...records);
+        baseResource.records.push(...records);
       }
 
       Object.entries(params)
         .forEach(([type, value]) => {
           const record = deserializeRecord({type: type.toUpperCase(), value});
-          updatedResource.records.push(record)
+          baseResource.records.push(record)
         })
 
       return {
-        ...state,
-        updatedResource: updatedResource,
+        ...(nextState || {}),
+        updatedResource: baseResource,
+        isDirty: true,
       };
     }
 
-    if (isDefault) {
-      return {
-        ...state,
-        updatedResource: updatedResource,
-      };
-    }
-
-    return state;
+    return nextState;
   }
 
   hasChanged = () => {
     const oldResource = this.props.resource;
     const updatedResource = this.state.updatedResource;
 
-    if (!oldResource && !updatedResource) {
-      return false;
-    }
-
-    if (!oldResource && updatedResource) {
-      return true;
-    }
-
-    if (oldResource && !updatedResource) {
-      return false;
-    }
-
-    return !deepEqual(oldResource, updatedResource);
+    return !deepEqual(oldResource || DEFAULT_RESOURCE, updatedResource || DEFAULT_RESOURCE);
   };
 
   sendUpdate = async () => {
@@ -142,7 +154,10 @@ export class Records extends Component {
         assertCanonicalStillCurrent(this.state.importReview, result.info.data || '00');
       }
       const res = await this.props.sendUpdate(this.props.name, updatedResource);
-      this.setState({isUpdating: false});
+      this.setState({
+        isUpdating: false,
+        ...(res !== null ? {isDirty: false} : {}),
+      });
       if (res !== null) {
         this.props.showSuccess(t('updateSuccess'));
         analytics.track('updated domain');
@@ -161,6 +176,7 @@ export class Records extends Component {
     updatedResource.records.push(record);
     this.setState({
       updatedResource,
+      isDirty: true,
       importReview: null,
     });
   };
@@ -170,6 +186,7 @@ export class Records extends Component {
     updatedResource.records.splice(i, 1);
     this.setState({
       updatedResource,
+      isDirty: true,
       importReview: null,
     });
   };
@@ -179,8 +196,25 @@ export class Records extends Component {
     updatedResource.records[i] = record;
     this.setState({
       updatedResource,
+      isDirty: true,
       importReview: null,
     });
+  };
+
+  refreshRecords = async () => {
+    if (this.state.isDirty || this.state.isRefreshingRecords) return;
+
+    this.setState({isRefreshingRecords: true, refreshError: ''});
+    try {
+      await this.props.refreshCanonicalNameInfo(this.props.name);
+      this.setState({isRefreshingRecords: false});
+    } catch (error) {
+      logger.error(`Error received from Records.js - refreshRecords\n\n${error.message}\n${error.stack}\n`);
+      this.setState({
+        isRefreshingRecords: false,
+        refreshError: error.message || 'Canonical records could not be refreshed.',
+      });
+    }
   };
 
   onImportProposal = async () => {
@@ -215,6 +249,7 @@ export class Records extends Component {
 
       this.setState({
         updatedResource: importReview.afterResource,
+        isDirty: true,
         importReview,
         isImporting: false,
         errorMessage: '',
@@ -294,12 +329,46 @@ export class Records extends Component {
         </button>
         <button
           className="records-table__action-row__dismiss-link"
-          onClick={() => this.setState({updatedResource: DEFAULT_RESOURCE, importReview: null, errorMessage: ''})}
+          onClick={() => this.setState({
+            updatedResource: cloneResource(this.props.resource) || makeDefaultResource(),
+            isDirty: false,
+            importReview: null,
+            errorMessage: '',
+          })}
           disabled={!this.hasChanged() || this.state.isUpdating}
         >
           Discard Changes
         </button>
       </TableRow>
+    );
+  }
+
+  renderRefreshStatus() {
+    if (!this.props.editable) return null;
+
+    const isRefreshing = this.props.canonicalLoading || this.state.isRefreshingRecords;
+    const error = this.state.refreshError || this.props.canonicalError;
+    return (
+      <div className={cn('records-table__refresh-status', {
+        'records-table__refresh-status--error': error,
+      })}>
+        <div className="records-table__refresh-status__message">
+          {error
+            ? `Bob could not refresh canonical records: ${error}. The editable draft has not been changed.`
+            : isRefreshing
+              ? 'Refreshing canonical records from the name tree…'
+              : this.state.isDirty
+                ? 'Unsaved record changes are preserved. Discard them before refreshing.'
+                : 'Records shown here come from the canonical name tree.'}
+        </div>
+        <button
+          className="records-table__refresh-status__button"
+          onClick={this.refreshRecords}
+          disabled={this.state.isDirty || isRefreshing || this.state.isUpdating || this.state.isImporting}
+        >
+          {isRefreshing ? 'Refreshing…' : 'Refresh records'}
+        </button>
+      </div>
     );
   }
 
@@ -413,13 +482,23 @@ export class Records extends Component {
       resource
     } = this.props;
 
+    const isCanonicalLoading = editable
+      && (this.props.canonicalLoading || this.state.isRefreshingRecords)
+      && !this.state.isDirty
+      && !this.state.updatedResource.records.length;
+    const canonicalError = this.state.refreshError || this.props.canonicalError;
+
     if (!editable && (!resource || !resource.records.length)) {
       return <div className="auction-panel__header__content">{t('none')}</div>
     }
 
+    if (isCanonicalLoading || (editable && canonicalError && !this.state.updatedResource.records.length && !this.state.isDirty)) {
+      return this.renderRefreshStatus();
+    }
 
     return (
       <div>
+        {this.renderRefreshStatus()}
         {this.renderImportReview()}
         <Table
           className={cn('records-table', {
@@ -454,11 +533,13 @@ export default withRouter(
         deeplinkParams,
       };
     },
-    dispatch => ({
+    (dispatch, ownProps) => ({
       sendUpdate: (name, json) => dispatch(nameActions.sendUpdate(name, json)),
       showSuccess: (message) => dispatch(showSuccess(message)),
       clearDeeplinkParams: () => dispatch(clearDeeplinkParams()),
       loadCanonicalNameInfo: name => nodeClient.getNameInfo(name),
+      refreshCanonicalNameInfo: ownProps.refreshCanonicalNameInfo
+        || (name => dispatch(nameActions.getNameInfo(name))),
       openProposalFile: options => dialog.showOpenDialog(options),
       readProposalFile: path => fs.promises.readFile(path),
     }),
