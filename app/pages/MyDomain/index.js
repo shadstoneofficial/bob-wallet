@@ -19,7 +19,7 @@ import {I18nContext} from "../../utils/i18n";
 
 const analytics = aClientStub(() => require('electron').ipcRenderer);
 
-class MyDomain extends Component {
+export class MyDomain extends Component {
   static propTypes = {
     domain: PropTypes.object,
     chain: PropTypes.object,
@@ -30,16 +30,36 @@ class MyDomain extends Component {
     showError: PropTypes.func.isRequired,
     showSuccess: PropTypes.func.isRequired,
     sendRenewal: PropTypes.func.isRequired,
+    getNameInfo: PropTypes.func.isRequired,
+    fetchPendingTransactions: PropTypes.func.isRequired,
     explorer: PropTypes.object.isRequired,
   };
 
   static contextType = I18nContext;
 
+  state = {
+    canonicalLoading: true,
+    canonicalError: '',
+  };
+
   async componentDidMount() {
-    await this.props.getNameInfo();
+    await this.refreshNameInfo();
     await this.props.fetchPendingTransactions();
     analytics.screenView('My Domains');
   }
+
+  refreshNameInfo = async () => {
+    this.setState({canonicalLoading: true, canonicalError: ''});
+    try {
+      await this.props.getNameInfo();
+      this.setState({canonicalLoading: false});
+    } catch (error) {
+      this.setState({
+        canonicalLoading: false,
+        canonicalError: error.message || 'Canonical name information could not be loaded.',
+      });
+    }
+  };
 
   handleRegister = async () => {
     try {
@@ -161,6 +181,9 @@ class MyDomain extends Component {
           <Records
             name={name}
             transferring={!!domain.info && domain.info.transfer !== 0}
+            canonicalLoading={this.state.canonicalLoading}
+            canonicalError={this.state.canonicalError}
+            refreshCanonicalNameInfo={this.refreshNameInfo}
             editable
           />
         </Collapsible>

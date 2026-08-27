@@ -4,6 +4,38 @@
   margin-top: 2rem;
   position: relative;
 
+  &__refresh-status {
+    @extend %row-nowrap;
+    align-items: center;
+    gap: 1rem;
+    margin: 1rem 0 -1rem;
+    padding: 0.65rem 0.75rem;
+    border: 1px solid darken($athens-gray, 5);
+    border-radius: 0.25rem;
+    background: $athens-gray;
+    font-size: 0.8rem;
+
+    &--error {
+      color: $orange-red;
+    }
+
+    &__message {
+      flex: 1 1 auto;
+    }
+
+    &__button {
+      @extend %btn-secondary;
+      flex: 0 0 auto;
+      padding: 0.35rem 0.65rem;
+      font-size: 0.75rem;
+
+      &:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
+    }
+  }
+
   &__actions {
     @extend %row-nowrap;
     justify-content: flex-end;
