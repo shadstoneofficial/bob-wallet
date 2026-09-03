@@ -4,7 +4,6 @@ import { withRouter } from 'react-router';
 import { connect } from 'react-redux';
 import c from 'classnames';
 import * as networks from 'hsd/lib/protocol/networks';
-import walletClient from '../../utils/walletClient';
 import { displayBalance } from '../../utils/balances';
 import { hoursToNow } from '../../utils/timeConverter';
 import { clientStub as aClientStub } from '../../background/analytics/client';
@@ -16,7 +15,7 @@ import { LISTING_STATUS } from '../../constants/exchange';
 import { BIDS_FILTER_NEED_REVEAL, NAME_STATES } from '../../constants/names';
 import { MARKETPLACE_STATUS } from '../../utils/marketplaceRequest';
 import { I18nContext } from '../../utils/i18n';
-import throttle from 'lodash.throttle';
+import {fetchWalletStats} from '../../ducks/walletStats';
 import './overview.scss';
 
 const analytics = aClientStub(() => require('electron').ipcRenderer);
@@ -63,17 +62,17 @@ const ACTIVE_LISTING_STATUSES = new Set([
     isLoadingListings: state.exchange.isLoadingListings,
     marketplaceStatus: state.exchange.marketplaceStatus,
     marketplaceError: state.exchange.marketplaceError,
+    walletStats: state.walletStats,
   }),
   (dispatch) => ({
     fetchWallet: () => dispatch(walletActions.fetchWallet()),
     updateHNSPrice: () => dispatch(nodeActions.updateHNSPrice()),
     getMyNames: () => dispatch(myDomainsActions.getMyNames()),
     getExchangeListings: () => dispatch(getExchangeListings()),
+    fetchWalletStats: () => dispatch(fetchWalletStats()),
   })
 )
 export default class Overview extends Component {
-  _isMounted = false;
-
   static propTypes = {
     spendableBalance: PropTypes.number,
     confirmedBalance: PropTypes.number,
@@ -101,39 +100,18 @@ export default class Overview extends Component {
     isLoadingListings: PropTypes.bool,
     marketplaceStatus: PropTypes.string,
     marketplaceError: PropTypes.string,
+    walletStats: PropTypes.object.isRequired,
     fetchWallet: PropTypes.func.isRequired,
     updateHNSPrice: PropTypes.func.isRequired,
     getMyNames: PropTypes.func.isRequired,
     getExchangeListings: PropTypes.func.isRequired,
+    fetchWalletStats: PropTypes.func.isRequired,
     history: PropTypes.object.isRequired,
   };
 
   static contextType = I18nContext;
 
-  state = {
-    isLoadingStats: true,
-    lockedBalance: {
-      bidding: { HNS: null, num: null },
-      revealable: { HNS: null, num: null },
-      finished: { HNS: null, num: null },
-    },
-    actionableInfo: {
-      revealable: { HNS: null, num: null, block: null },
-      redeemable: { HNS: null, num: null },
-      renewable: { domains: null, block: null },
-      transferring: { domains: null, block: null },
-      finalizable: { domains: null, block: null },
-      registerable: { HNS: null, num: null },
-    },
-  };
-
-  constructor(props) {
-    super(props);
-    this.updateStats = throttle(this._updateStats, 15000, { trailing: true });
-  }
-
   componentDidMount() {
-    this._isMounted = true;
     analytics.screenView('Overview');
     this.props.fetchWallet();
     this.props.getMyNames();
@@ -142,34 +120,21 @@ export default class Overview extends Component {
   }
 
   componentDidUpdate(prevProps) {
-    if (this.props.height !== prevProps.height) {
+    if (
+      this.props.height !== prevProps.height
+      || this.props.walletHeight !== prevProps.walletHeight
+    ) {
       this.updateStats();
     }
   }
 
-  componentWillUnmount() {
-    this._isMounted = false;
-    if (this.updateStats.cancel) {
-      this.updateStats.cancel();
-    }
-  }
-
-  async _updateStats() {
+  async updateStats() {
     this.props.updateHNSPrice();
 
     try {
-      const stats = await walletClient.getStats();
-      if (this._isMounted) {
-        this.setState({
-          isLoadingStats: false,
-          ...stats,
-        });
-      }
+      await this.props.fetchWalletStats();
     } catch (error) {
       console.error(error);
-      if (this._isMounted) {
-        this.setState({ isLoadingStats: false });
-      }
     }
   }
 
@@ -222,7 +187,7 @@ export default class Overview extends Component {
       transferring,
       finalizable,
       registerable,
-    } = this.state.actionableInfo;
+    } = this.props.walletStats.actionableInfo;
 
     const items = [];
 
@@ -366,7 +331,7 @@ export default class Overview extends Component {
 
   render() {
     const { t } = this.context;
-    const { isLoadingStats } = this.state;
+    const { isLoading: isLoadingStats } = this.props.walletStats;
     const actionItems = this.getActionItems();
 
     return (
@@ -395,7 +360,7 @@ export default class Overview extends Component {
       walletWatchOnly,
       wallets,
     } = this.props;
-    const { lockedBalance } = this.state;
+    const { lockedBalance } = this.props.walletStats;
 
     const lockedBidding = lockedBalance?.bidding?.HNS || 0;
     const lockedRevealable = lockedBalance?.revealable?.HNS || 0;
@@ -508,7 +473,7 @@ export default class Overview extends Component {
         {count === 0 ? (
           <div className="overview__empty">
             <span className="overview__empty-icon" />
-            {this.state.isLoadingStats
+            {this.props.walletStats.isLoading
               ? t('overviewLoading')
               : t('overviewNoActions')}
           </div>
@@ -538,7 +503,7 @@ export default class Overview extends Component {
   renderPortfolioAndAuctions() {
     const { t } = this.context;
     const { isFetchingNames, isLoadingListings } = this.props;
-    const { lockedBalance, actionableInfo } = this.state;
+    const { lockedBalance, actionableInfo } = this.props.walletStats;
 
     const ownedCount = this.getOwnedNameCount();
     const expiringSoon = this.getExpiringSoonCount();

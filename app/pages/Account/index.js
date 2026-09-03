@@ -7,7 +7,6 @@ import Transactions from "../../components/Transactions";
 import PhraseMismatch from "../../components/PhraseMismatch";
 import ShakedexDeprecated from '../../components/ShakedexDeprecated';
 import "./account.scss";
-import walletClient from "../../utils/walletClient";
 import { displayBalance } from "../../utils/balances";
 import { hoursToNow } from "../../utils/timeConverter";
 import * as networks from "hsd/lib/protocol/networks";
@@ -17,9 +16,9 @@ import { showError, showSuccess } from "../../ducks/notifications";
 import * as nameActions from "../../ducks/names";
 import * as nodeActions from "../../ducks/node";
 import { fetchTransactions } from "../../ducks/walletActions";
-import throttle from "lodash.throttle";
 import {I18nContext} from "../../utils/i18n";
 import {formatRegisterSuccess} from '../../utils/transactionNotifications';
+import {fetchWalletStats} from '../../ducks/walletStats';
 
 const analytics = aClientStub(() => require("electron").ipcRenderer);
 
@@ -28,6 +27,7 @@ const analytics = aClientStub(() => require("electron").ipcRenderer);
   (state) => ({
     spendableBalance: state.wallet.balance.spendable,
     height: state.node.chain.height,
+    walletHeight: state.wallet.walletHeight,
     progress: state.node.chain.progress,
     isFetching: state.wallet.isFetching,
     network: state.wallet.network,
@@ -35,6 +35,7 @@ const analytics = aClientStub(() => require("electron").ipcRenderer);
     showUsdValue: state.app.showUsdValue,
     walletInitialized: state.wallet.initialized,
     walletType: state.wallet.type,
+    walletStats: state.walletStats,
   }),
   (dispatch) => ({
     fetchWallet: () => dispatch(walletActions.fetchWallet()),
@@ -48,14 +49,14 @@ const analytics = aClientStub(() => require("electron").ipcRenderer);
     showSuccess: (message) => dispatch(showSuccess(message)),
     showError: (message) => dispatch(showError(message)),
     fetchTransactions: () => dispatch(fetchTransactions()),
+    fetchWalletStats: () => dispatch(fetchWalletStats()),
   })
 )
 export default class Account extends Component {
-  _isMounted = false;
-
   static propTypes = {
     spendableBalance: PropTypes.number.isRequired,
     height: PropTypes.number.isRequired,
+    walletHeight: PropTypes.number.isRequired,
     progress: PropTypes.number.isRequired,
     isFetching: PropTypes.bool.isRequired,
     network: PropTypes.string.isRequired,
@@ -71,30 +72,14 @@ export default class Account extends Component {
     walletInitialized: PropTypes.bool.isRequired,
     walletType: PropTypes.string.isRequired,
     showUsdValue: PropTypes.bool.isRequired,
+    walletStats: PropTypes.object.isRequired,
+    fetchWalletStats: PropTypes.func.isRequired,
   };
 
   static contextType = I18nContext;
 
-  state = {
-    isLoadingStats: true,
-    lockedBalance: {
-      bidding: { HNS: null, num: null },
-      revealable: { HNS: null, num: null },
-      finished: { HNS: null, num: null },
-    },
-    actionableInfo: {
-      revealable: { HNS: null, num: null, block: null },
-      redeemable: { HNS: null, num: null },
-      renewable: { domains: null, block: null },
-      transferring: { domains: null, block: null },
-      finalizable: { domains: null, block: null },
-      registerable: { HNS: null, num: null },
-    },
-  };
-
   constructor(props) {
     super(props);
-    this.updateStatsAndBalance = throttle(this.updateStatsAndBalance, 15000, { trailing: true });
 
     const {walletType, walletInitialized} = this.props;
 
@@ -104,47 +89,35 @@ export default class Account extends Component {
   }
 
   componentDidMount() {
-    this._isMounted = true;
     analytics.screenView("Account");
     this.props.fetchWallet();
     this.updateStatsAndBalance();
   }
 
   componentDidUpdate(prevProps, prevState) {
-    if (this.props.height !== prevProps.height) {
+    if (
+      this.props.height !== prevProps.height
+      || this.props.walletHeight !== prevProps.walletHeight
+    ) {
       this.updateStatsAndBalance();
     }
-  }
-
-  componentWillUnmount() {
-    this._isMounted = false;
   }
 
   /**
    * Refresh $HNS price,
    * calculate balance and cards
-   * (Unthrottled update, call without _ to throttle)
    */
-  async _updateStatsAndBalance() {
+  async updateStatsAndBalance() {
     // Update HNS price for conversion
     this.props.updateHNSPrice();
 
     // Stats for balance and cards
     try {
-      const stats = await walletClient.getStats();
-      if (this._isMounted) {
-        this.setState({
-          isLoadingStats: false,
-          ...stats,
-        });
-      }
+      await this.props.fetchWalletStats();
     } catch (error) {
       console.error(error);
-      this.setState({ isLoadingStats: false });
     }
   }
-
-  updateStatsAndBalance = throttle(this._updateStatsAndBalance, 15000, { trailing: true })
 
   onCardButtonClick = async (action, args) => {
     const {t} = this.context;
@@ -161,7 +134,7 @@ export default class Account extends Component {
       const res = await functionToExecute(args);
       if (res !== null) {
         this.props.fetchTransactions();
-        this._updateStatsAndBalance();
+        this.updateStatsAndBalance();
         if (action === 'register' && res && res.txid) {
           this.props.showSuccess(formatRegisterSuccess(res));
         } else if (action === 'finalize' && res && (res.hash || res.txid)) {
@@ -214,7 +187,10 @@ export default class Account extends Component {
   }
 
   renderBalance() {
-    const { lockedBalance, isLoadingStats } = this.state;
+    const {
+      lockedBalance,
+      isLoading: isLoadingStats,
+    } = this.props.walletStats;
     const {t} = this.context;
     const spendableBalance = {
       HNS: this.props.spendableBalance,
@@ -343,7 +319,7 @@ export default class Account extends Component {
       transferring,
       finalizable,
       registerable,
-    } = this.state.actionableInfo;
+    } = this.props.walletStats.actionableInfo;
 
     return (
       <div className="cards__container">

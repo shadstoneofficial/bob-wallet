@@ -99,7 +99,7 @@ async function fromBids(wallet) {
 }
 
 /** @param {import('hsd/lib/wallet/wallet')} wallet */
-async function fromReveals(wallet) {
+export async function fromReveals(wallet) {
   const height = wallet.wdb.height;
   const network = wallet.network;
 

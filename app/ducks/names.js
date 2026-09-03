@@ -11,6 +11,10 @@ import {
 } from './walletActions';
 import { SET_NAME } from './namesReducer';
 import {NAME_STATES} from "../constants/names";
+import {
+  fetchWalletStats,
+  invalidateRedeemableStats,
+} from './walletStats';
 
 export const RECORD_TYPE = {
   DS: 'DS',
@@ -472,7 +476,29 @@ export const sendRedeemAll = () => async (dispatch) => {
     dispatch(getPassphrase(resolve, reject));
   });
 
-  return await walletClient.sendRedeemAll();
+  // Hide the action immediately and invalidate any stats request that began
+  // before the wallet marked the reveal outputs spent.
+  dispatch(invalidateRedeemableStats());
+
+  try {
+    const result = await walletClient.sendRedeemAll();
+    try {
+      await dispatch(fetchWalletStats());
+    } catch (statsError) {
+      console.error('Could not refresh wallet stats after redeem:', statsError);
+    }
+    return result;
+  } catch (error) {
+    try {
+      await dispatch(fetchWalletStats());
+    } catch (statsError) {
+      console.error('Could not refresh wallet stats after empty redeem:', statsError);
+    }
+    if (/nothing to do/i.test(error.message || '')) {
+      throw new Error('No bids remain to redeem.');
+    }
+    throw error;
+  }
 };
 
 export const sendRevealAll = () => async (dispatch) => {
