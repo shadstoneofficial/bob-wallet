@@ -29,7 +29,7 @@ for (const archive of archives) {
     .filter(file => file.startsWith('dist/'))
     .map(file => file.slice('dist/'.length));
   const result = validateModuleGraph(distFiles, file => (
-    asar.extractFile(archive, `dist/${file}`).toString('utf8')
+    asar.extractFile(archive, `dist/${file}`.split('/').join(path.sep)).toString('utf8')
   ));
   console.log(`Validated packaged ASAR ${archive} (${result.fileCount} dist files, ${result.reachableModuleCount} reachable main-process modules).`);
 }
