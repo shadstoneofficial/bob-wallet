@@ -7,9 +7,81 @@ import fs from 'fs';
 
 let mainWindow;
 let rendererReady = false;
+let rendererReadyGeneration = 0;
+let rendererReadyWaiters = [];
+let rendererRecoveryAttempts = 0;
+let rendererFailureDialogShown = false;
 let pendingDeeplinks = [];
 let bridgeHandlersInstalled = false;
 const authorizedFilePaths = new Set();
+
+function isUsableWindow(window) {
+  return Boolean(
+    window
+    && !window.isDestroyed()
+    && window.webContents
+    && !window.webContents.isDestroyed()
+  );
+}
+
+function settleReadyWaiters(error) {
+  const waiters = rendererReadyWaiters;
+  rendererReadyWaiters = [];
+
+  for (const waiter of waiters) {
+    if (error) {
+      clearTimeout(waiter.timeout);
+      waiter.reject(error);
+    } else if (rendererReadyGeneration > waiter.afterGeneration) {
+      clearTimeout(waiter.timeout);
+      waiter.resolve({window: mainWindow, generation: rendererReadyGeneration});
+    } else {
+      rendererReadyWaiters.push(waiter);
+    }
+  }
+}
+
+function clearMainWindow(window) {
+  if (mainWindow !== window) return;
+  mainWindow = null;
+  rendererReady = false;
+}
+
+function destroyWindow(window) {
+  clearMainWindow(window);
+  if (window && !window.isDestroyed()) window.destroy();
+}
+
+function showRendererFailureAndQuit(error) {
+  if (rendererFailureDialogShown) return;
+  rendererFailureDialogShown = true;
+  const detail = error && (error.stack || error.message) || String(error);
+
+  electron.dialog.showMessageBox(null, {
+    type: 'error',
+    buttons: ['Quit'],
+    title: 'Couldn\'t Open Bob',
+    message: 'Bob could not load its application window and must quit.',
+    detail,
+  }).catch(dialogError => {
+    console.error('Could not display renderer startup error:', dialogError);
+  }).finally(() => electron.app.quit());
+}
+
+export function waitForMainWindowReady(afterGeneration = 0, timeoutMs = 30000) {
+  if (rendererReady && isUsableWindow(mainWindow) && rendererReadyGeneration > afterGeneration) {
+    return Promise.resolve({window: mainWindow, generation: rendererReadyGeneration});
+  }
+
+  return new Promise((resolve, reject) => {
+    const waiter = {afterGeneration, resolve, reject, timeout: null};
+    waiter.timeout = setTimeout(() => {
+      rendererReadyWaiters = rendererReadyWaiters.filter(item => item !== waiter);
+      reject(new Error('Timed out waiting for the Bob renderer to finish loading.'));
+    }, timeoutMs);
+    rendererReadyWaiters.push(waiter);
+  });
+}
 
 function authorizePaths(paths = []) {
   for (const filePath of paths) {
@@ -101,12 +173,22 @@ function installBridgeHandlers() {
 }
 
 export default function showMainWindow() {
-  if (mainWindow) {
+  if (isUsableWindow(mainWindow) && rendererReady) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
     mainWindow.focus();
-    return;
+    return mainWindow;
   }
 
-  mainWindow = new electron.BrowserWindow({
+  if (isUsableWindow(mainWindow) && mainWindow.webContents.isLoadingMainFrame()) {
+    return mainWindow;
+  }
+
+  if (mainWindow) {
+    destroyWindow(mainWindow);
+  }
+
+  const window = new electron.BrowserWindow({
     show: false,
     width: 1024,
     height: 728,
@@ -117,12 +199,12 @@ export default function showMainWindow() {
       sandbox: true,
     }
   });
+  mainWindow = window;
+  rendererReady = false;
 
   installBridgeHandlers();
 
-  mainWindow.loadURL(`file://${__dirname}/app.html`);
-
-  mainWindow.webContents.setWindowOpenHandler(({url}) => {
+  window.webContents.setWindowOpenHandler(({url}) => {
     const safeUrl = getSafeExternalUrl(url);
     if (safeUrl) {
       electron.shell.openExternal(safeUrl);
@@ -130,36 +212,62 @@ export default function showMainWindow() {
     return {action: 'deny'};
   });
 
-  mainWindow.webContents.on('will-navigate', (event, url) => {
-    if (url !== mainWindow.webContents.getURL()) {
+  window.webContents.on('will-navigate', (event, url) => {
+    if (url !== window.webContents.getURL()) {
       event.preventDefault();
     }
   });
 
   // @TODO: Use 'ready-to-show' event
   //        https://github.com/electron/electron/blob/master/docs/api/browser-window.md#using-ready-to-show-event
-  mainWindow.webContents.on('did-finish-load', () => {
-    if (!mainWindow) {
-      throw new Error('"mainWindow" is not defined');
-    }
+  window.webContents.on('did-finish-load', () => {
+    if (mainWindow !== window || !isUsableWindow(window)) return;
     rendererReady = true;
+    rendererReadyGeneration += 1;
+    rendererRecoveryAttempts = 0;
     if (process.env.START_MINIMIZED) {
-      mainWindow.minimize();
+      window.minimize();
     } else {
-      mainWindow.show();
-      mainWindow.focus();
+      window.show();
+      window.focus();
     }
+
+    settleReadyWaiters();
 
     while (pendingDeeplinks.length) {
       const pendingDeeplink = pendingDeeplinks.shift();
       traceDeeplink('main-window-flush-pending', {url: pendingDeeplink});
-      mainWindow.webContents.send('deeplink', pendingDeeplink);
+      window.webContents.send('deeplink', pendingDeeplink);
     }
   });
 
-  mainWindow.on('closed', () => {
-    mainWindow = null;
-    rendererReady = false;
+  window.webContents.on('did-fail-load', (event, code, description, url, isMainFrame) => {
+    if (isMainFrame === false || mainWindow !== window) return;
+    const error = new Error(`Renderer failed to load ${url || 'app.html'} (${code}): ${description}`);
+    destroyWindow(window);
+    settleReadyWaiters(error);
+    showRendererFailureAndQuit(error);
+  });
+
+  window.webContents.on('render-process-gone', (event, details) => {
+    if (mainWindow !== window) return;
+    const error = new Error(`Renderer process exited unexpectedly: ${details.reason}`);
+    destroyWindow(window);
+    settleReadyWaiters(error);
+
+    if (rendererRecoveryAttempts < 1 && electron.app.isReady()) {
+      rendererRecoveryAttempts += 1;
+      showMainWindow();
+      return;
+    }
+
+    showRendererFailureAndQuit(error);
+  });
+
+  window.on('closed', () => {
+    const closedBeforeReady = mainWindow === window && !rendererReady;
+    clearMainWindow(window);
+    if (closedBeforeReady) settleReadyWaiters(new Error('Bob window closed before its renderer finished loading.'));
 
     // need to quit the entire app (i.e., including
     // the HSD window) once the main window is closed
@@ -168,6 +276,15 @@ export default function showMainWindow() {
       electron.app.quit();
     }
   });
+
+  window.loadURL(`file://${__dirname}/app.html`).catch(error => {
+    if (mainWindow !== window) return;
+    destroyWindow(window);
+    settleReadyWaiters(error);
+    showRendererFailureAndQuit(error);
+  });
+
+  return window;
 }
 
 export function getMainWindow() {

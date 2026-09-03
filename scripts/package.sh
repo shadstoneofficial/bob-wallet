@@ -17,3 +17,5 @@ $DIR/node_modules/.bin/babel $DIR/app/ducks/nodeReducer.js -o ./dist/ducks/nodeR
 $DIR/node_modules/.bin/babel $DIR/app/ducks/hip2Reducer.js -o ./dist/ducks/hip2Reducer.js
 $DIR/node_modules/.bin/babel $DIR/app/ducks/claims.js -o ./dist/ducks/claims.js
 $DIR/node_modules/.bin/babel $DIR/app/ducks/notifications.js -o ./dist/ducks/notifications.js
+$DIR/node_modules/.bin/babel $DIR/app/ducks/storageReducer.js -o ./dist/ducks/storageReducer.js
+node $DIR/scripts/validate-dist.js

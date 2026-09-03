@@ -1,6 +1,7 @@
 const path = require('path');
 const fs = require('fs');
 const exec = require('child_process').exec;
+const execFile = require('child_process').execFile;
 const rootDir = path.resolve(path.join(__dirname, '..'));
 const binDir = path.join(rootDir, 'node_modules', '.bin');
 const binExt = process.platform === 'win32' ? '.cmd' : '';
@@ -69,6 +70,14 @@ function main() {
   ];
   const babelizeDirectories = () => {
     if (!babelDirectories.length) {
+      console.log('Validating compiled main-process modules.');
+      execFile(process.execPath, [path.join(rootDir, 'scripts', 'validate-dist.js')], {
+        cwd: rootDir,
+      }, (err, stdout, stderr) => {
+        if (stdout) console.log(stdout);
+        if (stderr) console.error(stderr);
+        if (err) throw err;
+      });
       return;
     }
     babelizeFromRoot(path.join('app', babelDirectories[0]), path.join('dist', babelDirectories[0]), true, () => {
@@ -87,7 +96,8 @@ function main() {
     'ducks/hip2Reducer.js',
     'ducks/walletReducer.js',
     'ducks/claims.js',
-    'ducks/notifications.js'
+    'ducks/notifications.js',
+    'ducks/storageReducer.js'
   ];
   const babelizeFiles = () => {
     if (!babelFiles.length) {

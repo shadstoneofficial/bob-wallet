@@ -278,6 +278,12 @@ app_path_for_arch() {
 
 for arch in "${MAC_ARCHES[@]}"; do
     app_path="$(app_path_for_arch "${arch}")"
+    echo "Validating packaged application modules for ${arch}"
+    node scripts/validate-packaged-asar.js "${app_path}/Contents/Resources/app.asar"
+done
+
+for arch in "${MAC_ARCHES[@]}"; do
+    app_path="$(app_path_for_arch "${arch}")"
     if [[ ! -d "${app_path}" ]]; then
         echo "Expected app bundle not found: ${app_path}" >&2
         exit 1

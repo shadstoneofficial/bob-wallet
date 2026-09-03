@@ -74,6 +74,15 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "${app_path}"
           spctl --assess --type execute --verbose "${app_path}"
 
+      - name: Validate packaged application modules
+        run: node scripts/validate-packaged-asar.js release
+
+      - name: Smoke test packaged macOS application
+        shell: bash
+        run: |
+          app_path="$(find release -maxdepth 3 -name "Bob LearnHNS.app" -type d | sort | head -n 1)"
+          node scripts/smoke-packaged-macos.js "${app_path}"
+
       - name: Generate checksums
         shell: bash
         run: |

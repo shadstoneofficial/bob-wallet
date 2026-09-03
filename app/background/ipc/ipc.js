@@ -70,15 +70,25 @@ export function makeServer(
       return;
     }
     const method = methods[data.method];
+    const sendToRenderer = payload => {
+      if (
+        !event.sender
+        || (typeof event.sender.isDestroyed === 'function' && event.sender.isDestroyed())
+      ) {
+        return false;
+      }
+      event.sender.send(SIGIL, payload);
+      return true;
+    };
 
     if (!data.id) {
       log('IPC method call has no ID, aborting.');
-      return event.sender.send(SIGIL, makeError(-32600, 'id not provided', null));
+      return sendToRenderer(makeError(-32600, 'id not provided', null));
     }
 
     if (!method) {
       log(`IPC method ${data.method} does not exist, aborting.`);
-      return event.sender.send(SIGIL, makeError(-32601, 'method not found', data.id));
+      return sendToRenderer(makeError(-32601, 'method not found', data.id));
     }
 
     const actionStarted = Date.now();
@@ -102,7 +112,7 @@ export function makeServer(
         log('Sending IPC method error.', sanitizeData(data, method), err);
         log('Stack:', err.stack);
         Sentry.captureException(err);
-        return event.sender.send(SIGIL, makeError(err.code || -1, err.message, data.id));
+        return sendToRenderer(makeError(err.code || -1, err.message, data.id));
       }
       actionLogger(formatActionLog(
         data.method,
@@ -110,7 +120,7 @@ export function makeServer(
         Date.now() - actionStarted,
       ));
       log('Sending IPC method response.', sanitizeData(data, method), sanitizeRes(res, method));
-      return event.sender.send(SIGIL, makeResponse(res, data.id));
+      return sendToRenderer(makeResponse(res, data.id));
     };
 
     log('Executing IPC method.', sanitizeData(data, method));

@@ -77,3 +77,31 @@ test('action log formatter clamps invalid duration values', t => {
   );
   t.end();
 });
+
+test('completed IPC work does not send to a destroyed renderer', async t => {
+  let handler;
+  let resolveMethod;
+  const responses = [];
+  const sender = {
+    destroyed: false,
+    isDestroyed() { return this.destroyed; },
+    send(...args) { responses.push(args); },
+  };
+  const ipcMain = {
+    on(channel, listener) { handler = listener; },
+    removeListener() {},
+  };
+  const server = makeServer(ipcMain, () => true, () => {});
+  server.withMethod('Wallet', 'slowRead', () => new Promise(resolve => {
+    resolveMethod = resolve;
+  }));
+  server.start();
+
+  handler({sender}, {id: 3, method: 'Wallet.slowRead', params: []});
+  sender.destroyed = true;
+  resolveMethod({ok: true});
+  await nextTurn();
+
+  t.equal(responses.length, 0, 'no response is sent after the renderer is destroyed');
+  t.end();
+});

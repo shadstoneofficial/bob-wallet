@@ -46,5 +46,8 @@ jobs:
       - name: Build
         run: ${{ matrix.cmd_build }}
 
+      - name: Validate compiled application modules
+        run: node scripts/validate-dist.js
+
       - name: Test
         run: npm test
