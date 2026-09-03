@@ -1405,18 +1405,16 @@ class WalletService {
     if (!names.length) {
       throw new Error('Nothing to do.');
     }
-    const actions = names.map(name => ['TRANSFER', name, address]);
-
-    // Chunk into multiple batches to stay within consensus limits
-    const chunkedActions = [];
     const chunkSize = consensus.MAX_BLOCK_UPDATES / 6;
-    for(let i = 0; i < actions.length; i += chunkSize) {
-      chunkedActions.push(actions.slice(i, i + chunkSize));
+
+    if (names.length > chunkSize) {
+      throw new Error(`One transaction can contain up to ${chunkSize} name transfers.`);
     }
 
-    // Only call once now, see later about repeated calls
+    const actions = names.map(name => ['TRANSFER', name, address]);
+
     return this._walletProxy(
-      () => this._executeRPC('createbatch', [chunkedActions[0], {paths: true}]),
+      () => this._executeRPC('createbatch', [actions, {paths: true}]),
     );
   };
 

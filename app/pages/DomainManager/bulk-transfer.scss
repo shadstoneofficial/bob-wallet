@@ -1,0 +1,210 @@
+@import '../../variables';
+
+.bulk-transfer {
+  p:first-child {
+    margin-top: 0;
+  }
+
+  &__label {
+    color: rgba($black, 0.4);
+    font-size: 0.8rem;
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+  }
+
+  &__input,
+  &__search {
+    @extend %box-input;
+    @extend %row-nowrap;
+    box-sizing: border-box;
+    margin-bottom: 1rem;
+    padding: 0.5rem 0.75rem;
+    width: 100%;
+
+    input {
+      border: none;
+      flex: 1 1 auto;
+      font-size: 0.85rem;
+      outline: none;
+      width: 0;
+    }
+  }
+
+  &__tools {
+    @extend %row-nowrap;
+    align-items: stretch;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+
+    .bulk-transfer__search {
+      flex: 1 1 auto;
+      margin-bottom: 0;
+    }
+  }
+
+  &__sort {
+    @extend %box-input;
+    border: none;
+    box-sizing: border-box;
+    color: $black;
+    cursor: pointer;
+    flex: 0 0 9rem;
+    width: 9rem;
+  }
+
+  &__selection-summary,
+  &__page-actions,
+  &__pagination {
+    @extend %row-nowrap;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  &__selection-summary {
+    font-size: 0.8rem;
+    margin-bottom: 0.75rem;
+
+    span {
+      color: rgba($black, 0.5);
+    }
+  }
+
+  &__page-actions {
+    justify-content: flex-start;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+
+    button {
+      @extend %btn-secondary;
+      padding: 0.35rem 0.65rem;
+      width: auto;
+    }
+  }
+
+  &__name-list {
+    border: 1px solid rgba($black, 0.12);
+    border-radius: 0.5rem;
+    min-height: 17rem;
+    overflow: hidden;
+
+    p {
+      color: rgba($black, 0.5);
+      font-size: 0.85rem;
+      padding: 1rem;
+    }
+  }
+
+  &__name-option {
+    @extend %row-nowrap;
+    align-items: center;
+    border-bottom: 1px solid rgba($black, 0.06);
+    box-sizing: border-box;
+    cursor: pointer;
+    font-size: 0.85rem;
+    min-height: 2.7rem;
+    padding: 0.6rem 0.75rem;
+
+    &:last-child {
+      border-bottom: none;
+    }
+
+    &:hover {
+      background: rgba($azure-blue, 0.08);
+    }
+
+    input {
+      accent-color: $azure-blue;
+      margin: 0 0.65rem 0 0;
+    }
+
+    span {
+      overflow-wrap: anywhere;
+    }
+  }
+
+  &__pagination {
+    font-size: 0.8rem;
+    margin-top: 0.75rem;
+
+    button {
+      @extend %btn-secondary;
+      padding: 0.35rem 0.65rem;
+      width: auto;
+    }
+  }
+
+  &__actions {
+    @extend %row-nowrap;
+    justify-content: center;
+    margin-top: 1rem;
+    width: 100%;
+
+    button {
+      @extend %btn-primary;
+      flex: 1 0 auto;
+    }
+  }
+}
+
+body.bob-theme-dark {
+  .bulk-transfer {
+    color: #e6edf3;
+
+    &__label {
+      color: #d8dee9;
+    }
+
+    &__input,
+    &__search,
+    &__sort {
+      background: #0d1117;
+      box-shadow: 0 0 0 1.25px rgba($white, 0.22);
+      color: #e6edf3;
+
+      input {
+        background: #0d1117;
+        color: #e6edf3;
+
+        &::placeholder {
+          color: #7d8590;
+        }
+      }
+    }
+
+    &__selection-summary span,
+    &__name-list p {
+      color: #9aa4af;
+    }
+
+    &__name-list {
+      background: #0d1117;
+      border-color: rgba($white, 0.16);
+    }
+
+    &__name-option {
+      border-bottom-color: rgba($white, 0.09);
+      color: #e6edf3;
+
+      &:hover {
+        background: rgba($azure-blue, 0.16);
+      }
+    }
+
+    &__page-actions,
+    &__pagination {
+      button {
+        &:focus,
+        &:hover,
+        &:active {
+          background: rgba($azure-blue, 0.14);
+        }
+
+        &:disabled {
+          background: transparent;
+          border-color: #484f58;
+          color: #7d8590;
+        }
+      }
+    }
+  }
+}

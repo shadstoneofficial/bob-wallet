@@ -25,6 +25,7 @@ import {
   parsePaidNameTransferInput,
   stringifyPaidNameTransferPayload,
 } from '../../utils/paidNameTransfer';
+import BulkTransfer from '../DomainManager/BulkTransfer';
 import './send-name.scss';
 
 const { dialog } = require('electron');
@@ -78,6 +79,7 @@ class SendName extends Component {
     claimDetails: null,
     claimIsOwnAddress: false,
     isClaiming: false,
+    isShowingBulkTransfer: false,
   };
 
   componentDidMount() {
@@ -839,11 +841,26 @@ class SendName extends Component {
     const mode = this.props.mode || SELL_MODE;
 
     return (
-      <div className="send-name">
-        {this.renderModeTabs()}
-        {mode === CLAIM_MODE ? this.renderClaim() : this.renderSeller()}
-        {this.renderHistory()}
-      </div>
+      <>
+        <div className="send-name">
+          {this.renderModeTabs()}
+          {mode === SELL_MODE && (
+            <div className="send-name__bulk-shortcut">
+              <span>Sending several names to the same address?</span>
+              <button onClick={() => this.setState({isShowingBulkTransfer: true})}>
+                Bulk Transfer Names
+              </button>
+            </div>
+          )}
+          {mode === CLAIM_MODE ? this.renderClaim() : this.renderSeller()}
+          {this.renderHistory()}
+        </div>
+        {this.state.isShowingBulkTransfer && (
+          <BulkTransfer
+            onClose={() => this.setState({isShowingBulkTransfer: false})}
+          />
+        )}
+      </>
     );
   }
 }
