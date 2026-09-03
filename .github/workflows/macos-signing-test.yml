@@ -20,7 +20,7 @@ permissions:
 jobs:
   macos-signing-test:
     name: Sign, notarize, and staple macOS ${{ inputs.arch }}
-    runs-on: macos-latest
+    runs-on: ${{ inputs.arch == 'x64' && 'macos-15-intel' || 'macos-latest' }}
     timeout-minutes: 300
 
     steps:
@@ -65,9 +65,11 @@ jobs:
       - name: Verify macOS code signature
         shell: bash
         run: |
-          app_path="$(find release -maxdepth 3 -name "Bob LearnHNS.app" -type d | sort | head -n 1)"
-          if [ -z "${app_path}" ]; then
-            echo "No macOS app bundle found in release" >&2
+          app_dir="mac"
+          if [ "${{ inputs.arch }}" = "arm64" ]; then app_dir="mac-arm64"; fi
+          app_path="release/${app_dir}/Bob LearnHNS.app"
+          if [ ! -d "${app_path}" ]; then
+            echo "macOS app bundle not found: ${app_path}" >&2
             exit 1
           fi
 
@@ -80,7 +82,9 @@ jobs:
       - name: Smoke test packaged macOS application
         shell: bash
         run: |
-          app_path="$(find release -maxdepth 3 -name "Bob LearnHNS.app" -type d | sort | head -n 1)"
+          app_dir="mac"
+          if [ "${{ inputs.arch }}" = "arm64" ]; then app_dir="mac-arm64"; fi
+          app_path="release/${app_dir}/Bob LearnHNS.app"
           node scripts/smoke-packaged-macos.js "${app_path}"
 
       - name: Generate checksums

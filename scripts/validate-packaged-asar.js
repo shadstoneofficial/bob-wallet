@@ -25,7 +25,7 @@ if (!archives.length) throw new Error(`No app.asar archives found under ${target
 
 for (const archive of archives) {
   const distFiles = asar.listPackage(archive)
-    .map(file => file.replace(/^\//, ''))
+    .map(file => file.replaceAll('\\', '/').replace(/^\//, ''))
     .filter(file => file.startsWith('dist/'))
     .map(file => file.slice('dist/'.length));
   const result = validateModuleGraph(distFiles, file => (

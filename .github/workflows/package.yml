@@ -25,12 +25,14 @@ jobs:
             cmd_package: npm run package-mac-notarized
             artifact_name: Bob-macos-arm64
             mac_arch: arm64
+            app_dir: mac-arm64
             signed_macos: true
           - name: macOS x64
-            runner: macos-latest
+            runner: macos-15-intel
             cmd_package: npm run package-mac-notarized
             artifact_name: Bob-macos-x64
             mac_arch: x64
+            app_dir: mac
             signed_macos: true
           - name: Windows
             runner: windows-2022
@@ -91,9 +93,9 @@ jobs:
         if: matrix.platform.signed_macos
         shell: bash
         run: |
-          app_path="$(find release -maxdepth 3 -name "Bob LearnHNS.app" -type d | sort | head -n 1)"
-          if [ -z "${app_path}" ]; then
-            echo "No macOS app bundle found in release" >&2
+          app_path="release/${{ matrix.platform.app_dir }}/Bob LearnHNS.app"
+          if [ ! -d "${app_path}" ]; then
+            echo "macOS app bundle not found: ${app_path}" >&2
             exit 1
           fi
 
@@ -125,7 +127,7 @@ jobs:
         if: matrix.platform.signed_macos
         shell: bash
         run: |
-          app_path="$(find release -maxdepth 3 -name "Bob LearnHNS.app" -type d | sort | head -n 1)"
+          app_path="release/${{ matrix.platform.app_dir }}/Bob LearnHNS.app"
           node scripts/smoke-packaged-macos.js "${app_path}"
 
       - name: Generate checksums
