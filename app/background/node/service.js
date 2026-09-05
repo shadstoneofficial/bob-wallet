@@ -34,6 +34,7 @@ import {
 } from "../../ducks/nodeReducer";
 import pkg from '../../../package.json';
 import {storageHealth} from '../storage/service';
+const TX = require('hsd/lib/primitives/tx');
 
 const Network = require('hsd/lib/protocol/network');
 
@@ -523,7 +524,28 @@ export class NodeService extends EventEmitter {
 
   async getInfo() {
     await this._ensureStarted();
-    return this.client.getInfo();
+    const info = await this.client.getInfo();
+    const chain = {...info.chain};
+
+    if (this.hsd && this.hsd.chain) {
+      chain.synced = this.hsd.chain.synced;
+    }
+
+    try {
+      const peers = await this.client.execute('getpeerinfo', []);
+      const peerHeights = peers
+        .map(peer => peer.bestheight)
+        .filter(Number.isFinite);
+
+      if (peerHeights.length > 0) {
+        chain.bestPeerHeight = Math.max(...peerHeights);
+      }
+    } catch (e) {
+      // Some custom RPC providers do not expose peer details. In that case,
+      // the renderer falls back to HSD's progress-based completion threshold.
+    }
+
+    return {...info, chain};
   }
 
   async getTXByAddresses(addresses) {
@@ -577,7 +599,31 @@ export class NodeService extends EventEmitter {
       transactionAttempted: true,
     });
     try {
-      return await this._execRPC('sendrawtransaction', [tx]);
+      const decoded = TX.decode(Buffer.from(tx, 'hex'));
+      const txid = decoded.txid();
+
+      if (this.hsd && this.hsd.mempool) {
+        await this.hsd.sendTX(decoded);
+        if (!this.hsd.mempool.hasEntry(decoded.hash())) {
+          const error = new Error('The local node did not accept the transaction into its mempool.');
+          error.code = 'ETXREJECTED';
+          throw error;
+        }
+        return txid;
+      }
+
+      if (this.hsd && this.hsd.pool) {
+        const accepted = await this.hsd.pool.broadcast(decoded);
+        if (!accepted) {
+          const error = new Error('Connected peers rejected the transaction.');
+          error.code = 'ETXREJECTED';
+          throw error;
+        }
+        return txid;
+      }
+
+      await this.client.broadcast(tx);
+      return txid;
     } catch (error) {
       storageHealth.reportError(error, {
         source: 'transaction-broadcast',

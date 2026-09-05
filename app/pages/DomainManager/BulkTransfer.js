@@ -7,6 +7,7 @@ import { waitForPassphrase, hasAddress } from '../../ducks/walletActions';
 import isValidAddress from "../../utils/verifyAddress";
 import Alert from "../../components/Alert";
 import {transferMany} from "../../ducks/names";
+import {getMyNames} from '../../ducks/myDomains';
 import {I18nContext} from "../../utils/i18n";
 import {consensus} from "hsd/lib/protocol";
 import './bulk-transfer.scss';
@@ -25,6 +26,7 @@ const MAX_NAMES_PER_TRANSACTION = consensus.MAX_BLOCK_UPDATES / 6;
     waitForPassphrase: () => dispatch(waitForPassphrase()),
     hasAddress: (address) => dispatch(hasAddress(address)),
     transferMany: (names, address) => dispatch(transferMany(names, address)),
+    refreshNames: () => dispatch(getMyNames()),
   }),
 )
 export default class BulkTransfer extends Component {
@@ -125,6 +127,7 @@ export default class BulkTransfer extends Component {
       }
 
       this.props.showSuccess(this.context.t('bulkTransferSuccess'));
+      await this.props.refreshNames();
       this.props.onClose();
     } catch (e) {
       this.setState({
@@ -149,6 +152,7 @@ export default class BulkTransfer extends Component {
       <MiniModal
         title={t('bulkTransfer')}
         onClose={this.props.onClose}
+        className="bulk-transfer-modal"
         wide
       >
         <div className="bulk-transfer">

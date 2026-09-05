@@ -1,5 +1,24 @@
 @import '../../variables';
 
+.bulk-transfer-modal {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  margin: 1rem auto;
+  max-height: calc(100vh - 2rem);
+
+  .mini-modal__header {
+    flex: 0 0 auto;
+  }
+
+  .mini-modal__content {
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: 0.25rem;
+    scrollbar-gutter: stable;
+  }
+}
+
 .bulk-transfer {
   p:first-child {
     margin-top: 0;

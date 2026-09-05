@@ -32,6 +32,10 @@ import {get, put} from "../db/service";
 import hsdLedger from 'hsd-ledger';
 import {NAME_STATES} from "../../constants/names";
 import {storageHealth} from '../storage/service';
+import {
+  WalletMutationCoordinator,
+  broadcastAndRecord,
+} from './transactionSafety';
 
 const WalletNode = require('hsd/lib/wallet/node');
 const TX = require('hsd/lib/primitives/tx');
@@ -90,6 +94,7 @@ class WalletService {
     this.conn = {type: null};
     this.findNonceStop = false;
     this.rescanMaySubmitTransaction = false;
+    this.walletMutationCoordinator = new WalletMutationCoordinator();
   }
 
   _onWalletDBError = (error) => {
@@ -2312,20 +2317,22 @@ class WalletService {
   };
 
   _walletProxy = async (createFn, options) => {
-    try {
-      const storagePath = await this.nodeService.getDir();
-      await storageHealth.preflight(storagePath, {
-        source: 'transaction-preflight',
-        transactionAttempted: true,
-      });
-      return await this._walletProxyUnchecked(createFn, options);
-    } catch (error) {
-      storageHealth.reportError(error, {
-        source: 'transaction-preparation',
-        transactionAttempted: true,
-      });
-      throw error;
-    }
+    return this.walletMutationCoordinator.run(async () => {
+      try {
+        const storagePath = await this.nodeService.getDir();
+        await storageHealth.preflight(storagePath, {
+          source: 'transaction-preflight',
+          transactionAttempted: true,
+        });
+        return await this._walletProxyUnchecked(createFn, options);
+      } catch (error) {
+        storageHealth.reportError(error, {
+          source: 'transaction-preparation',
+          transactionAttempted: true,
+        });
+        throw error;
+      }
+    });
   };
 
   _walletProxyUnchecked = async (createFn, options) => {
@@ -2416,13 +2423,17 @@ class WalletService {
       }
 
       if (broadcast && isValid) {
+        const result = await broadcastAndRecord({
+          mtx,
+          walletDB: this.node.wdb,
+          broadcast: tx => this.nodeService.broadcastRawTx(tx.toHex()),
+        });
         try {
-          await this.nodeService.broadcastRawTx(mtx.toHex());
-          return mtx;
+          await this.refreshWalletInfo();
         } catch (error) {
-          console.error(error);
-          throw new Error(`Transaction signing succeeded, but broadcast failed: ${error.message}`);
+          console.error('Could not refresh wallet state after accepted transaction:', error);
         }
+        return result;
       }
 
       if (returnOnlyIfFullySigned) {
