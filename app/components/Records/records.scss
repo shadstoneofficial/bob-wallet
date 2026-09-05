@@ -395,6 +395,18 @@
   min-height: 2.125rem !important;
 }
 
+body.bob-theme-dark {
+  .records-table__refresh-status {
+    background: #151b23;
+    border-color: #30363d;
+    color: #8b949e;
+
+    &--error {
+      color: $orange-red;
+    }
+  }
+}
+
 .record {
   &__type {
     user-select: none;
