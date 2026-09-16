@@ -1,3 +1,4 @@
+import {createSpvHelperClient} from './spvHelperRequest';
 import pify from '../../utils/pify';
 import { app } from 'electron';
 import { VALID_NETWORKS } from '../../constants/networks';
@@ -772,55 +773,14 @@ export async function start(server) {
   server.withService(sName, methods);
 }
 
+const spvHelperClient = createSpvHelperClient();
+
 async function hapiGet(path = '') {
   const baseUrl = await service.getSpvHelperApiBaseUrl();
-  const res = await fetch(baseUrl + path, {
-    method: 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-    }
-  });
-  const json = await res.json();
-
-  if (!json)
-    throw new Error('Bad response (no body).');
-
-  if (json.error && res.statusCode >= 400) {
-    const {error} = json;
-    const err = new Error(error.message);
-    err.type = String(error.type);
-    err.code = error.code;
-    throw err;
-  }
-
-  if (res.status !== 200)
-    throw new Error(`Status code: ${res.status}.`);
-
-  return json;
+  return spvHelperClient.get(baseUrl, path);
 }
 
 async function hapiPost(path = '', body) {
   const baseUrl = await service.getSpvHelperApiBaseUrl();
-  const res = await fetch(baseUrl + path, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body)
-  });
-
-  const json = await res.json();
-
-  if (!json)
-    throw new Error('No body for JSON-RPC response.');
-
-  if (json.error) {
-    const {message, code} = json.error;
-    throw new Error(message);
-  }
-
-  if (res.status !== 200)
-    throw new Error(`Status code: ${res.status}.`);
-
-  return json;
+  return spvHelperClient.post(baseUrl, path, body);
 }

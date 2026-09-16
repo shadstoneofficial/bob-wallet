@@ -68,3 +68,5 @@ require('./app/components/SyncStatus/tests/index.spec');
 require('./app/ducks/tests/storageReducer.spec');
 require('./app/ducks/tests/walletActions.spec');
 require('./app/ducks/tests/walletStats.spec');
+
+require('./app/background/node/tests/spvHelperRequest.spec');
