@@ -96,14 +96,37 @@ fi
 rm -rf "${OUTPUT_DIR}"
 mkdir -p "${OUTPUT_DIR}/notary" "${OUTPUT_DIR}/dmg-stage"
 
+app_path_for_arch() {
+    case "$1" in
+        x64)
+            printf '%s\n' "${OUTPUT_DIR}/mac/${APP_BUNDLE_NAME}"
+            ;;
+        arm64)
+            printf '%s\n' "${OUTPUT_DIR}/mac-arm64/${APP_BUNDLE_NAME}"
+            ;;
+        *)
+            echo "Unsupported macOS arch: $1" >&2
+            exit 1
+            ;;
+    esac
+}
+
+export npm_config_with_gmp=false
+export GYP_DEFINES="with_gmp=false${GYP_DEFINES:+ ${GYP_DEFINES}}"
+
 echo "Building renderer/main assets for ${PRODUCT_NAME} ${VERSION}"
 npm run build
+
+echo "Forcing goosig onto bundled mini-gmp so the app does not need Homebrew libgmp"
+node scripts/force-goosig-mini-gmp.js
 
 echo "Building signed macOS app bundles for ${PRODUCT_NAME} ${VERSION}"
 for arch in "${MAC_ARCHES[@]}"; do
     case "${arch}" in
         x64|arm64)
             npx electron-builder --mac dir "--${arch}" --publish=never
+            echo "Checking packaged goosig.node does not link libgmp (${arch})"
+            node scripts/verify-goosig-no-gmp.js "$(app_path_for_arch "${arch}")"
             ;;
         *)
             echo "Unsupported macOS arch: ${arch}" >&2
@@ -259,21 +282,6 @@ create_dmg() {
     xcrun stapler staple "${dmg_path}"
     xcrun stapler validate "${dmg_path}"
     spctl --assess --type open --context context:primary-signature --verbose "${dmg_path}"
-}
-
-app_path_for_arch() {
-    case "$1" in
-        x64)
-            printf '%s\n' "${OUTPUT_DIR}/mac/${APP_BUNDLE_NAME}"
-            ;;
-        arm64)
-            printf '%s\n' "${OUTPUT_DIR}/mac-arm64/${APP_BUNDLE_NAME}"
-            ;;
-        *)
-            echo "Unsupported macOS arch: $1" >&2
-            exit 1
-            ;;
-    esac
 }
 
 for arch in "${MAC_ARCHES[@]}"; do
