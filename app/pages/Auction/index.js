@@ -45,10 +45,11 @@ const analytics = aClientStub(() => require('electron').ipcRenderer);
       domain: state.names[name],
       chain: state.node.chain,
       explorer: state.node.explorer,
+      walletRequestGeneration: state.wallet.requestGeneration || 0,
     };
   },
   dispatch => ({
-    getNameInfo: tld => dispatch(names.getNameInfo(tld)),
+    getNameInfo: (tld, options) => dispatch(names.getNameInfo(tld, options)),
     showSuccess: (message) => dispatch(showSuccess(message)),
     showError: (message) => dispatch(showError(message)),
     fetchPendingTransactions: () => dispatch(walletActions.fetchPendingTransactions()),
@@ -74,38 +75,79 @@ export default class Auction extends Component {
     domain: PropTypes.object,
     chain: PropTypes.object,
     explorer: PropTypes.object.isRequired,
+    walletRequestGeneration: PropTypes.number.isRequired,
   };
 
   state = {
     isShowingClaimModal: false,
+    isLoading: false,
+    loadError: '',
   };
+
+  isMountedForRequests = false;
+  loadGeneration = 0;
+  loadController = null;
 
   static contextType = I18nContext;
 
   async componentDidMount() {
-    try {
-      this.setState({isLoading: true});
-      await this.props.getNameInfo(this.getDomain());
-      await this.props.fetchPendingTransactions();
-    } catch (e) {
-      console.error(e);
-      Sentry.captureException(e);
-      this.props.showError('Something went wrong fetching this name. Please try again.');
-    } finally {
-      this.setState({isLoading: false});
-    }
+    this.isMountedForRequests = true;
+    await this.loadName();
     analytics.screenView('Auction');
   }
 
-  componentDidUpdate(prevProps, prevState) {
+  componentDidUpdate(prevProps) {
+    if (
+      this.getDomain() !== prevProps.match.params.name
+      || this.props.walletRequestGeneration !== prevProps.walletRequestGeneration
+    ) {
+      this.refreshInfo.cancel();
+      this.loadName();
+      return;
+    }
+
     if (this.props.chain.height !== prevProps.chain.height) {
       this.refreshInfo();
     }
   }
 
+  componentWillUnmount() {
+    this.isMountedForRequests = false;
+    this.loadGeneration++;
+    this.loadController?.abort();
+    this.refreshInfo.cancel();
+  }
+
+  loadName = async () => {
+    const request = ++this.loadGeneration;
+    this.loadController?.abort();
+    this.loadController = new AbortController();
+    const {signal} = this.loadController;
+    if (this.isMountedForRequests) {
+      this.setState({isLoading: true, loadError: ''});
+    }
+
+    try {
+      await this.props.getNameInfo(this.getDomain(), {signal});
+      if (!this.isMountedForRequests || request !== this.loadGeneration) return;
+      await this.props.fetchPendingTransactions();
+    } catch (e) {
+      if (!this.isMountedForRequests || request !== this.loadGeneration) return;
+      if (e.code === 'STALE_WALLET_REQUEST' || signal.aborted) return;
+      console.error(e);
+      Sentry.captureException(e);
+      const message = e.message || 'Something went wrong fetching this name.';
+      this.setState({loadError: message});
+      this.props.showError(`${message} Please try again.`);
+    } finally {
+      if (this.isMountedForRequests && request === this.loadGeneration) {
+        this.setState({isLoading: false});
+      }
+    }
+  };
+
   refreshInfo = throttle(() => {
-    this.props.getNameInfo(this.getDomain());
-    this.props.fetchPendingTransactions();
+    this.loadName();
   }, 10*1000, {leading: true, trailing: true}) // 10 seconds
 
   getDomain = () => this.props.match.params.name;
@@ -186,8 +228,17 @@ export default class Auction extends Component {
   }
 
   renderAuctionDetails() {
-    if (this.state.isLoading || !this.props.domain) {
+    if (this.state.isLoading) {
       return 'Loading...';
+    }
+
+    if (this.state.loadError || !this.props.domain) {
+      return (
+        <div className="domains__content__load-error" role="alert">
+          <div>{this.state.loadError || 'This name could not be loaded.'}</div>
+          <button type="button" onClick={this.loadName}>Retry</button>
+        </div>
+      );
     }
 
     const domain = this.props.domain;
@@ -225,9 +276,18 @@ export default class Auction extends Component {
 
           <Collapsible className="domains__content__info-panel" title="Bids" pillContent={pillContent}>
             {
-              this.props.domain ?
-                <BidHistory bids={bidsIncludingPending} reveals={reveals} />
-                : t('loading')
+              domain.bidHistoryLoading
+                ? 'Loading bid history...'
+                : domain.bidHistoryError
+                  ? (
+                    <div className="domains__content__load-error" role="alert">
+                      <div>{domain.bidHistoryError}</div>
+                      <button type="button" onClick={this.loadName}>Retry bid history</button>
+                    </div>
+                  )
+                  : this.props.domain
+                    ? <BidHistory bids={bidsIncludingPending} reveals={reveals} />
+                    : t('loading')
             }
           </Collapsible>
 

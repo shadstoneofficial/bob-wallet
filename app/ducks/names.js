@@ -8,9 +8,11 @@ import {
   startWalletSync,
   stopWalletSync,
   waitForWalletSync,
+  isCurrentWalletRequest,
 } from './walletActions';
 import { SET_NAME } from './namesReducer';
 import {NAME_STATES} from "../constants/names";
+import {startRequestTrace} from '../utils/requestTrace';
 import {
   fetchWalletStats,
   invalidateRedeemableStats,
@@ -73,8 +75,59 @@ export const fetchName = (name, force) => async (dispatch, getState) => {
   });
 };
 
-export const getNameInfo = name => async (dispatch) => {
+const activeNameInfoRequests = new Map();
+const activeNameHistoryRequests = new Map();
+
+function staleWalletRequestError() {
+  const error = new Error('The active wallet changed while this request was running.');
+  error.code = 'STALE_WALLET_REQUEST';
+  return error;
+}
+
+export const getNameInfo = (name, options = {}) => (dispatch, getState) => {
+  const wallet = getState().wallet;
+  const generation = wallet.requestGeneration || 0;
+  const wid = wallet.wid;
+  const key = `${generation}:${name}`;
+
+  const isCurrent = () => (
+    !options.signal?.aborted
+    && isCurrentWalletRequest(getState, generation, wid)
+  );
+  const activeRequest = activeNameInfoRequests.get(key);
+  if (activeRequest && activeRequest.isCurrent()) {
+    return activeRequest.request;
+  }
+  if (activeRequest) activeNameInfoRequests.delete(key);
+  const trace = startRequestTrace({
+    operation: 'name-info',
+    caller: 'names.getNameInfo',
+    walletGeneration: generation,
+  });
+  const request = loadNameInfo(name, dispatch, isCurrent, key, generation)
+    .then(result => {
+      trace.complete();
+      return result;
+    }, error => {
+      if (error.code === 'STALE_WALLET_REQUEST') trace.cancel();
+      else trace.fail();
+      throw error;
+    })
+    .finally(() => {
+      if (activeNameInfoRequests.get(key)?.request === request) {
+        activeNameInfoRequests.delete(key);
+      }
+    });
+  activeNameInfoRequests.set(key, {request, isCurrent});
+  return request;
+};
+
+async function loadNameInfo(name, dispatch, isCurrent, requestKey, generation) {
   const result = await nodeClient.getNameInfo(name);
+  if (!isCurrent()) throw staleWalletRequestError();
+  if (!result || typeof result !== 'object' || !Object.prototype.hasOwnProperty.call(result, 'info')) {
+    throw new Error('The SPV helper returned a malformed name response.');
+  }
   const {start, info} = result;
 
   let bids = [];
@@ -104,9 +157,46 @@ export const getNameInfo = name => async (dispatch) => {
 
   try {
     const auctionInfo = await walletClient.getAuctionInfo(name);
+    if (!isCurrent()) throw staleWalletRequestError();
     walletHasName = true;
-    bids = await inflateBids(auctionInfo.bids, info.height);
-    reveals = await inflateReveals(auctionInfo.reveals, info.height);
+    const hasHistory = auctionInfo.bids.length > 0 || auctionInfo.reveals.length > 0;
+    const activeHistory = activeNameHistoryRequests.get(requestKey);
+    if (activeHistory && !activeHistory.isCurrent()) {
+      activeNameHistoryRequests.delete(requestKey);
+    }
+    if (hasHistory && !activeNameHistoryRequests.has(requestKey)) {
+      const historyTrace = startRequestTrace({
+        operation: 'name-bid-history',
+        caller: 'names.getNameInfo',
+        walletGeneration: generation,
+      });
+      const historyRequest = loadNameHistory(
+        name,
+        auctionInfo,
+        info.height,
+        dispatch,
+        isCurrent,
+      ).then(() => {
+        historyTrace.complete();
+      }, error => {
+        if (error.code === 'STALE_WALLET_REQUEST') {
+          historyTrace.cancel();
+          return;
+        }
+        historyTrace.fail();
+        if (isCurrent()) {
+          dispatch({
+            type: SET_NAME,
+            payload: {name, bidHistoryLoading: false, bidHistoryError: error.message},
+          });
+        }
+      }).finally(() => {
+        if (activeNameHistoryRequests.get(requestKey)?.request === historyRequest) {
+          activeNameHistoryRequests.delete(requestKey);
+        }
+      });
+      activeNameHistoryRequests.set(requestKey, {request: historyRequest, isCurrent});
+    }
   } catch (e) {
     if (!e.message.match(/auction not found/i)) {
       throw e;
@@ -115,10 +205,12 @@ export const getNameInfo = name => async (dispatch) => {
 
   if (info.state === NAME_STATES.CLOSED) {
     const res = await walletClient.getTX(info.owner.hash);
+    if (!isCurrent()) throw staleWalletRequestError();
     if (res) {
       const {tx: buyTx} = res;
       const buyOutput = buyTx.outputs[info.owner.index];
       const coin = await walletClient.getCoin(info.owner.hash, info.owner.index);
+      if (!isCurrent()) throw staleWalletRequestError();
       isOwner = !!coin;
 
       if (coin) {
@@ -129,6 +221,7 @@ export const getNameInfo = name => async (dispatch) => {
 
         if (coin.covenant.action === 'TRANSFER') {
           const {network} = await nodeClient.getInfo();
+          if (!isCurrent()) throw staleWalletRequestError();
           info.transferTo = Address.fromHash(
             Buffer.from(coin.covenant.items[3], 'hex'),
             Number(coin.covenant.items[2])
@@ -142,21 +235,46 @@ export const getNameInfo = name => async (dispatch) => {
     }
   }
 
+  if (!isCurrent()) throw staleWalletRequestError();
   dispatch({
     type: SET_NAME,
-    payload: {name, start, info, bids, reveals, winner, lastTx, isOwner, walletHasName},
+    payload: {
+      name,
+      start,
+      info,
+      bids,
+      reveals,
+      winner,
+      lastTx,
+      isOwner,
+      walletHasName,
+      bidHistoryLoading: activeNameHistoryRequests.has(requestKey),
+      bidHistoryError: '',
+    },
   });
-};
+}
 
-async function inflateBids(bids, nameHeight) {
+async function loadNameHistory(name, auctionInfo, nameHeight, dispatch, isCurrent) {
+  const bids = await inflateBids(auctionInfo.bids, nameHeight, isCurrent);
+  const reveals = await inflateReveals(auctionInfo.reveals, nameHeight, isCurrent);
+  if (!isCurrent()) throw staleWalletRequestError();
+  dispatch({
+    type: SET_NAME,
+    payload: {name, bids, reveals, bidHistoryLoading: false, bidHistoryError: ''},
+  });
+}
+
+async function inflateBids(bids, nameHeight, isCurrent = () => true) {
   if (!bids.length) {
     return [];
   }
 
   const ret = [];
   for (const bid of bids) {
+    if (!isCurrent()) throw staleWalletRequestError();
     // Must use node client to get non-own bids
     const res = await nodeClient.getTx(bid.prevout.hash);
+    if (!isCurrent()) throw staleWalletRequestError();
 
     if (!res) continue;
 
@@ -178,15 +296,17 @@ async function inflateBids(bids, nameHeight) {
   return ret;
 }
 
-async function inflateReveals(reveals, nameHeight) {
+async function inflateReveals(reveals, nameHeight, isCurrent = () => true) {
   if (!reveals.length) {
     return [];
   }
 
   const ret = [];
   for (const reveal of reveals) {
+    if (!isCurrent()) throw staleWalletRequestError();
     // Must use node client to get non-own reveals
     const res = await nodeClient.getTx(reveal.prevout.hash);
+    if (!isCurrent()) throw staleWalletRequestError();
 
     if (!res) continue;
 

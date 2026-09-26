@@ -44,6 +44,7 @@ const TX_VIEW_ITEMS_PER_PAGE_KEY = 'main-tx-items-per-page';
     spendableBalance: state.wallet.balance.spendable,
     isFetching: state.wallet.isFetching,
     transactionStatus: state.node.newBlockStatus,
+    walletRequestGeneration: state.wallet.requestGeneration || 0,
   }),
   (dispatch) => ({
     fetchTransactions: () => dispatch(fetchTransactions()),
@@ -56,6 +57,7 @@ export default class Transactions extends Component {
     spendableBalance: PropTypes.number,
     isFetching: PropTypes.bool.isRequired,
     transactionStatus: PropTypes.string,
+    walletRequestGeneration: PropTypes.number.isRequired,
   };
 
   static contextType = I18nContext;
@@ -72,6 +74,12 @@ export default class Transactions extends Component {
 
   async componentDidUpdate(prevProps, prevState) {
 
+    if (this.props.walletRequestGeneration !== prevProps.walletRequestGeneration) {
+      this.refreshTransactions.cancel();
+      this.props.fetchTransactions();
+      return;
+    }
+
     // Refresh transactions on new blocks
     if (this.props.walletHeight !== prevProps.walletHeight) {
       this.refreshTransactions();
@@ -83,6 +91,10 @@ export default class Transactions extends Component {
     ) {
       this.fuse = null;
     }
+  }
+
+  componentWillUnmount() {
+    this.refreshTransactions.cancel();
   }
 
   refreshTransactions = debounce(() => this.props.fetchTransactions(), 5000)

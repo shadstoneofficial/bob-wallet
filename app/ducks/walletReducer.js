@@ -19,6 +19,7 @@ export const SET_WALLETS = 'app/wallet/setWallets';
 export const SET_WALLET_NETWORK = 'app/wallet/setNetwork';
 export const SET_FIND_NONCE_PROGRESS = 'app/wallet/setFindNonceProgress';
 export const SET_BASKET_SUBMISSION_PROGRESS = 'app/wallet/setBasketSubmissionProgress';
+export const INVALIDATE_WALLET_REQUESTS = 'app/wallet/invalidateRequests';
 
 export function getInitialState() {
   return {
@@ -66,6 +67,8 @@ export function getInitialState() {
       broadcastAttempted: false,
       timings: {},
     },
+    requestGeneration: 0,
+    requestWallet: '',
     m: null,
     n: null,
   };
@@ -99,6 +102,14 @@ export default function walletReducer(state = getInitialState(), {type, payload}
         keysNames: payload.keysNames,
         m: payload.m,
         n: payload.n,
+        requestWallet: '',
+      };
+    case INVALIDATE_WALLET_REQUESTS:
+      return {
+        ...state,
+        requestGeneration: state.requestGeneration + 1,
+        requestWallet: payload || state.wid,
+        isFetching: false,
       };
     case SET_BALANCE:
       return {

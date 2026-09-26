@@ -20,9 +20,10 @@ function fixture(responses, random = 0.5) {
   const client = createSpvHelperClient({
     now: () => time,
     random: () => random,
+    trace: () => {},
     sleep: async ms => { waits.push(ms); time += ms; },
     fetchImpl: async (url, options) => {
-      calls.push({url, ...options});
+      calls.push({url, ...options, signal: options.signal ? 'attached' : null});
       const next = responses.shift();
       if (next instanceof Error) throw next;
       if (!next) throw new Error('Unexpected retry');
@@ -85,6 +86,40 @@ test('SPV helper uses exponential fallback and jitter for missing/invalid header
   const zero = fixture([response(429, {}, {'retry-after': '0'}), response(200, {})], 0.99);
   await zero.client.get('https://example/hsd');
   t.deepEqual(zero.waits, [248], 'zero still gets positive jitter');
+  t.end();
+});
+
+test('SPV helper honors Retry-After for a retryable 503 without overlapping attempts', async t => {
+  let active = 0;
+  let maxActive = 0;
+  const f = fixture([
+    response(503, {error: {message: 'Temporarily unavailable'}}, {'retry-after': '2'}),
+    response(200, {result: {info: null, start: null}, error: null}),
+  ], 0);
+  const original = f.client.post;
+  f.client.post = async (...args) => {
+    active++;
+    maxActive = Math.max(maxActive, active);
+    try { return await original(...args); } finally { active--; }
+  };
+  await f.client.post('https://example/hsd', '', {method: 'getnameinfo', params: ['fixture']});
+  t.equal(f.calls.length, 2);
+  t.deepEqual(f.waits, [2001]);
+  t.equal(maxActive, 1, 'only one retry chain is active');
+  t.end();
+});
+
+test('SPV helper aborts a request that exceeds its per-attempt timeout', async t => {
+  const client = createSpvHelperClient({
+    requestTimeoutMs: 1,
+    trace: () => {},
+    fetchImpl: (url, options) => new Promise((resolve, reject) => {
+      options.signal.addEventListener('abort', () => reject(new Error('aborted')));
+    }),
+  });
+  const error = await errorFrom(() => client.get('https://example/hsd'));
+  t.equal(error.code, 'ETIMEDOUT');
+  t.equal(error.status, 408);
   t.end();
 });
 
