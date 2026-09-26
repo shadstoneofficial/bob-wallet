@@ -47,6 +47,7 @@ const NODE_NO_DNS = 'nodeNoDns1';
 const SPV_MODE = 'nodeSpvMode';
 const SPV_HELPER_API_BASE_URL = 'nodeSpvHelperApiBaseUrl';
 const LEARNHNS_TEST_PORT_OFFSET = 1000;
+const TRANSACTION_TIMEOUT_MS = 120000;
 
 export class NodeService extends EventEmitter {
   constructor() {
@@ -394,6 +395,9 @@ export class NodeService extends EventEmitter {
     this.client.on('error', e => {
       console.error('nodeclient error', e);
     });
+    this.transactionClient.on('error', e => {
+      console.error('transaction nodeclient error', e);
+    });
 
     await this.client.open();
     await this.refreshNodeInfo()
@@ -408,12 +412,14 @@ export class NodeService extends EventEmitter {
     }
 
     this.client = await this.createCustomRPCClient();
+    this.transactionClient = await this.createCustomRPCClient(TRANSACTION_TIMEOUT_MS);
 
     this.client.on('error', e => {
       console.error('nodeclient error', e);
     });
 
     await this.client.open();
+    await this.transactionClient.open();
     await this.refreshNodeInfo()
     this.client.bind('block connect', async () => this.refreshNodeInfo());
     this.emit('start remote', this.network);
@@ -436,7 +442,7 @@ export class NodeService extends EventEmitter {
     }
   }
 
-  async createCustomRPCClient() {
+  async createCustomRPCClient(timeout = 30000) {
     const rpc = await getCustomRPC();
     const {
       protocol,
@@ -456,19 +462,22 @@ export class NodeService extends EventEmitter {
       host,
       port: parseInt(port, 10),
       path: pathname,
-      timeout: 30000,
+      timeout,
     });
   }
 
   async stop() {
     if (this.client)
       await this.client.close();
+    if (this.transactionClient)
+      await this.transactionClient.close();
 
     if (this.hsd)
       await this.hsd.close();
 
     this.hsd = null;
     this.client = null;
+    this.transactionClient = null;
     this.height = 0;
 
     this.emit('stopped');
@@ -592,7 +601,7 @@ export class NodeService extends EventEmitter {
     return this.client.getTX(hash);
   }
 
-  async broadcastRawTx(tx) {
+  async broadcastRawTx(tx, {timeout = TRANSACTION_TIMEOUT_MS} = {}) {
     const storagePath = await this.getDir();
     await storageHealth.preflight(storagePath, {
       source: 'transaction-broadcast-preflight',
@@ -622,7 +631,10 @@ export class NodeService extends EventEmitter {
         return txid;
       }
 
-      await this.client.broadcast(tx);
+      const client = timeout >= TRANSACTION_TIMEOUT_MS && this.transactionClient
+        ? this.transactionClient
+        : this.client;
+      await client.broadcast(tx);
       return txid;
     } catch (error) {
       storageHealth.reportError(error, {

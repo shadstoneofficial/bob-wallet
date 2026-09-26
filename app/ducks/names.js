@@ -329,15 +329,18 @@ export const sendBid = (name, amount, lockup, height) => async (dispatch) => {
 };
 
 export const BID_SUBMISSION_PHASES = Object.freeze({
-  PREPARING: 'preparing',
+  CHECKING: 'checking',
   RESCANNING: 'rescanning',
+  BUILDING: 'building',
+  SIGNING: 'signing',
   BROADCASTING: 'broadcasting',
+  VERIFYING: 'verifying',
   SUBMITTED: 'submitted',
   FAILED: 'failed',
 });
 
 const PREPARATION_TIMEOUT_MS = 12 * 60 * 1000;
-const BROADCAST_TIMEOUT_MS = 90 * 1000;
+const BROADCAST_TIMEOUT_MS = 120 * 1000;
 const RECONCILE_TIMEOUT_MS = 15 * 1000;
 const basketSubmissionLocks = new Map();
 
@@ -356,7 +359,7 @@ function throwIfCancelled(signal) {
   if (!signal?.aborted) return;
   throw createSubmissionError('Stopped waiting for basket preparation.', {
     code: 'BASKET_SUBMISSION_CANCELLED',
-    stage: BID_SUBMISSION_PHASES.PREPARING,
+    stage: BID_SUBMISSION_PHASES.CHECKING,
     retryAllowed: false,
   });
 }
@@ -377,7 +380,7 @@ function waitForControlledPromise(promise, {signal, timeoutMs, timeoutError}) {
       reject,
       createSubmissionError('Stopped waiting for basket preparation.', {
         code: 'BASKET_SUBMISSION_CANCELLED',
-        stage: BID_SUBMISSION_PHASES.PREPARING,
+        stage: BID_SUBMISSION_PHASES.CHECKING,
         retryAllowed: false,
       }),
     );
@@ -416,7 +419,16 @@ async function findNewBasketTransactions(entries, baseline, findTransactions) {
 }
 
 function isDefiniteBroadcastFailure(error) {
-  return /rejected by the network|was not accepted by the network|fully signed/i.test(error?.message || '');
+  if (error?.code === 'ETXREJECTED') return true;
+  if (error?.code === 'ETXBROADCASTUNCERTAIN') return false;
+  return /rejected by the network|fully signed/i.test(error?.message || '');
+}
+
+function submissionFailureStage(error, fallback) {
+  if (error?.code === 'BASKET_BUILD_FAILED') return BID_SUBMISSION_PHASES.BUILDING;
+  if (error?.code === 'BASKET_SIGN_FAILED') return BID_SUBMISSION_PHASES.SIGNING;
+  if (error?.code === 'BASKET_RECONCILE_TIMEOUT') return BID_SUBMISSION_PHASES.VERIFYING;
+  return error?.stage || fallback;
 }
 
 /**
@@ -426,11 +438,15 @@ function isDefiniteBroadcastFailure(error) {
 export async function submitBidManyLifecycle(entries, deps, options = {}) {
   const signal = options.signal;
   const onPhase = options.onPhase || (() => {});
+  const onTiming = options.onTiming || ((phase, durationMs, details) => {
+    console.info('[Auction Basket timing]', {phase, durationMs, ...details});
+  });
   const preparationTimeoutMs = options.preparationTimeoutMs || PREPARATION_TIMEOUT_MS;
   const broadcastTimeoutMs = options.broadcastTimeoutMs || BROADCAST_TIMEOUT_MS;
-  let stage = BID_SUBMISSION_PHASES.PREPARING;
+  let stage = BID_SUBMISSION_PHASES.CHECKING;
   let broadcastStarted = false;
   let baseline = null;
+  const attemptId = options.attemptId || `basket-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const preparationStartedAt = Date.now();
 
   const setPhase = (phase, details = {}) => {
@@ -447,13 +463,14 @@ export async function submitBidManyLifecycle(entries, deps, options = {}) {
   });
 
   try {
-    setPhase(BID_SUBMISSION_PHASES.PREPARING);
+    setPhase(BID_SUBMISSION_PHASES.CHECKING);
     baseline = transactionIds(await prepare(
       deps.findTransactions(entries.map(entry => entry.name)),
     ));
     await prepare(deps.requestPassphrase());
     throwIfCancelled(signal);
 
+    const auctionValidationStartedAt = Date.now();
     const missing = [];
     for (const entry of entries) {
       try {
@@ -504,19 +521,36 @@ export async function submitBidManyLifecycle(entries, deps, options = {}) {
     if (stillMissing.length) {
       throw new Error(`Wallet still missing auction data for: ${stillMissing.map(name => `${name}/`).join(', ')}.`);
     }
+    onTiming('auction-validation', Date.now() - auctionValidationStartedAt, {
+      count: entries.length,
+      imported: missing.length,
+    });
 
     throwIfCancelled(signal);
-    setPhase(BID_SUBMISSION_PHASES.BROADCASTING);
-    broadcastStarted = true;
     const payload = entries.map(entry => ({
       name: entry.name,
       bid: entry.bid,
       lockup: entry.lockup,
     }));
 
-    let result;
+    setPhase(BID_SUBMISSION_PHASES.BUILDING, {attemptId});
+    let prepared;
     try {
-      result = await waitForControlledPromise(deps.broadcast(payload), {
+      prepared = await prepare(deps.prepare(payload, attemptId));
+    } catch (error) {
+      if (signal?.aborted) await deps.cancel?.(attemptId);
+      throw error;
+    }
+    throwIfCancelled(signal);
+    const preparedTxid = prepared?.txid || '';
+    setPhase(BID_SUBMISSION_PHASES.SIGNING, {attemptId, txid: preparedTxid});
+    throwIfCancelled(signal);
+
+    let result;
+    setPhase(BID_SUBMISSION_PHASES.BROADCASTING, {attemptId, txid: preparedTxid});
+    broadcastStarted = true;
+    try {
+      result = await waitForControlledPromise(deps.broadcastPrepared(attemptId), {
         timeoutMs: broadcastTimeoutMs,
         timeoutError: createSubmissionError(
           'Broadcast did not return before the safety timeout. Its outcome is uncertain, so retry is disabled.',
@@ -558,7 +592,8 @@ export async function submitBidManyLifecycle(entries, deps, options = {}) {
       }
     }
 
-    let txid = result?.txid || result?.hash || result?.id;
+    setPhase(BID_SUBMISSION_PHASES.VERIFYING, {attemptId, txid: preparedTxid});
+    let txid = result?.txid || result?.hash || result?.id || preparedTxid;
     if (!txid) {
       const matches = await findNewBasketTransactions(entries, baseline, deps.findTransactions);
       if (matches.length === 1) txid = matches[0].txid;
@@ -587,29 +622,25 @@ export async function submitBidManyLifecycle(entries, deps, options = {}) {
     } catch (error) {
       console.error('Could not refresh pending transactions after basket submission:', error);
     }
-    setPhase(BID_SUBMISSION_PHASES.SUBMITTED, {txid});
-    return {txid};
+    setPhase(BID_SUBMISSION_PHASES.SUBMITTED, {txid, timings: result?.timings || prepared?.timings || {}});
+    return {txid, timings: result?.timings || prepared?.timings || {}};
   } catch (error) {
-    if (error?.code === 'BASKET_SUBMISSION_CANCELLED') throw error;
+    if (error?.code === 'BASKET_SUBMISSION_CANCELLED') {
+      await deps.cancel?.(attemptId);
+      throw error;
+    }
 
     let retryAllowed = !!error.retryAllowed;
     let broadcastUncertain = !!error.broadcastUncertain;
     if (!broadcastStarted) {
-      try {
-        const matches = baseline
-          ? await findNewBasketTransactions(entries, baseline, deps.findTransactions)
-          : null;
-        retryAllowed = !!matches && matches.length === 0;
-        broadcastUncertain = !!matches && matches.length > 0;
-      } catch (reconcileError) {
-        retryAllowed = false;
-        broadcastUncertain = true;
-      }
+      await deps.cancel?.(attemptId);
+      retryAllowed = true;
+      broadcastUncertain = false;
     }
 
     const wrapped = createSubmissionError(error.message || 'Basket submission failed.', {
       code: error.code || 'BASKET_SUBMISSION_FAILED',
-      stage: error.stage || stage,
+      stage: submissionFailureStage(error, stage),
       retryAllowed,
       broadcastUncertain,
     });
@@ -670,9 +701,14 @@ export const sendBidMany = (entries, options = {}) => async (dispatch, getState)
         requireRescanStart: true,
       })),
       findTransactions: names => walletClient.findBasketBidTransactions(names),
-      broadcast: payload => {
-        basketSubmissionLocks.set(submissionKey, {status: 'pending'});
-        return walletClient.sendBidMany(payload);
+      prepare: (payload, attemptId) => {
+        basketSubmissionLocks.set(submissionKey, {status: 'preparing', attemptId});
+        return walletClient.prepareBidMany(payload, attemptId);
+      },
+      cancel: attemptId => walletClient.cancelBidManyAttempt(attemptId),
+      broadcastPrepared: attemptId => {
+        basketSubmissionLocks.set(submissionKey, {status: 'broadcasting', attemptId});
+        return walletClient.broadcastPreparedBidMany(attemptId);
       },
       storeName: name => namesDb.storeName(name),
       refreshPending: () => dispatch(fetchPendingTransactions()),

@@ -18,6 +18,7 @@ export const SET_FETCHING = 'app/wallet/setFetching';
 export const SET_WALLETS = 'app/wallet/setWallets';
 export const SET_WALLET_NETWORK = 'app/wallet/setNetwork';
 export const SET_FIND_NONCE_PROGRESS = 'app/wallet/setFindNonceProgress';
+export const SET_BASKET_SUBMISSION_PROGRESS = 'app/wallet/setBasketSubmissionProgress';
 
 export function getInitialState() {
   return {
@@ -57,6 +58,13 @@ export function getInitialState() {
       isFinding: false,
       found: false,
       bidValue: null,
+    },
+    basketSubmissionProgress: {
+      attemptId: '',
+      phase: 'idle',
+      txid: '',
+      broadcastAttempted: false,
+      timings: {},
     },
     m: null,
     n: null,
@@ -189,6 +197,14 @@ export default function walletReducer(state = getInitialState(), {type, payload}
       return {
         ...state,
         findNonceProgress: payload,
+      };
+    case SET_BASKET_SUBMISSION_PROGRESS:
+      return {
+        ...state,
+        basketSubmissionProgress: {
+          ...state.basketSubmissionProgress,
+          ...payload,
+        },
       };
     default:
       return state;

@@ -60,6 +60,7 @@ require('./app/pages/Exchange/tests/marketplaceSpv.spec');
 require('./app/utils/tests/urlPolicy.spec');
 require('./app/utils/tests/transactionNotifications.spec');
 require('./app/utils/tests/activateProposal.spec');
+require('./app/utils/tests/auctionBasketData.spec');
 require('./app/background/ipc/tests/ipc.spec');
 require('./app/background/hip2/tests/alias.spec');
 require('./app/background/hip2/tests/port.spec');

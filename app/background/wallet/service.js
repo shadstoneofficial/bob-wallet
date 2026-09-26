@@ -18,6 +18,7 @@ import {
   SET_WALLET_NETWORK,
   SET_RESCAN_HEIGHT,
   SET_FIND_NONCE_PROGRESS,
+  SET_BASKET_SUBMISSION_PROGRESS,
 } from '../../ducks/walletReducer';
 import {STOP, SET_CUSTOM_RPC_STATUS} from '../../ducks/nodeReducer';
 import {showSuccess, showError} from '../../ducks/notifications';
@@ -78,6 +79,7 @@ const WALLET_API_KEY = 'walletApiKey';
 const ADDRESS_META_PREFIX = 'walletAddressMeta';
 const SIGNING_KEY_ERROR_MESSAGE = 'No spendable wallet key was found for this transaction. Make sure the selected wallet/account has the funds and private keys needed to sign.';
 const PRIVATE_KEY_ERROR_MESSAGE = 'No private key available.';
+const TRANSACTION_TIMEOUT_MS = 120000;
 
 function addressMetaKey(network, walletId, account, branch, index) {
   return `${ADDRESS_META_PREFIX}:${network}:${walletId}:${account}:${branch}:${index}`;
@@ -96,6 +98,9 @@ class WalletService {
     this.findNonceStop = false;
     this.rescanMaySubmitTransaction = false;
     this.walletMutationCoordinator = new WalletMutationCoordinator();
+    this.preparedBidManyAttempts = new Map();
+    this.didSelectTransactionWallet = false;
+    this.pendingTransactionSelection = null;
   }
 
   _onWalletDBError = (error) => {
@@ -157,6 +162,12 @@ class WalletService {
       port: this.nodeService.getWalletPort(this.network),
       apiKey: this.walletApiKey,
       timeout: 10000,
+    });
+    this.transactionClient = new WalletClient({
+      network: this.network,
+      port: this.nodeService.getWalletPort(this.network),
+      apiKey: this.walletApiKey,
+      timeout: TRANSACTION_TIMEOUT_MS,
     });
 
     const wallets = await this.listWallets();
@@ -255,6 +266,12 @@ class WalletService {
       apiKey: this.walletApiKey,
       timeout: 10000,
     });
+    this.transactionClient = new WalletClient({
+      network,
+      port: this.nodeService.getWalletPort(network),
+      apiKey: this.walletApiKey,
+      timeout: TRANSACTION_TIMEOUT_MS,
+    });
 
     const wallets = await this.listWallets();
     dispatchToMainWindow({
@@ -272,7 +289,14 @@ class WalletService {
 
     this.node = null;
     this.client = null;
+    this.transactionClient = null;
     this.didSelectWallet = false;
+    this.didSelectTransactionWallet = false;
+    this.pendingTransactionSelection = null;
+    for (const attempt of this.preparedBidManyAttempts.values()) {
+      attempt.releaseReservedInputs?.();
+    }
+    this.preparedBidManyAttempts.clear();
     this.conn = {type: null};
   };
 
@@ -295,6 +319,7 @@ class WalletService {
 
   setWallet = (name) => {
     this.didSelectWallet = false;
+    this.didSelectTransactionWallet = false;
     this.name = name;
   };
 
@@ -1267,7 +1292,7 @@ class WalletService {
    * @param {Array<{name: string, bid: number, lockup: number}>} bids
    *   bid/lockup are in base units (same as sendBid).
    */
-  sendBidMany = async (bids = []) => {
+  _normalizeBidManyActions = (bids = []) => {
     if (!Array.isArray(bids) || !bids.length) {
       throw new Error('Nothing to do.');
     }
@@ -1305,18 +1330,190 @@ class WalletService {
       actions.push(['BID', name, bidHns, lockupHns]);
     }
 
-    const result = await this._walletProxy(
-      () => this._executeRPC('createbatch', [actions, {paths: true}]),
-      {
-        actionName: 'bid-many',
-        diagnosticContext: {
-          count: actions.length,
-          names: actions.map((a) => a[1]),
-        },
-      },
-    );
+    return actions;
+  };
 
-    return result ? {txid: result.txid()} : null;
+  _setBasketSubmissionProgress = (attemptId, phase, details = {}) => {
+    dispatchToMainWindow({
+      type: SET_BASKET_SUBMISSION_PROGRESS,
+      payload: {attemptId, phase, ...details},
+    });
+  };
+
+  _recordBasketTiming = (attempt, phase, startedAt, details = {}) => {
+    const durationMs = Date.now() - startedAt;
+    attempt.timings[phase] = durationMs;
+    console.info('[Auction Basket timing]', {
+      attemptId: attempt.attemptId,
+      phase,
+      durationMs,
+      walletId: this.name,
+      ...details,
+    });
+    return durationMs;
+  };
+
+  prepareBidMany = async (bids = [], requestedAttemptId) => {
+    const actions = this._normalizeBidManyActions(bids);
+    const attemptId = String(requestedAttemptId || crypto.randomBytes(16).toString('hex'));
+    if (this.preparedBidManyAttempts.has(attemptId)) {
+      const error = new Error('This basket preparation attempt already exists.');
+      error.code = 'BASKET_DUPLICATE_BLOCKED';
+      throw error;
+    }
+
+    const attempt = {
+      attemptId,
+      walletId: this.name,
+      names: actions.map(action => action[1]),
+      status: 'preparing',
+      currentStage: 'building',
+      cancelled: false,
+      timings: {},
+    };
+    this.preparedBidManyAttempts.set(attemptId, attempt);
+    this._setBasketSubmissionProgress(attemptId, 'building', {
+      txid: '',
+      broadcastAttempted: false,
+      timings: {},
+    });
+
+    try {
+      const result = await this._walletProxy(
+        async () => {
+          const startedAt = Date.now();
+          try {
+            return await this._executeTransactionRPC('createbatch', [actions, {paths: true}]);
+          } finally {
+            const duration = this._recordBasketTiming(attempt, 'createbatch', startedAt, {
+              count: actions.length,
+              includesCoinSelection: true,
+            });
+            attempt.timings.coinSelection = duration;
+          }
+        },
+        {
+          broadcast: false,
+          actionName: 'bid-many',
+          diagnosticContext: {count: actions.length, names: attempt.names},
+          timings: attempt.timings,
+          onStage: phase => {
+            attempt.currentStage = phase;
+            this._setBasketSubmissionProgress(attemptId, phase, {
+              broadcastAttempted: false,
+              timings: {...attempt.timings},
+            });
+          },
+        },
+      );
+
+      if (!result) {
+        const error = new Error('Basket transaction was not fully signed.');
+        error.code = 'BASKET_SIGN_FAILED';
+        throw error;
+      }
+      if (attempt.cancelled) {
+        const error = new Error('Basket preparation was cancelled before broadcast. No transaction was sent.');
+        error.code = 'BASKET_SUBMISSION_CANCELLED';
+        throw error;
+      }
+
+      const wallet = await this.node.wdb.get(this.name);
+      attempt.mtx = result;
+      attempt.txid = result.txid();
+      attempt.status = 'prepared';
+      attempt.releaseReservedInputs = reserveTransactionInputs(wallet, result);
+      this._setBasketSubmissionProgress(attemptId, 'signing', {
+        txid: attempt.txid,
+        broadcastAttempted: false,
+        timings: {...attempt.timings},
+      });
+      return {attemptId, txid: attempt.txid, timings: {...attempt.timings}};
+    } catch (error) {
+      attempt.releaseReservedInputs?.();
+      this.preparedBidManyAttempts.delete(attemptId);
+      if (!error.code || error.code === -1 || error.code === 'ETIMEDOUT') {
+        error.code = attempt.currentStage === 'signing'
+          ? 'BASKET_SIGN_FAILED'
+          : 'BASKET_BUILD_FAILED';
+      }
+      throw error;
+    }
+  };
+
+  cancelBidManyAttempt = async (attemptId) => {
+    const attempt = this.preparedBidManyAttempts.get(String(attemptId || ''));
+    if (!attempt) return {cancelled: true, broadcastAttempted: false};
+    if (attempt.status === 'broadcasting' || attempt.status === 'submitted' || attempt.status === 'uncertain') {
+      return {cancelled: false, broadcastAttempted: true, txid: attempt.txid || ''};
+    }
+    attempt.cancelled = true;
+    attempt.releaseReservedInputs?.();
+    if (attempt.status === 'prepared') this.preparedBidManyAttempts.delete(attempt.attemptId);
+    return {cancelled: true, broadcastAttempted: false, txid: attempt.txid || ''};
+  };
+
+  broadcastPreparedBidMany = async (attemptId) => {
+    const attempt = this.preparedBidManyAttempts.get(String(attemptId || ''));
+    if (!attempt || attempt.status !== 'prepared' || !attempt.mtx) {
+      const error = new Error('Prepared basket transaction is unavailable or was already used.');
+      error.code = 'BASKET_DUPLICATE_BLOCKED';
+      throw error;
+    }
+    if (attempt.walletId !== this.name) {
+      const error = new Error('The selected wallet changed before broadcast. No transaction was sent.');
+      error.code = 'BASKET_WALLET_CHANGED';
+      throw error;
+    }
+
+    attempt.status = 'broadcasting';
+    this._setBasketSubmissionProgress(attempt.attemptId, 'broadcasting', {
+      txid: attempt.txid,
+      broadcastAttempted: true,
+      timings: {...attempt.timings},
+    });
+    const startedAt = Date.now();
+    try {
+      const result = await broadcastAndRecord({
+        mtx: attempt.mtx,
+        walletDB: this.node.wdb,
+        broadcast: tx => this.nodeService.broadcastRawTx(tx.toHex(), {timeout: TRANSACTION_TIMEOUT_MS}),
+      });
+      this._recordBasketTiming(attempt, 'broadcast', startedAt);
+      attempt.status = 'submitted';
+      this._setBasketSubmissionProgress(attempt.attemptId, 'verifying', {
+        txid: attempt.txid,
+        broadcastAttempted: true,
+        timings: {...attempt.timings},
+      });
+      const verifyStartedAt = Date.now();
+      const wallet = await this.node.wdb.get(this.name);
+      const localTX = await wallet.getTX(result.hash());
+      this._recordBasketTiming(attempt, 'reconciliation', verifyStartedAt, {
+        foundInWalletDB: !!localTX,
+      });
+      if (!localTX) {
+        console.warn(`Transaction ${attempt.txid} was accepted but is not yet visible in local WalletDB.`);
+      }
+      attempt.releaseReservedInputs?.();
+      this.preparedBidManyAttempts.delete(attempt.attemptId);
+      return {txid: attempt.txid, timings: {...attempt.timings}};
+    } catch (error) {
+      this._recordBasketTiming(attempt, 'broadcast', startedAt, {failed: true});
+      if (error.code === 'ETXREJECTED') {
+        attempt.releaseReservedInputs?.();
+        this.preparedBidManyAttempts.delete(attempt.attemptId);
+      } else {
+        attempt.status = 'uncertain';
+      }
+      throw error;
+    }
+  };
+
+  sendBidMany = async (bids = []) => {
+    const attemptId = crypto.randomBytes(16).toString('hex');
+    const prepared = await this.prepareBidMany(bids, attemptId);
+    return this.broadcastPreparedBidMany(prepared.attemptId);
   };
 
   findBasketBidTransactions = async (names = []) => {
@@ -2281,6 +2478,18 @@ class WalletService {
     this.didSelectWallet = true;
   }
 
+  async _selectTransactionWallet() {
+    await this._ensureClient();
+    if (!this.transactionClient) throw new Error('Transaction wallet client is unavailable.');
+    if (this.didSelectTransactionWallet) return;
+    if (this.pendingTransactionSelection) return this.pendingTransactionSelection;
+
+    this.pendingTransactionSelection = this.transactionClient.execute('selectwallet', [this.name]);
+    await this.pendingTransactionSelection;
+    this.pendingTransactionSelection = null;
+    this.didSelectTransactionWallet = true;
+  }
+
   /**
    * Wallet Proxy
    * Parses the tx and routes it to signers
@@ -2357,17 +2566,18 @@ class WalletService {
 
   _walletProxy = async (createFn, options) => {
     return this.walletMutationCoordinator.run(async () => {
+      const transactionAttempted = options?.broadcast !== false;
       try {
         const storagePath = await this.nodeService.getDir();
         await storageHealth.preflight(storagePath, {
           source: 'transaction-preflight',
-          transactionAttempted: true,
+          transactionAttempted,
         });
         return await this._walletProxyUnchecked(createFn, options);
       } catch (error) {
         storageHealth.reportError(error, {
           source: 'transaction-preparation',
-          transactionAttempted: true,
+          transactionAttempted,
         });
         throw error;
       }
@@ -2382,6 +2592,8 @@ class WalletService {
       metadata = null,
       actionName = 'transaction',
       diagnosticContext = {},
+      timings = {},
+      onStage = () => {},
     } = options || {};
 
     const wallet = await this.node.wdb.get(this.name);
@@ -2397,6 +2609,8 @@ class WalletService {
     }
 
     // Parse MTX Data
+    onStage('signing');
+    const derivationStartedAt = Date.now();
     const parsedMtxData = await this.parseMtx(wallet, mtx, {metadata});
     mtx = parsedMtxData.mtx;  // mtx is modified (adding coins to view, etc.)
     const releaseReservedInputs = reserveTransactionInputs(wallet, mtx);
@@ -2421,6 +2635,15 @@ class WalletService {
         } else {
           // Handle hot wallets (non-multisig)
           const rings = await wallet.deriveInputs(mtx);
+          timings.inputDerivation = Date.now() - derivationStartedAt;
+          if (actionName === 'bid-many') {
+            console.info('[Auction Basket timing]', {
+              phase: 'input-derivation',
+              durationMs: timings.inputDerivation,
+              walletId: this.name,
+              inputCount: mtx.inputs.length,
+            });
+          }
           if (!rings.length) {
             await this._throwSigningKeyError({
               wallet,
@@ -2435,7 +2658,17 @@ class WalletService {
           }
           const type = parsedMtxData.metadata?.inputs?.[0]?.sighashType ?? Script.hashType.ALL;
           try {
+            const signingStartedAt = Date.now();
             await mtx.sign(rings, type);
+            timings.signing = Date.now() - signingStartedAt;
+            if (actionName === 'bid-many') {
+              console.info('[Auction Basket timing]', {
+                phase: 'signing',
+                durationMs: timings.signing,
+                walletId: this.name,
+                inputCount: mtx.inputs.length,
+              });
+            }
           } catch (error) {
             if (error && error.message === PRIVATE_KEY_ERROR_MESSAGE) {
               await this._throwSigningKeyError({
@@ -3005,6 +3238,13 @@ class WalletService {
     return res;
   }
 
+  async _executeTransactionRPC(method, args, cb) {
+    await this._selectTransactionWallet();
+    const res = await this.transactionClient.execute(method, args);
+    if (cb) cb(res);
+    return res;
+  }
+
   // Can be removed when hsd starts adding path to output.getJSON()
   async injectOutputPaths(wallet, mtxJSON) {
   if (!mtxJSON?.outputs?.length) return;
@@ -3275,6 +3515,9 @@ const methods = {
   sendRevealAll: service.sendRevealAll,
   sendRevealMany: service.sendRevealMany,
   sendBidMany: service.sendBidMany,
+  prepareBidMany: service.prepareBidMany,
+  cancelBidManyAttempt: service.cancelBidManyAttempt,
+  broadcastPreparedBidMany: service.broadcastPreparedBidMany,
   sendRedeemAll: service.sendRedeemAll,
   sendRegisterAll: service.sendRegisterAll,
   sendRenewal: service.sendRenewal,

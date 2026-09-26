@@ -3,6 +3,7 @@ const REMOVE_NAME = 'app/auctionBasket/removeName';
 const UPDATE_ITEM = 'app/auctionBasket/updateItem';
 const CLEAR_BASKET = 'app/auctionBasket/clearBasket';
 const SET_STATUS = 'app/auctionBasket/setStatus';
+const IMPORT_ROWS = 'app/auctionBasket/importRows';
 
 export const AUCTION_BASKET_LIMIT = 20;
 
@@ -84,6 +85,11 @@ export const setBasketError = (message) => ({
   payload: { lastError: message || '' },
 });
 
+export const importBasketRows = (rows = [], mode = 'replace') => ({
+  type: IMPORT_ROWS,
+  payload: {rows, mode},
+});
+
 export default function auctionBasketReducer(state = initialState, action) {
   const { type, payload } = action;
 
@@ -143,6 +149,23 @@ export default function auctionBasketReducer(state = initialState, action) {
       return {
         ...initialState,
       };
+    case IMPORT_ROWS: {
+      const replace = payload.mode === 'replace';
+      const items = replace ? {} : {...state.items};
+      const order = replace ? [] : [...state.order];
+      for (const row of payload.rows || []) {
+        const name = normalizeName(row.name);
+        if (!name || items[name] || order.length >= AUCTION_BASKET_LIMIT) continue;
+        items[name] = {
+          name,
+          bidAmount: String(row.bidAmount || ''),
+          blindAmount: String(row.blindAmount || ''),
+          note: String(row.note || ''),
+        };
+        order.push(name);
+      }
+      return {...state, items, order, lastError: ''};
+    }
     case SET_STATUS:
       return {
         ...state,
