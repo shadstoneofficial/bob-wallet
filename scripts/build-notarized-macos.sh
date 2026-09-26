@@ -81,6 +81,16 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
     exit 1
 fi
 
+# Import the Developer ID identity once and let Electron Builder discover it.
+# Current GitHub macOS runners can import Electron Builder's generated
+# keychain but then reject its generated password during partition-list setup.
+# Removing CSC_LINK after our successful import prevents that second keychain.
+setup_dmg_signing_keychain
+if [[ -n "${DMG_KEYCHAIN}" ]]; then
+    export CSC_NAME="$(developer_id_identity)"
+    unset CSC_LINK CSC_KEY_PASSWORD
+fi
+
 NOTARY_ARGS=()
 if [[ -n "${NOTARY_KEYCHAIN_PROFILE:-}" ]]; then
     NOTARY_ARGS=(--keychain-profile "${NOTARY_KEYCHAIN_PROFILE}")
@@ -132,12 +142,6 @@ for arch in "${MAC_ARCHES[@]}"; do
             ;;
     esac
 done
-
-# Electron Builder manages its own temporary keychain while signing the app.
-# Import the same identity for DMG signing only after that keychain is gone;
-# creating both up front makes `set-key-partition-list` try to unlock the
-# wrong temporary keychain on GitHub's macOS runners.
-setup_dmg_signing_keychain
 
 notary_json_value() {
     local file="$1"
