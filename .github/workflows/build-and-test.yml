@@ -42,6 +42,12 @@ jobs:
 
       - name: Install npm packages
         run: npm ci
+        env:
+          npm_config_with_gmp: "false"
+          GYP_DEFINES: "with_gmp=false"
+
+      - name: Force goosig mini-gmp
+        run: node scripts/force-goosig-mini-gmp.js
 
       - name: Build
         run: ${{ matrix.cmd_build }}

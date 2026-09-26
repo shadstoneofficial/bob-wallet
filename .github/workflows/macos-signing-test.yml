@@ -22,6 +22,9 @@ jobs:
     name: Sign, notarize, and staple macOS ${{ inputs.arch }}
     runs-on: ${{ inputs.arch == 'x64' && 'macos-15-intel' || 'macos-latest' }}
     timeout-minutes: 300
+    env:
+      npm_config_with_gmp: "false"
+      GYP_DEFINES: "with_gmp=false"
 
     steps:
       - name: Check out repository
@@ -35,6 +38,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Force goosig mini-gmp
+        run: node scripts/force-goosig-mini-gmp.js
 
       - name: Run tests
         run: npm test
@@ -50,6 +56,8 @@ jobs:
           NOTARY_MAX_ATTEMPTS: "240"
           NOTARY_SLEEP_SECONDS: "30"
           MAC_ARCHES: ${{ inputs.arch }}
+          npm_config_with_gmp: "false"
+          GYP_DEFINES: "with_gmp=false"
           DEBUG: electron-builder
 
       - name: Upload notarization diagnostics

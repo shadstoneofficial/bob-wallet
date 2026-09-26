@@ -6,6 +6,37 @@ import { connect } from "react-redux";
 import "./sync-status.scss";
 import {I18nContext} from "../../utils/i18n";
 
+export const SYNC_COMPLETE_THRESHOLD = 0.99995;
+
+export function isSyncComplete(chain = {}) {
+  const {progress, height, bestPeerHeight, synced} = chain;
+
+  if (Number.isFinite(height)
+      && Number.isFinite(bestPeerHeight)
+      && height < bestPeerHeight) {
+    return false;
+  }
+
+  if (synced === true) {
+    return true;
+  }
+
+  return Number.isFinite(progress) && progress >= SYNC_COMPLETE_THRESHOLD;
+}
+
+export function formatSyncProgress(progress, isSynchronized = false) {
+  if (!Number.isFinite(progress)) {
+    return '';
+  }
+
+  const percent = Math.max(0, progress * 100);
+  const displayedPercent = isSynchronized
+    ? Math.min(100, percent)
+    : Math.min(99.99, percent);
+
+  return `(${displayedPercent.toFixed(2)}%)`;
+}
+
 export function getSyncStatusText(props, t) {
   const {
     isSynchronized,
@@ -32,7 +63,7 @@ export function getSyncStatusText(props, t) {
   }
 
   if (isSynchronizing) {
-    const progressText = progress ? "(" + (progress * 100).toFixed(2) + "%)" : "";
+    const progressText = formatSyncProgress(progress, isSynchronized);
     return isCustomRPCConnected
       ? `${t('synchronizingFromRPC')}... ${progressText}`
       : `${t('synchronizing')}... ${progressText}`;
@@ -61,14 +92,15 @@ export function getSyncStatusText(props, t) {
     isTestingCustomRPC,
   } = state.node;
   const { progress } = chain || {};
+  const syncComplete = isSyncComplete(chain);
 
   return {
     isRunning,
     isCustomRPCConnected,
     isChangingNodeStatus,
     isTestingCustomRPC,
-    isSynchronizing: isRunning && progress < 1,
-    isSynchronized: isRunning && progress === 1,
+    isSynchronizing: isRunning && !syncComplete,
+    isSynchronized: isRunning && syncComplete,
     progress,
     walletSync: state.wallet.walletSync,
     walletHeight: state.wallet.walletHeight,
@@ -116,8 +148,7 @@ class SyncStatus extends Component {
               !storageBlocked && (walletSync ||
               isChangingNodeStatus ||
               isTestingCustomRPC ||
-              isSynchronizing ||
-              progress < 1),
+              isSynchronizing),
           })}
         >
           {this.getSyncText()}

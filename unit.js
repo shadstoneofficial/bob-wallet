@@ -46,6 +46,7 @@ require('./app/background/wallet/tests/liquidityHtlc.spec');
 require('./app/background/wallet/tests/registerValidation.spec');
 require('./app/background/wallet/tests/revealBatch.spec');
 require('./app/background/wallet/tests/stats.spec');
+require('./app/background/wallet/tests/transactionSafety.spec');
 require('./app/background/hnsInvestments/tests/balanceSnapshot.spec');
 require('./app/background/hnsInvestments/tests/nameSnapshot.spec');
 require('./app/background/node/tests/spvHelper.spec');
@@ -67,6 +68,7 @@ require('./app/background/storage/tests/health.spec');
 require('./app/components/SyncStatus/tests/index.spec');
 require('./app/ducks/tests/storageReducer.spec');
 require('./app/ducks/tests/walletActions.spec');
+require('./app/ducks/tests/namesAuctionBasket.spec');
 require('./app/ducks/tests/walletStats.spec');
 
 require('./app/background/node/tests/spvHelperRequest.spec');

@@ -16,6 +16,9 @@ jobs:
     name: Package ${{ matrix.platform.name }}
     runs-on: ${{ matrix.platform.runner }}
     timeout-minutes: 300
+    env:
+      npm_config_with_gmp: "false"
+      GYP_DEFINES: "with_gmp=false"
     strategy:
       fail-fast: false
       matrix:
@@ -62,6 +65,9 @@ jobs:
       - name: Install npm packages
         run: npm ci
 
+      - name: Force goosig mini-gmp
+        run: node scripts/force-goosig-mini-gmp.js
+
       - name: Run tests
         run: npm test
 
@@ -78,6 +84,8 @@ jobs:
           NOTARY_SLEEP_SECONDS: "30"
           MAC_ARCHES: ${{ matrix.platform.mac_arch }}
           DEBUG: electron-builder
+          npm_config_with_gmp: "false"
+          GYP_DEFINES: "with_gmp=false"
 
       - name: Upload macOS notarization diagnostics
         if: failure() && matrix.platform.signed_macos

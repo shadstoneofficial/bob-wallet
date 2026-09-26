@@ -22,3 +22,17 @@ export function formatRegisterSuccess(result = {}) {
   return `Registration submitted${nameLabel}.${txLabel} `
     + 'It will appear as registered after confirmation.';
 }
+
+export function formatAtomicBatchFailure(error, names = [], action = 'process') {
+  const message = error && error.message ? error.message : String(error || 'Transaction failed.');
+  const isRejected = /transaction\s+[0-9a-z]+.*(?:rejected|not accepted)/i.test(message);
+
+  if (!isRejected) {
+    return message;
+  }
+
+  const count = names.filter(Boolean).length;
+  const nameLabel = count === 1 ? 'name' : 'names';
+  return `${message} None of the ${count} ${nameLabel} in this atomic ${action} batch succeeded. `
+    + `The ${nameLabel} remain available for a safe retry.`;
+}

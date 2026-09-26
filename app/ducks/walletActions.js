@@ -212,14 +212,36 @@ const WALLET_SYNC_STALL_LIMIT_SECONDS = 180;
 /**
  * @param {number} [stallLimitSeconds] - seconds without progress before failing
  */
-export const waitForWalletSync = (stallLimitSeconds = WALLET_SYNC_STALL_LIMIT_SECONDS) => async (dispatch, getState) => {
+export const waitForWalletSync = (
+  stallLimitSeconds = WALLET_SYNC_STALL_LIMIT_SECONDS,
+  options = {},
+) => async (dispatch, getState) => {
   let lastProgressKey = '';
   let stall = 0;
+  let sawRescan = !options.requireRescanStart;
+  const startedAt = Date.now();
+  const timeoutMs = Number.isFinite(options.timeoutMs) && options.timeoutMs > 0
+    ? options.timeoutMs
+    : null;
+  const pollIntervalMs = Number.isFinite(options.pollIntervalMs) && options.pollIntervalMs > 0
+    ? options.pollIntervalMs
+    : 1000;
   const limit = Number.isFinite(stallLimitSeconds) && stallLimitSeconds > 0
     ? stallLimitSeconds
     : WALLET_SYNC_STALL_LIMIT_SECONDS;
 
   for (; ;) {
+    if (options.signal?.aborted) {
+      const error = new Error('Stopped waiting for wallet synchronization.');
+      error.code = 'BASKET_SUBMISSION_CANCELLED';
+      throw error;
+    }
+    if (timeoutMs && Date.now() - startedAt >= timeoutMs) {
+      const error = new Error('Wallet rescan did not finish before the preparation timeout. No transaction was sent.');
+      error.code = 'BASKET_PREPARATION_TIMEOUT';
+      throw error;
+    }
+
     const state = getState();
     if (state.storage?.blocked) {
       const transactionMessage = state.storage.transactionAttempted
@@ -233,7 +255,15 @@ export const waitForWalletSync = (stallLimitSeconds = WALLET_SYNC_STALL_LIMIT_SE
     const nodeHeight = state.node.chain.height;
     const {walletHeight, rescanHeight, walletSync} = state.wallet;
 
-    if (walletSync) {
+    if (!sawRescan && walletSync && rescanHeight !== null) {
+      sawRescan = true;
+    }
+
+    if (!sawRescan) {
+      // The import RPC was dispatched, but its rescan progress event has not
+      // reached Redux yet. Do not mistake the pre-rescan synchronized state for
+      // completion.
+    } else if (walletSync) {
       if (rescanHeight === null || walletHeight >= rescanHeight) {
         break;
       }
@@ -264,7 +294,7 @@ export const waitForWalletSync = (stallLimitSeconds = WALLET_SYNC_STALL_LIMIT_SE
       );
     }
 
-    await new Promise((r) => setTimeout(r, 1000));
+    await new Promise((r) => setTimeout(r, pollIntervalMs));
   }
 };
 
