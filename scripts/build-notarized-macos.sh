@@ -87,7 +87,8 @@ fi
 # Removing CSC_LINK after our successful import prevents that second keychain.
 setup_dmg_signing_keychain
 if [[ -n "${DMG_KEYCHAIN}" ]]; then
-    export CSC_NAME="$(developer_id_identity)"
+    signing_identity="$(developer_id_identity)"
+    export CSC_NAME="${signing_identity#Developer ID Application: }"
     unset CSC_LINK CSC_KEY_PASSWORD
 fi
 
