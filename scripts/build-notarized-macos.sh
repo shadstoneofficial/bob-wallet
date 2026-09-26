@@ -81,8 +81,6 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
     exit 1
 fi
 
-setup_dmg_signing_keychain
-
 NOTARY_ARGS=()
 if [[ -n "${NOTARY_KEYCHAIN_PROFILE:-}" ]]; then
     NOTARY_ARGS=(--keychain-profile "${NOTARY_KEYCHAIN_PROFILE}")
@@ -134,6 +132,12 @@ for arch in "${MAC_ARCHES[@]}"; do
             ;;
     esac
 done
+
+# Electron Builder manages its own temporary keychain while signing the app.
+# Import the same identity for DMG signing only after that keychain is gone;
+# creating both up front makes `set-key-partition-list` try to unlock the
+# wrong temporary keychain on GitHub's macOS runners.
+setup_dmg_signing_keychain
 
 notary_json_value() {
     local file="$1"
