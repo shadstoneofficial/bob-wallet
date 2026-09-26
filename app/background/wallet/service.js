@@ -35,6 +35,7 @@ import {storageHealth} from '../storage/service';
 import {
   WalletMutationCoordinator,
   broadcastAndRecord,
+  reserveTransactionInputs,
 } from './transactionSafety';
 
 const WalletNode = require('hsd/lib/wallet/node');
@@ -1304,7 +1305,7 @@ class WalletService {
       actions.push(['BID', name, bidHns, lockupHns]);
     }
 
-    return this._walletProxy(
+    const result = await this._walletProxy(
       () => this._executeRPC('createbatch', [actions, {paths: true}]),
       {
         actionName: 'bid-many',
@@ -1314,6 +1315,39 @@ class WalletService {
         },
       },
     );
+
+    return result ? {txid: result.txid()} : null;
+  };
+
+  findBasketBidTransactions = async (names = []) => {
+    if (!this.name || !Array.isArray(names) || !names.length) {
+      return [];
+    }
+
+    const targetHashes = new Set(names.map(name => (
+      hashName(Buffer.from(String(name || '').trim().toLowerCase(), 'ascii')).toString('hex')
+    )));
+    const history = await this.getTransactionHistory();
+    const matches = [];
+    for (const tx of history) {
+      const bidHashes = new Set();
+      for (const output of tx.outputs) {
+        if (output.covenant.action !== 'BID' || !output.covenant.items[0]) {
+          continue;
+        }
+        bidHashes.add(String(output.covenant.items[0]).toLowerCase());
+      }
+
+      if ([...targetHashes].every(hash => bidHashes.has(hash))) {
+        matches.push({
+          txid: tx.hash,
+          pending: !tx.block,
+          height: tx.height,
+        });
+      }
+    }
+
+    return matches;
   };
 
   sendRegister = async (name) => {
@@ -1774,8 +1808,13 @@ class WalletService {
       await new Promise(resolve => setTimeout(resolve, 1500));
     }
 
-    // Single rescan from the earliest auction height (or 0 if unknown).
-    return this.rescan(minHeight == null ? 0 : minHeight, options);
+    // Start one rescan from the earliest auction height. Completion is observed
+    // through wallet progress events instead of holding this IPC request open:
+    // hsd can reach the target height without resolving wdb.rescan().
+    this.rescan(minHeight == null ? 0 : minHeight, options).catch(error => {
+      console.error('Bulk name import rescan failed:', error);
+    });
+    return {rescanStarted: true, height: minHeight == null ? 0 : minHeight};
   };
 
   rpcGetWalletInfo = async () => {
@@ -2360,6 +2399,7 @@ class WalletService {
     // Parse MTX Data
     const parsedMtxData = await this.parseMtx(wallet, mtx, {metadata});
     mtx = parsedMtxData.mtx;  // mtx is modified (adding coins to view, etc.)
+    const releaseReservedInputs = reserveTransactionInputs(wallet, mtx);
 
     try {
       // Handle multisig (hot and ledger wallets)
@@ -2443,6 +2483,7 @@ class WalletService {
 
       return mtx;
     } finally {
+      releaseReservedInputs();
       this.lock();
     }
   }
@@ -3206,6 +3247,7 @@ const methods = {
   findShakeWalletAddress: service.findShakeWalletAddress,
   getAuctionInfo: service.getAuctionInfo,
   getTransactionHistory: service.getTransactionHistory,
+  findBasketBidTransactions: service.findBasketBidTransactions,
   getPendingTransactions: service.getPendingTransactions,
   getBids: service.getBids,
   getBlind: service.getBlind,

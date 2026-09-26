@@ -2,6 +2,7 @@ import test from 'tape';
 import {
   WalletMutationCoordinator,
   broadcastAndRecord,
+  reserveTransactionInputs,
 } from '../transactionSafety';
 
 function deferred() {
@@ -34,6 +35,58 @@ test('wallet mutations cannot select the same input while an earlier broadcast i
   firstBroadcast.resolve();
   t.equal(await first, 'shared-change');
   t.equal(await second, 'safe-confirmed', 'the second mutation selects a different input');
+  t.end();
+});
+
+test('a pending bid is recorded before a queued bulk finalize selects funding', async t => {
+  const coordinator = new WalletMutationCoordinator();
+  const bidAcceptance = deferred();
+  const coins = ['bid-funding', 'finalize-funding'];
+  const spent = new Set();
+  const selections = {};
+  const walletDB = {
+    addTX: async tx => spent.add(tx.input),
+  };
+
+  const submit = (action, gate) => coordinator.run(async () => {
+    const input = coins.find(coin => !spent.has(coin));
+    selections[action] = input;
+    const tx = {input, txid: () => `${action}-tx`};
+    const mtx = {toTX: () => tx};
+    return broadcastAndRecord({
+      mtx,
+      walletDB,
+      broadcast: async () => {
+        if (gate) await gate.promise;
+      },
+    });
+  });
+
+  const bid = submit('bid', bidAcceptance);
+  const finalize = submit('bulk-finalize');
+  await Promise.resolve();
+  t.equal(selections['bulk-finalize'], undefined, 'bulk finalize waits for the pending bid');
+
+  bidAcceptance.resolve();
+  await bid;
+  await finalize;
+  t.equal(selections.bid, 'bid-funding');
+  t.equal(selections['bulk-finalize'], 'finalize-funding', 'bulk finalize cannot reuse the bid input');
+  t.end();
+});
+
+test('transaction inputs stay reserved until the operation releases them', t => {
+  const locked = new Set();
+  const wallet = {
+    lockCoin: prevout => locked.add(prevout),
+    unlockCoin: prevout => locked.delete(prevout),
+  };
+  const inputs = [{prevout: 'one'}, {prevout: 'two'}];
+  const release = reserveTransactionInputs(wallet, {inputs});
+
+  t.deepEqual(Array.from(locked), ['one', 'two'], 'all selected inputs are immediately reserved');
+  release();
+  t.equal(locked.size, 0, 'temporary locks are released after wallet state is updated');
   t.end();
 });
 
@@ -75,5 +128,24 @@ test('an accepted transaction is recorded before submission completes', async t 
 
   t.equal(result, mtx);
   t.deepEqual(events, ['accepted', 'recorded']);
+  t.end();
+});
+
+test('an accepted transaction keeps its txid when local history recording fails', async t => {
+  const txid = 'a'.repeat(64);
+  const tx = {txid: () => txid};
+
+  try {
+    await broadcastAndRecord({
+      mtx: {toTX: () => tx},
+      walletDB: {addTX: async () => { throw new Error('disk write failed'); }},
+      broadcast: async () => {},
+    });
+    t.fail('history failure should be reported');
+  } catch (error) {
+    t.equal(error.code, 'ETXRECORD');
+    t.equal(error.txid, txid);
+    t.match(error.message, /accepted by the network/);
+  }
   t.end();
 });

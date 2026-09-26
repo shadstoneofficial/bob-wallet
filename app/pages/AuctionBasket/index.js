@@ -41,7 +41,7 @@ function normalizeAmountInput(value) {
   return String(n);
 }
 
-class AuctionBasket extends Component {
+export class AuctionBasket extends Component {
   static propTypes = {
     order: PropTypes.array.isRequired,
     items: PropTypes.object.isRequired,
@@ -70,15 +70,29 @@ class AuctionBasket extends Component {
     showPaste: false,
     step: 'edit', // edit | review
     checking: false,
-    submitting: false,
+    submissionPhase: 'idle',
+    submissionError: '',
+    submissionFailedStage: '',
+    submissionTxid: '',
+    retryAllowed: false,
+    broadcastUncertain: false,
     accepted: false,
     rowMeta: {}, // name -> { state, error, hoursUntilReveal, height, walletHasName }
   };
 
   componentDidMount() {
+    this._mounted = true;
     analytics.screenView('Auction Basket');
     if (this.props.order.length) {
       this.refreshStatuses();
+    }
+  }
+
+  componentWillUnmount() {
+    this._mounted = false;
+    this.submissionRunId += 1;
+    if (this.submissionAbortController) {
+      this.submissionAbortController.abort();
     }
   }
 
@@ -87,6 +101,10 @@ class AuctionBasket extends Component {
       this.refreshStatuses();
     }
   }
+
+  safeSetState = (nextState, callback) => {
+    if (this._mounted) this.setState(nextState, callback);
+  };
 
   isHotWalletCapable = () => {
     const { watchOnly, walletType } = this.props;
@@ -211,11 +229,11 @@ class AuctionBasket extends Component {
   refreshStatuses = async () => {
     const { order, network } = this.props;
     if (!order.length) {
-      this.setState({ rowMeta: {}, checking: false });
+      this.safeSetState({ rowMeta: {}, checking: false });
       return {};
     }
 
-    this.setState({ checking: true });
+    this.safeSetState({ checking: true });
     const rowMeta = {};
     const net = Network.get(network || 'main');
 
@@ -265,10 +283,10 @@ class AuctionBasket extends Component {
           };
         }
       }));
-      this.setState({ rowMeta, checking: false });
+      this.safeSetState({ rowMeta, checking: false });
       return rowMeta;
     } catch (e) {
-      this.setState({ checking: false });
+      this.safeSetState({ checking: false });
       throw e;
     }
   };
@@ -452,6 +470,32 @@ class AuctionBasket extends Component {
     }
   };
 
+  submissionRunId = 0;
+
+  submissionAbortController = null;
+
+  isSubmissionActive = () => [
+    'preparing',
+    'rescanning',
+    'broadcasting',
+  ].includes(this.state.submissionPhase);
+
+  onBackToBasket = () => {
+    const preserveSafetyLock = this.state.broadcastUncertain;
+    if (['preparing', 'rescanning'].includes(this.state.submissionPhase)) {
+      this.submissionRunId += 1;
+      this.submissionAbortController?.abort();
+    }
+    this.setState({
+      step: 'edit',
+      submissionPhase: preserveSafetyLock ? 'failed' : 'idle',
+      submissionError: preserveSafetyLock ? this.state.submissionError : '',
+      submissionFailedStage: preserveSafetyLock ? this.state.submissionFailedStage : '',
+      retryAllowed: false,
+      broadcastUncertain: preserveSafetyLock,
+    });
+  };
+
   onSubmit = async () => {
     const { t } = this.context;
     const {
@@ -461,11 +505,10 @@ class AuctionBasket extends Component {
       clearBasket,
       showError,
       showSuccess,
-      history,
     } = this.props;
-    const { accepted, submitting } = this.state;
+    const { accepted } = this.state;
 
-    if (submitting) return;
+    if (this.isSubmissionActive()) return;
     if (!accepted) {
       showError(t('basketMustAccept'));
       return;
@@ -475,45 +518,83 @@ class AuctionBasket extends Component {
       return;
     }
 
-    const rowMeta = await this.refreshStatuses();
+    const runId = ++this.submissionRunId;
+    this.submissionAbortController = new AbortController();
+    const signal = this.submissionAbortController.signal;
+    this.setState({
+      submissionPhase: 'preparing',
+      submissionError: '',
+      submissionFailedStage: '',
+      submissionTxid: '',
+      retryAllowed: false,
+      broadcastUncertain: false,
+    });
 
-    const entries = [];
-    for (const name of order) {
-      const item = items[name];
-      const meta = rowMeta[name] || {};
-      if (meta.error || meta.state !== 'BIDDING' || !this.isAmountOk(item)) {
-        continue; // skip non-bidding / incomplete rows
-      }
-      const bid = Number(item.bidAmount) || 0;
-      const blind = Number(item.blindAmount || 0);
-      entries.push({
-        name,
-        bid: toBaseUnits(bid),
-        lockup: toBaseUnits(bid + blind),
-        height: meta.height,
-      });
-    }
-
-    if (!entries.length) {
-      showError(t('basketFixRowsBeforeReview'));
-      this.setState({ step: 'edit' });
-      return;
-    }
-
-    this.setState({ submitting: true });
     try {
-      const res = await sendBidMany(entries);
-      if (res !== null) {
+      const rowMeta = await this.refreshStatuses();
+      if (signal.aborted || runId !== this.submissionRunId) return;
+
+      const entries = [];
+      for (const name of order) {
+        const item = items[name];
+        const meta = rowMeta[name] || {};
+        if (meta.error || meta.state !== 'BIDDING' || !this.isAmountOk(item)) {
+          continue;
+        }
+        const bid = Number(item.bidAmount) || 0;
+        const blind = Number(item.blindAmount || 0);
+        entries.push({
+          name,
+          bid: toBaseUnits(bid),
+          lockup: toBaseUnits(bid + blind),
+          height: meta.height,
+        });
+      }
+
+      if (!entries.length) {
+        showError(t('basketFixRowsBeforeReview'));
+        if (this._mounted && runId === this.submissionRunId) {
+          this.setState({step: 'edit', submissionPhase: 'idle'});
+        }
+        return;
+      }
+
+      const res = await sendBidMany(entries, {
+        signal,
+        onPhase: (phase, details = {}) => {
+          if (!this._mounted || runId !== this.submissionRunId) return;
+          this.setState({
+            submissionPhase: phase,
+            submissionError: details.error || '',
+            submissionFailedStage: details.failedStage || '',
+            retryAllowed: !!details.retryAllowed,
+            broadcastUncertain: !!details.broadcastUncertain,
+            submissionTxid: details.txid || this.state.submissionTxid,
+          });
+        },
+      });
+      if (res?.txid && this._mounted && runId === this.submissionRunId) {
         showSuccess(t('basketSubmitSuccess', String(entries.length)));
-        analytics.track('auction basket bid', { count: entries.length });
-        clearBasket();
-        this.setState({ step: 'edit', accepted: false, rowMeta: {} });
-        history.push('/bids/BIDDING');
+        const tracking = analytics.track('auction basket bid', { count: entries.length });
+        if (tracking?.catch) tracking.catch(() => {});
+        this.setState({
+          submissionPhase: 'submitted',
+          submissionTxid: res.txid,
+          submittedCount: entries.length,
+        }, clearBasket);
       }
     } catch (e) {
+      if (e?.code === 'BASKET_SUBMISSION_CANCELLED') return;
       showError(e.message || t('basketSubmitFailed'));
-    } finally {
-      this.setState({ submitting: false });
+      if (this._mounted && runId === this.submissionRunId) {
+        this.setState({
+          submissionPhase: 'failed',
+          submissionError: e.message || t('basketSubmitFailed'),
+          submissionFailedStage: e.stage || this.state.submissionPhase,
+          retryAllowed: !!e.retryAllowed,
+          broadcastUncertain: !!e.broadcastUncertain,
+        });
+      }
     }
   };
 
@@ -533,6 +614,28 @@ class AuctionBasket extends Component {
     const { t } = this.context;
     const { order } = this.props;
     const { step } = this.state;
+
+    if (this.state.submissionPhase === 'submitted') {
+      return (
+        <div className="auction-basket">
+          <section className="auction-basket__panel auction-basket__submission-status auction-basket__submission-status--success">
+            <h3>Basket bid submitted</h3>
+            <p>{this.state.submittedCount} bid(s) were broadcast in one transaction.</p>
+            <label>Transaction ID</label>
+            <code>{this.state.submissionTxid}</code>
+            <div className="auction-basket__footer-actions">
+              <button
+                type="button"
+                className="auction-basket__btn"
+                onClick={() => this.props.history.push('/bids/BIDDING')}
+              >
+                View bids
+              </button>
+            </div>
+          </section>
+        </div>
+      );
+    }
 
     return (
       <div className="auction-basket">
@@ -889,27 +992,52 @@ class AuctionBasket extends Component {
           </label>
         </div>
 
+        {['preparing', 'rescanning'].includes(this.state.submissionPhase) && (
+          <div className="auction-basket__submission-status">
+            <strong>Preparing auction data — no transaction has been sent.</strong>
+            <span>{this.state.submissionPhase === 'rescanning' ? 'Wallet rescan in progress.' : 'Checking auction and wallet data.'}</span>
+          </div>
+        )}
+        {this.state.submissionPhase === 'broadcasting' && (
+          <div className="auction-basket__submission-status">
+            <strong>Broadcasting basket transaction…</strong>
+            <span>Retry is disabled while Bob confirms the transaction outcome.</span>
+          </div>
+        )}
+        {this.state.submissionPhase === 'failed' && (
+          <div className="auction-basket__submission-status auction-basket__submission-status--error">
+            <strong>Submission failed during {this.state.submissionFailedStage || 'preparation'}.</strong>
+            <span>{this.state.submissionError}</span>
+            {this.state.broadcastUncertain && (
+              <span>Wallet history could not prove that no transaction was sent. Retry remains disabled to prevent a duplicate bid.</span>
+            )}
+          </div>
+        )}
+
         <div className="auction-basket__footer-actions">
           <button
             type="button"
             className="auction-basket__btn auction-basket__btn--secondary"
-            onClick={() => this.setState({ step: 'edit' })}
-            disabled={this.state.submitting}
+            onClick={this.onBackToBasket}
+            disabled={this.state.submissionPhase === 'broadcasting'}
           >
-            {t('back')}
+            {['preparing', 'rescanning'].includes(this.state.submissionPhase) ? 'Stop waiting' : 'Back to basket'}
           </button>
           <button
             type="button"
             className="auction-basket__btn"
             onClick={this.onSubmit}
             disabled={
-              this.state.submitting
+              this.isSubmissionActive()
               || !this.state.accepted
               || insufficient
               || !this.isHotWalletCapable()
+              || (this.state.submissionPhase === 'failed' && !this.state.retryAllowed)
             }
           >
-            {this.state.submitting ? t('submitting') : t('basketSubmit')}
+            {this.state.submissionPhase === 'failed' && this.state.retryAllowed
+              ? 'Retry submission'
+              : this.isSubmissionActive() ? t('submitting') : t('basketSubmit')}
           </button>
         </div>
       </section>
@@ -935,7 +1063,7 @@ export default withRouter(
       removeFromBasket: (name) => dispatch(removeFromBasket(name)),
       updateBasketItem: (name, patch) => dispatch(updateBasketItem(name, patch)),
       clearBasket: () => dispatch(clearBasket()),
-      sendBidMany: (entries) => dispatch(nameActions.sendBidMany(entries)),
+      sendBidMany: (entries, options) => dispatch(nameActions.sendBidMany(entries, options)),
       showError: (msg) => dispatch(showError(msg)),
       showSuccess: (msg) => dispatch(showSuccess(msg)),
     })

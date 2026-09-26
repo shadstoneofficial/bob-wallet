@@ -26,6 +26,7 @@ import {I18nContext} from "../../utils/i18n";
 import {getExchangeListings} from "../../ducks/exchange";
 import {LISTING_STATUS} from "../../constants/exchange";
 import {listingStatusToI18nKey} from "../../utils/shakedex";
+import {formatAtomicBatchFailure} from '../../utils/transactionNotifications';
 
 const {dialog} = require('electron');
 
@@ -326,6 +327,7 @@ class DomainManager extends Component {
     } = this.props;
 
     const { t } = this.context;
+    const finalizableNames = this.getFinalizableNames();
 
     if (!this.state.isConfirmingBulkFinalize) {
       return this.setState({ isConfirmingBulkFinalize: true });
@@ -336,11 +338,24 @@ class DomainManager extends Component {
       if (res !== null) {
         showSuccess(t('finalizeSuccess'));
       }
+      await this.props.getMyNames();
       this.setState({ isConfirmingBulkFinalize: false });
     } catch (e) {
-      showError(e.message);
+      showError(formatAtomicBatchFailure(e, finalizableNames, 'finalize'));
+      await this.props.getMyNames();
+      this.setState({ isConfirmingBulkFinalize: false });
     }
   };
+
+  getFinalizableNames() {
+    const {names, namesList} = this.props;
+
+    return namesList.filter(name => {
+      const domain = names[name];
+      const remainingBlocks = (domain.transfer + networks[this.props.network].names.transferLockup) - this.props.height;
+      return domain.transfer && remainingBlocks <= 0;
+    });
+  }
 
   renderGoTo(namesList) {
     const {currentPageIndex, itemsPerPage} = this.state;
@@ -428,16 +443,7 @@ class DomainManager extends Component {
   }
 
   renderBulkFinalize() {
-    const {names, namesList} = this.props;
-    const finalizables = [];
-
-    for (const name of namesList) {
-      const domain = names[name];
-      const remainingBlocks = (domain.transfer + networks[this.props.network].names.transferLockup) - this.props.height;
-      if (domain.transfer && remainingBlocks <= 0) {
-        finalizables.push(name);
-      }
-    }
+    const finalizables = this.getFinalizableNames();
 
     return !!finalizables.length && (
       <button

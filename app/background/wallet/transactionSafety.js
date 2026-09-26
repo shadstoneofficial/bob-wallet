@@ -30,6 +30,20 @@ export function createBroadcastError(error, txid) {
   return new Error(`Transaction ${txid} was not accepted by the network: ${reason}`);
 }
 
+export function reserveTransactionInputs(wallet, mtx) {
+  const prevouts = mtx.inputs.map(input => input.prevout);
+
+  for (const prevout of prevouts) {
+    wallet.lockCoin(prevout);
+  }
+
+  return () => {
+    for (const prevout of prevouts) {
+      wallet.unlockCoin(prevout);
+    }
+  };
+}
+
 export async function broadcastAndRecord({mtx, walletDB, broadcast}) {
   const tx = mtx.toTX();
   const txid = tx.txid();
@@ -40,6 +54,16 @@ export async function broadcastAndRecord({mtx, walletDB, broadcast}) {
     throw createBroadcastError(error, txid);
   }
 
-  await walletDB.addTX(tx);
+  try {
+    await walletDB.addTX(tx);
+  } catch (error) {
+    const reason = error?.message || 'Local wallet history could not be updated.';
+    const recordError = new Error(
+      `Transaction ${txid} was accepted by the network, but Bob could not record it in wallet history: ${reason}`,
+    );
+    recordError.code = 'ETXRECORD';
+    recordError.txid = txid;
+    throw recordError;
+  }
   return mtx;
 }

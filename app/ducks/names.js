@@ -328,12 +328,307 @@ export const sendBid = (name, amount, lockup, height) => async (dispatch) => {
   return res;
 };
 
+export const BID_SUBMISSION_PHASES = Object.freeze({
+  PREPARING: 'preparing',
+  RESCANNING: 'rescanning',
+  BROADCASTING: 'broadcasting',
+  SUBMITTED: 'submitted',
+  FAILED: 'failed',
+});
+
+const PREPARATION_TIMEOUT_MS = 12 * 60 * 1000;
+const BROADCAST_TIMEOUT_MS = 90 * 1000;
+const RECONCILE_TIMEOUT_MS = 15 * 1000;
+const basketSubmissionLocks = new Map();
+
+function basketSubmissionKey(walletId, entries) {
+  const values = entries.map(entry => [entry.name, entry.bid, entry.lockup]);
+  return `${walletId || 'unknown'}:${JSON.stringify(values)}`;
+}
+
+function createSubmissionError(message, details = {}) {
+  const error = new Error(message);
+  Object.assign(error, details);
+  return error;
+}
+
+function throwIfCancelled(signal) {
+  if (!signal?.aborted) return;
+  throw createSubmissionError('Stopped waiting for basket preparation.', {
+    code: 'BASKET_SUBMISSION_CANCELLED',
+    stage: BID_SUBMISSION_PHASES.PREPARING,
+    retryAllowed: false,
+  });
+}
+
+function waitForControlledPromise(promise, {signal, timeoutMs, timeoutError}) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let timer = null;
+
+    const finish = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      if (signal) signal.removeEventListener('abort', onAbort);
+      fn(value);
+    };
+    const onAbort = () => finish(
+      reject,
+      createSubmissionError('Stopped waiting for basket preparation.', {
+        code: 'BASKET_SUBMISSION_CANCELLED',
+        stage: BID_SUBMISSION_PHASES.PREPARING,
+        retryAllowed: false,
+      }),
+    );
+
+    if (signal) signal.addEventListener('abort', onAbort, {once: true});
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
+    if (timeoutMs) {
+      timer = setTimeout(() => finish(reject, timeoutError), timeoutMs);
+    }
+    Promise.resolve(promise).then(
+      value => finish(resolve, value),
+      error => finish(reject, error),
+    );
+  });
+}
+
+function transactionIds(transactions) {
+  return new Set((transactions || []).map(tx => tx?.txid).filter(Boolean));
+}
+
+async function findNewBasketTransactions(entries, baseline, findTransactions) {
+  const current = await waitForControlledPromise(
+    findTransactions(entries.map(entry => entry.name)),
+    {
+      timeoutMs: RECONCILE_TIMEOUT_MS,
+      timeoutError: createSubmissionError(
+        'Could not verify basket transaction history before the safety timeout.',
+        {code: 'BASKET_RECONCILE_TIMEOUT'},
+      ),
+    },
+  );
+  return (current || []).filter(tx => tx?.txid && !baseline.has(tx.txid));
+}
+
+function isDefiniteBroadcastFailure(error) {
+  return /rejected by the network|was not accepted by the network|fully signed/i.test(error?.message || '');
+}
+
+/**
+ * Executes one basket submission with injected side effects so recovery and
+ * duplicate-safety behavior can be tested without broadcasting HNS.
+ */
+export async function submitBidManyLifecycle(entries, deps, options = {}) {
+  const signal = options.signal;
+  const onPhase = options.onPhase || (() => {});
+  const preparationTimeoutMs = options.preparationTimeoutMs || PREPARATION_TIMEOUT_MS;
+  const broadcastTimeoutMs = options.broadcastTimeoutMs || BROADCAST_TIMEOUT_MS;
+  let stage = BID_SUBMISSION_PHASES.PREPARING;
+  let broadcastStarted = false;
+  let baseline = null;
+  const preparationStartedAt = Date.now();
+
+  const setPhase = (phase, details = {}) => {
+    stage = phase;
+    onPhase(phase, details);
+  };
+  const prepare = promise => waitForControlledPromise(promise, {
+    signal,
+    timeoutMs: Math.max(1, preparationTimeoutMs - (Date.now() - preparationStartedAt)),
+    timeoutError: createSubmissionError(
+      'Basket preparation timed out. No transaction was sent.',
+      {code: 'BASKET_PREPARATION_TIMEOUT', stage},
+    ),
+  });
+
+  try {
+    setPhase(BID_SUBMISSION_PHASES.PREPARING);
+    baseline = transactionIds(await prepare(
+      deps.findTransactions(entries.map(entry => entry.name)),
+    ));
+    await prepare(deps.requestPassphrase());
+    throwIfCancelled(signal);
+
+    const missing = [];
+    for (const entry of entries) {
+      try {
+        await prepare(deps.getAuctionInfo(entry.name));
+      } catch (error) {
+        if (!/auction not found/i.test(error?.message || '')) throw error;
+        missing.push(entry);
+      }
+    }
+
+    if (missing.length) {
+      const toImport = [];
+      for (const entry of missing) {
+        let height = entry.height;
+        if (height == null) {
+          const result = await prepare(deps.getNameInfo(entry.name));
+          if (result?.info?.height == null) {
+            throw new Error(`Cannot import ${entry.name}/ for bidding: no auction height from the node.`);
+          }
+          height = result.info.height - 1;
+        }
+        toImport.push({name: entry.name, height});
+      }
+
+      setPhase(BID_SUBMISSION_PHASES.RESCANNING, {missing: missing.length});
+      const importPromise = Promise.resolve().then(() => (
+        deps.importNames(toImport, {transactionAttempted: false})
+      ));
+      // Successful import RPC completion is not a completion signal. Observe
+      // Redux rescan progress instead, while still surfacing an early RPC error.
+      const importFailure = importPromise.then(() => new Promise(() => {}));
+      await prepare(Promise.race([
+        deps.waitForSync({signal, timeoutMs: preparationTimeoutMs}),
+        importFailure,
+      ]));
+      throwIfCancelled(signal);
+    }
+
+    const stillMissing = [];
+    for (const entry of entries) {
+      try {
+        await prepare(deps.getAuctionInfo(entry.name));
+      } catch (error) {
+        if (/auction not found/i.test(error?.message || '')) stillMissing.push(entry.name);
+        else throw error;
+      }
+    }
+    if (stillMissing.length) {
+      throw new Error(`Wallet still missing auction data for: ${stillMissing.map(name => `${name}/`).join(', ')}.`);
+    }
+
+    throwIfCancelled(signal);
+    setPhase(BID_SUBMISSION_PHASES.BROADCASTING);
+    broadcastStarted = true;
+    const payload = entries.map(entry => ({
+      name: entry.name,
+      bid: entry.bid,
+      lockup: entry.lockup,
+    }));
+
+    let result;
+    try {
+      result = await waitForControlledPromise(deps.broadcast(payload), {
+        timeoutMs: broadcastTimeoutMs,
+        timeoutError: createSubmissionError(
+          'Broadcast did not return before the safety timeout. Its outcome is uncertain, so retry is disabled.',
+          {code: 'BASKET_BROADCAST_AMBIGUOUS', stage: BID_SUBMISSION_PHASES.BROADCASTING},
+        ),
+      });
+    } catch (error) {
+      const acceptedMatch = /Transaction ([0-9a-f]{64}) was accepted by the network/i
+        .exec(error?.message || '');
+      if (acceptedMatch) {
+        // Network acceptance with a local history-write error is still a
+        // successful broadcast. Keep the txid and do not offer retry.
+        result = {txid: acceptedMatch[1]};
+      } else {
+        let matches;
+        try {
+          matches = await findNewBasketTransactions(entries, baseline, deps.findTransactions);
+        } catch (reconcileError) {
+          throw createSubmissionError(
+            `${error.message || 'Basket broadcast failed.'} Wallet history reconciliation also failed, so retry is disabled.`,
+            {
+              code: 'BASKET_BROADCAST_AMBIGUOUS',
+              stage: BID_SUBMISSION_PHASES.BROADCASTING,
+              retryAllowed: false,
+              broadcastUncertain: true,
+            },
+          );
+        }
+        if (matches.length === 1) {
+          result = matches[0];
+        } else {
+          throw createSubmissionError(error.message || 'Basket broadcast failed.', {
+            code: error.code || 'BASKET_BROADCAST_FAILED',
+            stage: BID_SUBMISSION_PHASES.BROADCASTING,
+            retryAllowed: matches.length === 0 && isDefiniteBroadcastFailure(error),
+            broadcastUncertain: !isDefiniteBroadcastFailure(error) || matches.length > 1,
+          });
+        }
+      }
+    }
+
+    let txid = result?.txid || result?.hash || result?.id;
+    if (!txid) {
+      const matches = await findNewBasketTransactions(entries, baseline, deps.findTransactions);
+      if (matches.length === 1) txid = matches[0].txid;
+    }
+    if (!txid) {
+      throw createSubmissionError(
+        'Broadcast returned without a transaction ID. Retry is disabled until wallet history confirms the outcome.',
+        {
+          code: 'BASKET_BROADCAST_AMBIGUOUS',
+          stage: BID_SUBMISSION_PHASES.BROADCASTING,
+          retryAllowed: false,
+          broadcastUncertain: true,
+        },
+      );
+    }
+
+    for (const entry of entries) {
+      try {
+        await deps.storeName(entry.name);
+      } catch (error) {
+        console.error(`Could not store submitted basket name ${entry.name}:`, error);
+      }
+    }
+    try {
+      await deps.refreshPending();
+    } catch (error) {
+      console.error('Could not refresh pending transactions after basket submission:', error);
+    }
+    setPhase(BID_SUBMISSION_PHASES.SUBMITTED, {txid});
+    return {txid};
+  } catch (error) {
+    if (error?.code === 'BASKET_SUBMISSION_CANCELLED') throw error;
+
+    let retryAllowed = !!error.retryAllowed;
+    let broadcastUncertain = !!error.broadcastUncertain;
+    if (!broadcastStarted) {
+      try {
+        const matches = baseline
+          ? await findNewBasketTransactions(entries, baseline, deps.findTransactions)
+          : null;
+        retryAllowed = !!matches && matches.length === 0;
+        broadcastUncertain = !!matches && matches.length > 0;
+      } catch (reconcileError) {
+        retryAllowed = false;
+        broadcastUncertain = true;
+      }
+    }
+
+    const wrapped = createSubmissionError(error.message || 'Basket submission failed.', {
+      code: error.code || 'BASKET_SUBMISSION_FAILED',
+      stage: error.stage || stage,
+      retryAllowed,
+      broadcastUncertain,
+    });
+    setPhase(BID_SUBMISSION_PHASES.FAILED, {
+      error: wrapped.message,
+      failedStage: wrapped.stage,
+      retryAllowed,
+      broadcastUncertain,
+    });
+    throw wrapped;
+  }
+}
+
 /**
  * Place multiple bids in one batch transaction (Auction Basket).
  * @param {Array<{name: string, bid: number|string, lockup: number|string, height?: number}>} entries
  *   bid/lockup in base units.
  */
-export const sendBidMany = (entries) => async (dispatch, getState) => {
+export const sendBidMany = (entries, options = {}) => async (dispatch, getState) => {
   if (!entries || !entries.length) {
     return null;
   }
@@ -346,94 +641,52 @@ export const sendBidMany = (entries) => async (dispatch, getState) => {
     throw new Error('Auction Basket bidding is currently limited to standard hot wallets.');
   }
 
-  await new Promise((resolve, reject) => {
-    dispatch(getPassphrase(resolve, reject));
-  });
-
-  // SPV wallets often lack auction history for names you have not bid on yet.
-  // CRITICAL: import all missing names first, then run ONE rescan from the
-  // earliest height. Calling importName() per name starts a separate rescan
-  // each time and rewinds the wallet repeatedly (the "fell back 200 blocks" bug).
-  const missing = [];
-  for (const entry of entries) {
-    try {
-      await walletClient.getAuctionInfo(entry.name);
-    } catch (e) {
-      if (!e.message.match(/auction not found/i)) {
-        throw e;
-      }
-      missing.push(entry);
-    }
-  }
-
-  if (missing.length) {
-    const toImport = [];
-    for (const entry of missing) {
-      let height = entry.height;
-      if (height == null) {
-        const result = await nodeClient.getNameInfo(entry.name);
-        if (result?.info?.height == null) {
-          throw new Error(
-            `Cannot import ${entry.name}/ for bidding: no auction height from the node.`
-          );
-        }
-        height = result.info.height - 1;
-      }
-      toImport.push({ name: entry.name, height });
-    }
-
-    try {
-      await dispatch(startWalletSync());
-      // One bloom filter update + ONE rescan from the earliest auction height.
-      await walletClient.importNames(toImport, {transactionAttempted: true});
-      // Basket rescans can take several minutes over flaky P2P peers.
-      await dispatch(waitForWalletSync(600));
-    } catch (e) {
-      throw e;
-    } finally {
-      await dispatch(stopWalletSync());
-    }
-  }
-
-  // Confirm every name is tracked after the single rescan.
-  const stillMissing = [];
-  for (const entry of entries) {
-    try {
-      await walletClient.getAuctionInfo(entry.name);
-    } catch (e) {
-      if (e.message.match(/auction not found/i)) {
-        stillMissing.push(entry.name);
-      } else {
-        throw e;
-      }
-    }
-  }
-
-  if (stillMissing.length) {
-    throw new Error(
-      `Wallet still missing auction data for: ${stillMissing.map((n) => `${n}/`).join(', ')}. ` +
-      `Bob is still catching up after importing those names (local SPV, not the helper). ` +
-      `Leave Bob open until the top-right status is Synchronized and Current Height is near the network tip, ` +
-      `then retry this basket once — do not submit again while it says Rescanning/Synchronizing.`
+  const submissionKey = basketSubmissionKey(wallet.wid, entries);
+  const existing = basketSubmissionLocks.get(submissionKey);
+  if (existing) {
+    throw createSubmissionError(
+      existing.txid
+        ? `This basket already produced transaction ${existing.txid}. Duplicate submission is blocked.`
+        : 'The previous broadcast outcome for this basket is still uncertain. Duplicate submission is blocked.',
+      {
+        code: 'BASKET_DUPLICATE_BLOCKED',
+        stage: BID_SUBMISSION_PHASES.BROADCASTING,
+        retryAllowed: false,
+        broadcastUncertain: !existing.txid,
+      },
     );
   }
 
-  const payload = entries.map((entry) => ({
-    name: entry.name,
-    bid: entry.bid,
-    lockup: entry.lockup,
-  }));
-
-  const res = await walletClient.sendBidMany(payload);
-  if (!res) {
-    throw new Error('Basket bid transaction was not fully signed or broadcast.');
+  try {
+    const result = await submitBidManyLifecycle(entries, {
+      requestPassphrase: () => new Promise((resolve, reject) => {
+        dispatch(getPassphrase(resolve, reject));
+      }),
+      getAuctionInfo: name => walletClient.getAuctionInfo(name),
+      getNameInfo: name => nodeClient.getNameInfo(name),
+      importNames: (names, importOptions) => walletClient.importNames(names, importOptions),
+      waitForSync: waitOptions => dispatch(waitForWalletSync(600, {
+        ...waitOptions,
+        requireRescanStart: true,
+      })),
+      findTransactions: names => walletClient.findBasketBidTransactions(names),
+      broadcast: payload => {
+        basketSubmissionLocks.set(submissionKey, {status: 'pending'});
+        return walletClient.sendBidMany(payload);
+      },
+      storeName: name => namesDb.storeName(name),
+      refreshPending: () => dispatch(fetchPendingTransactions()),
+    }, options);
+    basketSubmissionLocks.set(submissionKey, {status: 'submitted', txid: result.txid});
+    return result;
+  } catch (error) {
+    if (error.broadcastUncertain) {
+      basketSubmissionLocks.set(submissionKey, {status: 'uncertain'});
+    } else {
+      basketSubmissionLocks.delete(submissionKey);
+    }
+    throw error;
   }
-
-  for (const entry of entries) {
-    await namesDb.storeName(entry.name);
-  }
-  await dispatch(fetchPendingTransactions());
-  return res;
 };
 
 export const sendReveal = (name) => async (dispatch) => {

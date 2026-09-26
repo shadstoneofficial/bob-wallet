@@ -334,6 +334,39 @@
     justify-content: flex-end;
     margin-top: 0.85rem;
   }
+
+  &__submission-status {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    margin-top: 0.85rem;
+    padding: 0.75rem 0.85rem;
+    border: 1px solid rgba($azure-blue, 0.35);
+    border-radius: 0.5rem;
+    background: rgba($azure-blue, 0.08);
+    font-size: 0.82rem;
+    line-height: 1.4;
+
+    span,
+    label {
+      color: $manatee-gray;
+    }
+
+    code {
+      overflow-wrap: anywhere;
+      user-select: text;
+    }
+
+    &--error {
+      border-color: rgba(209, 42, 31, 0.45);
+      background: rgba(209, 42, 31, 0.08);
+    }
+
+    &--success {
+      border-color: rgba(11, 202, 107, 0.4);
+      background: rgba(11, 202, 107, 0.08);
+    }
+  }
 }
 
 body.bob-theme-dark {
