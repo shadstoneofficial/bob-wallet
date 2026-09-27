@@ -853,7 +853,6 @@ export async function processPendingTransactions(names = {}, pendingTxs = []) {
 
       if (action === 'BID' && (covenant.items.length < 4 || !covenant.items[3])) {
         warningHashes.add(hash);
-        continue;
       }
       if ((action === 'UPDATE' || action === 'REGISTER') && covenant.items.length < 3) {
         warningHashes.add(hash);
@@ -889,11 +888,16 @@ export async function processPendingTransactions(names = {}, pendingTxs = []) {
 
     if (aggregate.bidOutputs.length) {
       const promises = aggregate.bidOutputs.map(async output => {
-        const blind = output.covenant.items[3];
+        const blind = output.covenant.items[3] || null;
         let bv = null;
-        try {
-          bv = await walletClient.getBlind(blind);
-        } catch (error) {
+        if (blind) {
+          try {
+            bv = await walletClient.getBlind(blind);
+          } catch (error) {
+            warningHashes.add(hash);
+          }
+        }
+        if (bv?.value == null) {
           warningHashes.add(hash);
         }
 

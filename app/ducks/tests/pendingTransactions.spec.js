@@ -120,6 +120,27 @@ test('punycode names and malformed neighboring entries are isolated', async t =>
   t.end();
 });
 
+test('a BID with missing blind metadata remains pending and retry-protected', async t => {
+  const hash = 'missing-blind-hash';
+  const malformedBid = output('BID', hash, 1);
+  malformedBid.covenant.items = [hash, 'height', 'name'];
+  const blindStub = sinon.stub(walletClient, 'getBlind');
+
+  const result = await processPendingTransactions(
+    nameState([['missing-blind', hash]]),
+    [{tx: {outputs: [malformedBid]}}],
+  );
+
+  const domain = result.names['missing-blind'];
+  t.equal(domain.pendingOperation, 'BID');
+  t.equal(domain.pendingOperationMeta.bids.length, 1, 'the pending covenant is not hidden');
+  t.equal(domain.pendingOperationMeta.bids[0].bid.blind, null);
+  t.ok(result.warning.hashes.includes(hash));
+  t.equal(blindStub.callCount, 0, 'missing blind is not sent to the wallet RPC');
+  blindStub.restore();
+  t.end();
+});
+
 test('pending metadata failure is nonfatal and does not replace names', async t => {
   const errorStub = sinon.stub(console, 'error');
   const pendingStub = sinon.stub(walletClient, 'getPendingTransactions')
