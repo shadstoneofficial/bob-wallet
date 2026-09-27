@@ -23,6 +23,7 @@ import * as walletActions from '../../../ducks/walletActions';
 import { addNamesToBasket } from '../../../ducks/auctionBasket';
 import { clientStub as aClientStub } from '../../../background/analytics/client';
 import {I18nContext} from "../../../utils/i18n";
+import {hasPendingBids} from '../../../utils/auctionDomain';
 
 const analytics = aClientStub(() => require('electron').ipcRenderer);
 
@@ -340,8 +341,7 @@ class BidNow extends Component {
 
   renderOwnBidAction() {
     const {t} = this.context;
-    const {pendingOperation} = this.props.domain;
-    const pendingBidExists = pendingOperation === 'BID';
+    const pendingBidExists = hasPendingBids(this.props.domain);
 
     return (
       <AuctionPanelFooter>
@@ -367,9 +367,9 @@ class BidNow extends Component {
       hasAccepted,
       isSubmittingBid,
     } = this.state;
-    const {pendingOperation, pendingOperationMeta} = this.props.domain;
+    const {pendingOperationMeta} = this.props.domain;
 
-    const pendingBidExists = pendingOperation === 'BID';
+    const pendingBidExists = hasPendingBids(this.props.domain);
     const trueBid = Number(bidAmount);
     const blind = Number(disguiseAmount);
 
@@ -485,7 +485,7 @@ export default connect(
     totalBids: getTotalBids(domain),
     totalMasks: getTotalMasks(domain),
     network: state.wallet.network,
-    isPending: domain.pendingOperation === 'BID',
+    isPending: hasPendingBids(domain),
   }),
   (dispatch, {name}) => ({
     sendBid: (amount, lockup, height) => dispatch(nameActions.sendBid(name, toBaseUnits(amount), toBaseUnits(lockup), height)),

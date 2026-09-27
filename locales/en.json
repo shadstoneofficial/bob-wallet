@@ -502,6 +502,7 @@
   "loadAuctionFile": "Load Auction File",
   "loadPrivateSaleProof": "Load Private Sale Proof",
   "loading": "Loading...",
+  "pendingAuctionMetadataWarning": "Some pending transaction details could not be displayed. Core auction information is still available.",
   "loadingBalance": "Loading balance...",
   "loadingNDomains": "Loading %s domains...",
   "locked": "LOCKED",

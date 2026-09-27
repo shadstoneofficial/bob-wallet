@@ -11,6 +11,7 @@ import {
   RESET_IDLE,
   SET_MAX_IDLE,
   SET_PENDING_TRANSACTIONS,
+  SET_PENDING_TRANSACTIONS_WARNING,
   SET_TRANSACTIONS,
   SET_WALLET,
   START_SYNC_WALLET,
@@ -456,15 +457,30 @@ export const fetchPendingTransactions = () => async (dispatch, getState) => {
     return;
   }
 
-  const pendingTxs = await walletClient.getPendingTransactions();
-  if (!isCurrentWalletRequest(getState, generation, wid)) return;
-  const payload = await processPendingTransactions(state.names, pendingTxs);
+  let result;
+  try {
+    const pendingTxs = await walletClient.getPendingTransactions();
+    if (!isCurrentWalletRequest(getState, generation, wid)) return;
+    result = await processPendingTransactions(state.names, pendingTxs);
+  } catch (error) {
+    if (!isCurrentWalletRequest(getState, generation, wid)) return;
+    console.error('Could not enrich names with pending transactions.', error);
+    dispatch({
+      type: SET_PENDING_TRANSACTIONS_WARNING,
+      payload: {general: true, hashes: []},
+    });
+    return;
+  }
   if (!isCurrentWalletRequest(getState, generation, wid)) return;
 
   // SET_PENDING_TRANSACTIONS takes payload to replace `state.names`
   dispatch({
     type: SET_PENDING_TRANSACTIONS,
-    payload: payload || [],
+    payload: result.names,
+  });
+  dispatch({
+    type: SET_PENDING_TRANSACTIONS_WARNING,
+    payload: result.warning,
   });
 };
 
@@ -805,56 +821,81 @@ const ALLOWED_COVENANTS = new Set([
  * Parse covenant values as needed and add `pendingOperation[Meta]` to state.names
  * @param {Object} names state.names
  * @param {TX[]} pendingTxs result of walletClient.getPendingTransactions()
- * @returns {Object} state.names
+ * @returns {{names: Object, warning: ?Object}} normalized names and warning scope
  */
-async function processPendingTransactions(names, pendingTxs) {
-  const pendingOperationsByHash = {};
-  const pendingOpMetasByHash = {};
-  const pendingOutputByHash = {};
+export async function processPendingTransactions(names = {}, pendingTxs = []) {
+  const pendingByHash = new Map();
+  const warningHashes = new Set();
+  let generalWarning = false;
 
-  for (const {tx} of pendingTxs) {
-    for (const output of tx.outputs) {
-      if (ALLOWED_COVENANTS.has(output.covenant.action)) {
-        const hash = output.covenant.items[0];
+  if (!Array.isArray(pendingTxs)) {
+    pendingTxs = [];
+    generalWarning = true;
+  }
 
-        // Store multiple bids
-        if (output.covenant.action === 'BID') {
-          pendingOperationsByHash[hash] = output.covenant.action;
-          pendingOpMetasByHash[hash] = [...(pendingOpMetasByHash[hash] || []), output.covenant];
-          pendingOutputByHash[hash] = [...(pendingOutputByHash[hash] || []), output];
-        } else {
-          pendingOperationsByHash[hash] = output.covenant.action;
-          pendingOpMetasByHash[hash] = output.covenant;
-          pendingOutputByHash[hash] = output;
-        }
+  for (const entry of pendingTxs) {
+    const outputs = entry?.tx?.outputs;
+    if (!Array.isArray(outputs)) {
+      generalWarning = true;
+      continue;
+    }
 
-        break;
+    for (const output of outputs) {
+      const covenant = output?.covenant;
+      const action = covenant?.action;
+      if (!ALLOWED_COVENANTS.has(action)) continue;
+
+      const hash = Array.isArray(covenant.items) ? covenant.items[0] : null;
+      if (typeof hash !== 'string' || !hash) {
+        generalWarning = true;
+        continue;
       }
+
+      if (action === 'BID' && (covenant.items.length < 4 || !covenant.items[3])) {
+        warningHashes.add(hash);
+        continue;
+      }
+      if ((action === 'UPDATE' || action === 'REGISTER') && covenant.items.length < 3) {
+        warningHashes.add(hash);
+      }
+
+      const aggregate = pendingByHash.get(hash) || {operations: [], bidOutputs: []};
+      aggregate.operations.push({action, covenant, output});
+      if (action === 'BID') aggregate.bidOutputs.push(output);
+      pendingByHash.set(hash, aggregate);
     }
   }
 
-  const oldNames = Object.keys(names);
+  const oldNames = Object.keys(names || {});
   const newNames = {};
   for (const name of oldNames) {
     const data = names[name];
     const hash = data.hash;
-    const pendingOp = pendingOperationsByHash[hash];
-    const pendingCovenant = pendingOpMetasByHash[hash];
-    const pendingOutput = pendingOutputByHash[hash];
-    const pendingOperationMeta = {};
+    const aggregate = pendingByHash.get(hash) || {operations: [], bidOutputs: []};
+    const primary = aggregate.operations[aggregate.operations.length - 1];
+    const pendingOp = primary?.action || null;
+    const pendingOperationMeta = {
+      operations: aggregate.operations,
+      bids: [],
+    };
 
     if (pendingOp === 'UPDATE' || pendingOp === 'REGISTER') {
-      pendingOperationMeta.data = pendingCovenant.items[2];
+      pendingOperationMeta.data = primary.covenant.items[2];
     }
 
     if (pendingOp === 'REVEAL') {
-      pendingOperationMeta.output = pendingOutput;
+      pendingOperationMeta.output = primary.output;
     }
 
-    if (pendingOp === 'BID') {
-      const promises = pendingOutput.map(async output => {
+    if (aggregate.bidOutputs.length) {
+      const promises = aggregate.bidOutputs.map(async output => {
         const blind = output.covenant.items[3];
-        const bv = await walletClient.getBlind(blind);
+        let bv = null;
+        try {
+          bv = await walletClient.getBlind(blind);
+        } catch (error) {
+          warningHashes.add(hash);
+        }
 
         return {
           value: output.value,
@@ -879,12 +920,18 @@ async function processPendingTransactions(names, pendingTxs) {
     newNames[name] = {
       ...data,
       pendingOperation: pendingOp || null,
-      pendingOperationMeta: pendingOperationMeta,
+      pendingOperationMeta,
+      pendingMetadataMalformed: warningHashes.has(hash),
     };
   }
 
   return {
-    ...names,
-    ...newNames,
+    names: {
+      ...names,
+      ...newNames,
+    },
+    warning: generalWarning || warningHashes.size
+      ? {general: generalWarning, hashes: [...warningHashes]}
+      : null,
   };
 }
