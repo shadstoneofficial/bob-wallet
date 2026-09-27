@@ -18,12 +18,26 @@ import {
   UNLOCK_WALLET,
   SET_API_KEY,
   SET_FETCHING,
+  INVALIDATE_WALLET_REQUESTS,
 } from './walletReducer';
 import { NEW_BLOCK_STATUS } from './nodeReducer';
 import {setNames} from "./myDomains";
 import {setFilter, setYourBids} from "./bids";
+import {startRequestTrace} from '../utils/requestTrace';
+import {CLEAR_NAMES} from './namesReducer';
 
 let idleInterval;
+
+export const invalidateWalletRequests = (wid) => ({
+  type: INVALIDATE_WALLET_REQUESTS,
+  payload: wid,
+});
+
+export function isCurrentWalletRequest(getState, generation, wid) {
+  const wallet = getState().wallet;
+  const activeWid = wallet.requestWallet || wallet.wid;
+  return (wallet.requestGeneration || 0) === generation && activeWid === wid;
+}
 
 export const setWallet = opts => {
   const {
@@ -65,7 +79,7 @@ export const setWallet = opts => {
 };
 
 export const completeInitialization = (name, passphrase) => async (dispatch, getState) => {
-  const network = getState().wallet.network;
+  dispatch(invalidateWalletRequests(name));
   await walletClient.unlock(name, passphrase);
   await dispatch(fetchWallet());
   dispatch({
@@ -82,7 +96,8 @@ export const fetchWalletAPIKey = () => async (dispatch) => {
 };
 
 export const fetchWallet = () => async (dispatch, getState) => {
-  const {network, wid} = getState().wallet;
+  const {network, wid, requestGeneration, requestWallet} = getState().wallet;
+  const expectedWid = requestWallet || wid;
 
   const maxIdle = await getMaxIdleMinutes();
   dispatch({
@@ -94,11 +109,18 @@ export const fetchWallet = () => async (dispatch, getState) => {
   if (!accountInfo) {
     throw new Error('Could not load wallet.');
   }
+  if (!isCurrentWalletRequest(getState, requestGeneration, expectedWid)
+    || accountInfo.wid !== expectedWid) {
+    return null;
+  }
 
   if (accountInfo.type === 'multisig') {
     accountInfo.keysNames = {};
     for (const [idx, key] of accountInfo.keys.entries()) {
-      accountInfo.keysNames[key] = await getMultisigKeyName(network, wid, key) || `Signer #${idx+2}`;
+      accountInfo.keysNames[key] = await getMultisigKeyName(network, expectedWid, key) || `Signer #${idx+2}`;
+      if (!isCurrentWalletRequest(getState, requestGeneration, expectedWid)) {
+        return null;
+      }
     }
   }
 
@@ -132,6 +154,10 @@ export const removeSharedKey = (accountKey) => async (dispatch, getState) => {
 };
 
 export const unlockWallet = (name, passphrase) => async (dispatch, getState) => {
+  if (name !== getState().wallet.wid) {
+    dispatch(invalidateWalletRequests(name));
+  }
+
   await walletClient.unlock(name, passphrase);
 
   if (name !== getState().wallet.wid) {
@@ -139,6 +165,7 @@ export const unlockWallet = (name, passphrase) => async (dispatch, getState) => 
       type: SET_TRANSACTIONS,
       payload: new Map(),
     });
+    dispatch({type: CLEAR_NAMES});
 
     dispatch(setNames({}));
     dispatch(setYourBids({
@@ -298,14 +325,45 @@ export const waitForWalletSync = (
   }
 };
 
+export function collectOpenedNames(txs) {
+  const names = new Map();
+
+  for (const tx of txs || []) {
+    for (const output of tx.outputs || []) {
+      const covenant = output.covenant;
+      if (!covenant || covenant.action !== 'OPEN'
+        || !Array.isArray(covenant.items) || covenant.items.length < 3) {
+        continue;
+      }
+
+      try {
+        const name = Buffer.from(covenant.items[2], 'hex').toString('ascii');
+        if (name) names.set(covenant.items[0], name);
+      } catch (error) {
+        // Malformed historical data will use the normal node lookup path.
+      }
+    }
+  }
+
+  return names;
+}
+
 export const fetchTransactions = () => async (dispatch, getState) => {
   const state = getState();
   const net = state.wallet.network;
   const currentTXs = state.wallet.transactions;
+  const generation = state.wallet.requestGeneration || 0;
+  const wid = state.wallet.wid;
 
   if (state.wallet.isFetching) {
     return;
   }
+
+  const trace = startRequestTrace({
+    operation: 'transaction-history',
+    caller: 'walletActions.fetchTransactions',
+    walletGeneration: generation,
+  });
 
   dispatch({
     type: SET_FETCHING,
@@ -315,10 +373,20 @@ export const fetchTransactions = () => async (dispatch, getState) => {
 
   try {
     const txs = await walletClient.getTransactionHistory();
+    if (!isCurrentWalletRequest(getState, generation, wid)) {
+      trace.cancel();
+      return;
+    }
 
     let payload = new Map();
+    const openedNames = collectOpenedNames(txs);
 
     for (let i = 0; i < txs.length; i++) {
+      if (!isCurrentWalletRequest(getState, generation, wid)) {
+        trace.cancel();
+        return;
+      }
+
       const tx = txs[i];
       const {time, block} = tx;
       const existing = currentTXs.get(tx.hash);
@@ -339,7 +407,11 @@ export const fetchTransactions = () => async (dispatch, getState) => {
         });
       }
 
-      const ios = await parseInputsOutputs(net, tx);
+      const ios = await parseInputsOutputs(net, tx, openedNames);
+      if (!isCurrentWalletRequest(getState, generation, wid)) {
+        trace.cancel();
+        return;
+      }
       const isPending = !block;
       const txData = {
         id: tx.hash,
@@ -354,28 +426,40 @@ export const fetchTransactions = () => async (dispatch, getState) => {
     // Sort all TXs by date without losing the hash->tx mapping
     payload = new Map([...payload.entries()].sort((a, b) => b[1].date - a[1].date));
 
-    dispatch({
-      type: SET_TRANSACTIONS,
-      payload,
-    });
+    if (isCurrentWalletRequest(getState, generation, wid)) {
+      dispatch({
+        type: SET_TRANSACTIONS,
+        payload,
+      });
+      trace.complete();
+    }
+  } catch (error) {
+    trace.fail();
+    throw error;
   } finally {
-    dispatch({type: NEW_BLOCK_STATUS, payload: ''});
-    dispatch({
-      type: SET_FETCHING,
-      payload: false,
-    });
+    if (isCurrentWalletRequest(getState, generation, wid)) {
+      dispatch({type: NEW_BLOCK_STATUS, payload: ''});
+      dispatch({
+        type: SET_FETCHING,
+        payload: false,
+      });
+    }
   }
 };
 
 export const fetchPendingTransactions = () => async (dispatch, getState) => {
   const state = getState();
+  const generation = state.wallet.requestGeneration || 0;
+  const wid = state.wallet.wid;
 
   if (!state.wallet.initialized) {
     return;
   }
 
   const pendingTxs = await walletClient.getPendingTransactions();
+  if (!isCurrentWalletRequest(getState, generation, wid)) return;
   const payload = await processPendingTransactions(state.names, pendingTxs);
+  if (!isCurrentWalletRequest(getState, generation, wid)) return;
 
   // SET_PENDING_TRANSACTIONS takes payload to replace `state.names`
   dispatch({
@@ -435,7 +519,7 @@ export const watchActivity = () => dispatch => {
   }
 };
 
-async function parseInputsOutputs(net, tx) {
+async function parseInputsOutputs(net, tx, openedNames = new Map()) {
   // Look for covenants. A TX with multiple covenant types is not supported
   let covAction = null;
   let covValue = 0;
@@ -517,7 +601,7 @@ async function parseInputsOutputs(net, tx) {
     }
 
     // May be called redundantly but should be handled by cache
-    covData = await parseCovenant(net, covenant);
+    covData = await parseCovenant(net, covenant, openedNames);
 
     if (covData.meta?.domain) {
       covDomains.add(covData.meta.domain);
@@ -594,21 +678,21 @@ function getNetValue(tx) {
   return totalValue;
 }
 
-async function parseCovenant(net, covenant) {
+async function parseCovenant(net, covenant, openedNames) {
   switch (covenant.action) {
     case 'CLAIM':
-      return {type: 'CLAIM', meta: {domain: await nameByHash(net, covenant)}};
+      return {type: 'CLAIM', meta: {domain: await nameByHash(net, covenant, openedNames)}};
     case 'OPEN':
-      return {type: 'OPEN', meta: {domain: await nameByHash(net, covenant)}};
+      return {type: 'OPEN', meta: {domain: await nameByHash(net, covenant, openedNames)}};
     case 'BID':
-      return {type: 'BID', meta: {domain: await nameByHash(net, covenant)}};
+      return {type: 'BID', meta: {domain: await nameByHash(net, covenant, openedNames)}};
     case 'REVEAL':
-      return {type: 'REVEAL', meta: {domain: await nameByHash(net, covenant)}};
+      return {type: 'REVEAL', meta: {domain: await nameByHash(net, covenant, openedNames)}};
     case 'UPDATE':
       return {
         type: 'UPDATE',
         meta: {
-          domain: await nameByHash(net, covenant),
+          domain: await nameByHash(net, covenant, openedNames),
           data: covenant.items[2],
         },
       };
@@ -616,7 +700,7 @@ async function parseCovenant(net, covenant) {
       return {
         type: 'REGISTER',
         meta: {
-          domain: await nameByHash(net, covenant),
+          domain: await nameByHash(net, covenant, openedNames),
           data: covenant.items[2],
         },
       };
@@ -624,35 +708,35 @@ async function parseCovenant(net, covenant) {
       return {
         type: 'RENEW',
         meta: {
-          domain: await nameByHash(net, covenant),
+          domain: await nameByHash(net, covenant, openedNames),
         },
       };
     case 'REDEEM':
       return {
         type: 'REDEEM',
         meta: {
-          domain: await nameByHash(net, covenant),
+          domain: await nameByHash(net, covenant, openedNames),
         },
       };
     case 'TRANSFER':
       return {
         type: 'TRANSFER',
         meta: {
-          domain: await nameByHash(net, covenant),
+          domain: await nameByHash(net, covenant, openedNames),
         },
       };
     case 'REVOKE':
       return {
         type: 'REVOKE',
         meta: {
-          domain: await nameByHash(net, covenant),
+          domain: await nameByHash(net, covenant, openedNames),
         },
       };
     case 'FINALIZE':
       return {
         type: 'FINALIZE',
         meta: {
-          domain: await nameByHash(net, covenant),
+          domain: await nameByHash(net, covenant, openedNames),
         },
       };
     default:
@@ -667,17 +751,21 @@ const nameCache = {
   cache: {},
 };
 
-async function nameByHash(net, covenant) {
+async function nameByHash(net, covenant, openedNames = new Map()) {
   if (nameCache.currNet !== net) {
     nameCache.currNet = net;
     nameCache.cache = {};
   }
 
-  if (Object.keys(nameCache.cache) > MAX_NAME_CACHE_SIZE) {
+  if (Object.keys(nameCache.cache).length > MAX_NAME_CACHE_SIZE) {
     nameCache.cache = {};
   }
 
   const hash = covenant.items[0];
+
+  if (openedNames.has(hash)) {
+    return openedNames.get(hash);
+  }
 
   if (nameCache.cache[hash]) {
     return nameCache.cache[hash];

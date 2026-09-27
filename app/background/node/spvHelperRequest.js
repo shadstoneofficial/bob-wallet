@@ -5,6 +5,14 @@ const READ_ONLY_RPC = new Set([
 ]);
 const MAX_RETRIES = 2;
 const RETRY_BUDGET_MS = 125000;
+const REQUEST_TIMEOUT_MS = 30000;
+let nextRequestGeneration = 1;
+
+function developmentTrace(details) {
+  if (process.env.NODE_ENV === 'development') {
+    console.debug('[request-lifecycle]', details);
+  }
+}
 
 export function retryAfterMs(headers, now) {
   const value = (headers.get('retry-after') || '').trim();
@@ -26,19 +34,99 @@ export function createSpvHelperClient({
   sleep = ms => new Promise(resolve => setTimeout(resolve, ms)),
   now = Date.now,
   random = Math.random,
+  requestTimeoutMs = REQUEST_TIMEOUT_MS,
+  trace = developmentTrace,
 } = {}) {
   async function request(url, options, retryable) {
     const deadline = now() + RETRY_BUDGET_MS;
+    const requestGeneration = nextRequestGeneration++;
+    const startedAt = now();
     for (let attempt = 0; ; attempt++) {
-      const response = await fetchImpl(url, options);
-      if (response.status !== 429 || !retryable || attempt >= MAX_RETRIES)
+      trace({
+        operation: options.method === 'GET' ? 'spv-helper-read' : 'spv-helper-rpc',
+        caller: 'spvHelperRequest',
+        requestGeneration,
+        attempt: attempt + 1,
+        event: 'start',
+        elapsedMs: now() - startedAt,
+        statusCategory: 'pending',
+      });
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
+      let response;
+      try {
+        response = await fetchImpl(url, {...options, signal: controller.signal});
+      } catch (error) {
+        if (controller.signal.aborted) {
+          const timeoutError = new Error('SPV helper request timed out.');
+          timeoutError.code = 'ETIMEDOUT';
+          timeoutError.status = 408;
+          trace({
+            operation: options.method === 'GET' ? 'spv-helper-read' : 'spv-helper-rpc',
+            caller: 'spvHelperRequest',
+            requestGeneration,
+            attempt: attempt + 1,
+            event: 'cancellation',
+            elapsedMs: now() - startedAt,
+            statusCategory: 'timeout',
+          });
+          throw timeoutError;
+        }
+        trace({
+          operation: options.method === 'GET' ? 'spv-helper-read' : 'spv-helper-rpc',
+          caller: 'spvHelperRequest',
+          requestGeneration,
+          attempt: attempt + 1,
+          event: 'completion',
+          elapsedMs: now() - startedAt,
+          statusCategory: 'network-error',
+        });
+        throw error;
+      } finally {
+        clearTimeout(timeout);
+      }
+
+      const throttled = response.status === 429 || response.status === 503;
+      if (!throttled || !retryable || attempt >= MAX_RETRIES) {
+        trace({
+          operation: options.method === 'GET' ? 'spv-helper-read' : 'spv-helper-rpc',
+          caller: 'spvHelperRequest',
+          requestGeneration,
+          attempt: attempt + 1,
+          event: 'completion',
+          elapsedMs: now() - startedAt,
+          statusCategory: response.status >= 400 ? 'http-error' : 'success',
+        });
         return response;
+      }
 
       const serverDelay = retryAfterMs(response.headers, now());
       const delay = (serverDelay === null ? 1000 * (2 ** attempt) : serverDelay)
         + Math.floor(random() * 250) + 1;
       // Never shorten the server's delay to fit our budget: return the 429 instead.
-      if (delay > deadline - now()) return response;
+      if (delay > deadline - now()) {
+        trace({
+          operation: options.method === 'GET' ? 'spv-helper-read' : 'spv-helper-rpc',
+          caller: 'spvHelperRequest',
+          requestGeneration,
+          attempt: attempt + 1,
+          event: 'completion',
+          elapsedMs: now() - startedAt,
+          statusCategory: 'retry-budget-exceeded',
+        });
+        return response;
+      }
+
+      trace({
+        operation: options.method === 'GET' ? 'spv-helper-read' : 'spv-helper-rpc',
+        caller: 'spvHelperRequest',
+        requestGeneration,
+        attempt: attempt + 1,
+        event: 'retry-scheduled',
+        elapsedMs: now() - startedAt,
+        statusCategory: 'throttled',
+        retryReason: `http-${response.status}`,
+      });
 
       // Drain the discarded response before reusing the connection, even if the
       // throttle body is HTML or empty. Only the final response is parsed as JSON.
@@ -48,6 +136,15 @@ export function createSpvHelperClient({
       if (now() > deadline) {
         const error = new Error('SPV helper rate limit retry budget exceeded.');
         error.status = 429;
+        trace({
+          operation: options.method === 'GET' ? 'spv-helper-read' : 'spv-helper-rpc',
+          caller: 'spvHelperRequest',
+          requestGeneration,
+          attempt: attempt + 1,
+          event: 'completion',
+          elapsedMs: now() - startedAt,
+          statusCategory: 'retry-budget-exceeded',
+        });
         throw error;
       }
     }

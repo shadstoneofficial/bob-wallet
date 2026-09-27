@@ -8,9 +8,11 @@ import {
   startWalletSync,
   stopWalletSync,
   waitForWalletSync,
+  isCurrentWalletRequest,
 } from './walletActions';
 import { SET_NAME } from './namesReducer';
 import {NAME_STATES} from "../constants/names";
+import {startRequestTrace} from '../utils/requestTrace';
 import {
   fetchWalletStats,
   invalidateRedeemableStats,
@@ -73,8 +75,59 @@ export const fetchName = (name, force) => async (dispatch, getState) => {
   });
 };
 
-export const getNameInfo = name => async (dispatch) => {
+const activeNameInfoRequests = new Map();
+const activeNameHistoryRequests = new Map();
+
+function staleWalletRequestError() {
+  const error = new Error('The active wallet changed while this request was running.');
+  error.code = 'STALE_WALLET_REQUEST';
+  return error;
+}
+
+export const getNameInfo = (name, options = {}) => (dispatch, getState) => {
+  const wallet = getState().wallet;
+  const generation = wallet.requestGeneration || 0;
+  const wid = wallet.wid;
+  const key = `${generation}:${name}`;
+
+  const isCurrent = () => (
+    !options.signal?.aborted
+    && isCurrentWalletRequest(getState, generation, wid)
+  );
+  const activeRequest = activeNameInfoRequests.get(key);
+  if (activeRequest && activeRequest.isCurrent()) {
+    return activeRequest.request;
+  }
+  if (activeRequest) activeNameInfoRequests.delete(key);
+  const trace = startRequestTrace({
+    operation: 'name-info',
+    caller: 'names.getNameInfo',
+    walletGeneration: generation,
+  });
+  const request = loadNameInfo(name, dispatch, isCurrent, key, generation)
+    .then(result => {
+      trace.complete();
+      return result;
+    }, error => {
+      if (error.code === 'STALE_WALLET_REQUEST') trace.cancel();
+      else trace.fail();
+      throw error;
+    })
+    .finally(() => {
+      if (activeNameInfoRequests.get(key)?.request === request) {
+        activeNameInfoRequests.delete(key);
+      }
+    });
+  activeNameInfoRequests.set(key, {request, isCurrent});
+  return request;
+};
+
+async function loadNameInfo(name, dispatch, isCurrent, requestKey, generation) {
   const result = await nodeClient.getNameInfo(name);
+  if (!isCurrent()) throw staleWalletRequestError();
+  if (!result || typeof result !== 'object' || !Object.prototype.hasOwnProperty.call(result, 'info')) {
+    throw new Error('The SPV helper returned a malformed name response.');
+  }
   const {start, info} = result;
 
   let bids = [];
@@ -104,9 +157,46 @@ export const getNameInfo = name => async (dispatch) => {
 
   try {
     const auctionInfo = await walletClient.getAuctionInfo(name);
+    if (!isCurrent()) throw staleWalletRequestError();
     walletHasName = true;
-    bids = await inflateBids(auctionInfo.bids, info.height);
-    reveals = await inflateReveals(auctionInfo.reveals, info.height);
+    const hasHistory = auctionInfo.bids.length > 0 || auctionInfo.reveals.length > 0;
+    const activeHistory = activeNameHistoryRequests.get(requestKey);
+    if (activeHistory && !activeHistory.isCurrent()) {
+      activeNameHistoryRequests.delete(requestKey);
+    }
+    if (hasHistory && !activeNameHistoryRequests.has(requestKey)) {
+      const historyTrace = startRequestTrace({
+        operation: 'name-bid-history',
+        caller: 'names.getNameInfo',
+        walletGeneration: generation,
+      });
+      const historyRequest = loadNameHistory(
+        name,
+        auctionInfo,
+        info.height,
+        dispatch,
+        isCurrent,
+      ).then(() => {
+        historyTrace.complete();
+      }, error => {
+        if (error.code === 'STALE_WALLET_REQUEST') {
+          historyTrace.cancel();
+          return;
+        }
+        historyTrace.fail();
+        if (isCurrent()) {
+          dispatch({
+            type: SET_NAME,
+            payload: {name, bidHistoryLoading: false, bidHistoryError: error.message},
+          });
+        }
+      }).finally(() => {
+        if (activeNameHistoryRequests.get(requestKey)?.request === historyRequest) {
+          activeNameHistoryRequests.delete(requestKey);
+        }
+      });
+      activeNameHistoryRequests.set(requestKey, {request: historyRequest, isCurrent});
+    }
   } catch (e) {
     if (!e.message.match(/auction not found/i)) {
       throw e;
@@ -115,10 +205,12 @@ export const getNameInfo = name => async (dispatch) => {
 
   if (info.state === NAME_STATES.CLOSED) {
     const res = await walletClient.getTX(info.owner.hash);
+    if (!isCurrent()) throw staleWalletRequestError();
     if (res) {
       const {tx: buyTx} = res;
       const buyOutput = buyTx.outputs[info.owner.index];
       const coin = await walletClient.getCoin(info.owner.hash, info.owner.index);
+      if (!isCurrent()) throw staleWalletRequestError();
       isOwner = !!coin;
 
       if (coin) {
@@ -129,6 +221,7 @@ export const getNameInfo = name => async (dispatch) => {
 
         if (coin.covenant.action === 'TRANSFER') {
           const {network} = await nodeClient.getInfo();
+          if (!isCurrent()) throw staleWalletRequestError();
           info.transferTo = Address.fromHash(
             Buffer.from(coin.covenant.items[3], 'hex'),
             Number(coin.covenant.items[2])
@@ -142,21 +235,46 @@ export const getNameInfo = name => async (dispatch) => {
     }
   }
 
+  if (!isCurrent()) throw staleWalletRequestError();
   dispatch({
     type: SET_NAME,
-    payload: {name, start, info, bids, reveals, winner, lastTx, isOwner, walletHasName},
+    payload: {
+      name,
+      start,
+      info,
+      bids,
+      reveals,
+      winner,
+      lastTx,
+      isOwner,
+      walletHasName,
+      bidHistoryLoading: activeNameHistoryRequests.has(requestKey),
+      bidHistoryError: '',
+    },
   });
-};
+}
 
-async function inflateBids(bids, nameHeight) {
+async function loadNameHistory(name, auctionInfo, nameHeight, dispatch, isCurrent) {
+  const bids = await inflateBids(auctionInfo.bids, nameHeight, isCurrent);
+  const reveals = await inflateReveals(auctionInfo.reveals, nameHeight, isCurrent);
+  if (!isCurrent()) throw staleWalletRequestError();
+  dispatch({
+    type: SET_NAME,
+    payload: {name, bids, reveals, bidHistoryLoading: false, bidHistoryError: ''},
+  });
+}
+
+async function inflateBids(bids, nameHeight, isCurrent = () => true) {
   if (!bids.length) {
     return [];
   }
 
   const ret = [];
   for (const bid of bids) {
+    if (!isCurrent()) throw staleWalletRequestError();
     // Must use node client to get non-own bids
     const res = await nodeClient.getTx(bid.prevout.hash);
+    if (!isCurrent()) throw staleWalletRequestError();
 
     if (!res) continue;
 
@@ -178,15 +296,17 @@ async function inflateBids(bids, nameHeight) {
   return ret;
 }
 
-async function inflateReveals(reveals, nameHeight) {
+async function inflateReveals(reveals, nameHeight, isCurrent = () => true) {
   if (!reveals.length) {
     return [];
   }
 
   const ret = [];
   for (const reveal of reveals) {
+    if (!isCurrent()) throw staleWalletRequestError();
     // Must use node client to get non-own reveals
     const res = await nodeClient.getTx(reveal.prevout.hash);
+    if (!isCurrent()) throw staleWalletRequestError();
 
     if (!res) continue;
 
@@ -329,15 +449,18 @@ export const sendBid = (name, amount, lockup, height) => async (dispatch) => {
 };
 
 export const BID_SUBMISSION_PHASES = Object.freeze({
-  PREPARING: 'preparing',
+  CHECKING: 'checking',
   RESCANNING: 'rescanning',
+  BUILDING: 'building',
+  SIGNING: 'signing',
   BROADCASTING: 'broadcasting',
+  VERIFYING: 'verifying',
   SUBMITTED: 'submitted',
   FAILED: 'failed',
 });
 
 const PREPARATION_TIMEOUT_MS = 12 * 60 * 1000;
-const BROADCAST_TIMEOUT_MS = 90 * 1000;
+const BROADCAST_TIMEOUT_MS = 120 * 1000;
 const RECONCILE_TIMEOUT_MS = 15 * 1000;
 const basketSubmissionLocks = new Map();
 
@@ -356,7 +479,7 @@ function throwIfCancelled(signal) {
   if (!signal?.aborted) return;
   throw createSubmissionError('Stopped waiting for basket preparation.', {
     code: 'BASKET_SUBMISSION_CANCELLED',
-    stage: BID_SUBMISSION_PHASES.PREPARING,
+    stage: BID_SUBMISSION_PHASES.CHECKING,
     retryAllowed: false,
   });
 }
@@ -377,7 +500,7 @@ function waitForControlledPromise(promise, {signal, timeoutMs, timeoutError}) {
       reject,
       createSubmissionError('Stopped waiting for basket preparation.', {
         code: 'BASKET_SUBMISSION_CANCELLED',
-        stage: BID_SUBMISSION_PHASES.PREPARING,
+        stage: BID_SUBMISSION_PHASES.CHECKING,
         retryAllowed: false,
       }),
     );
@@ -416,7 +539,16 @@ async function findNewBasketTransactions(entries, baseline, findTransactions) {
 }
 
 function isDefiniteBroadcastFailure(error) {
-  return /rejected by the network|was not accepted by the network|fully signed/i.test(error?.message || '');
+  if (error?.code === 'ETXREJECTED') return true;
+  if (error?.code === 'ETXBROADCASTUNCERTAIN') return false;
+  return /rejected by the network|fully signed/i.test(error?.message || '');
+}
+
+function submissionFailureStage(error, fallback) {
+  if (error?.code === 'BASKET_BUILD_FAILED') return BID_SUBMISSION_PHASES.BUILDING;
+  if (error?.code === 'BASKET_SIGN_FAILED') return BID_SUBMISSION_PHASES.SIGNING;
+  if (error?.code === 'BASKET_RECONCILE_TIMEOUT') return BID_SUBMISSION_PHASES.VERIFYING;
+  return error?.stage || fallback;
 }
 
 /**
@@ -426,11 +558,15 @@ function isDefiniteBroadcastFailure(error) {
 export async function submitBidManyLifecycle(entries, deps, options = {}) {
   const signal = options.signal;
   const onPhase = options.onPhase || (() => {});
+  const onTiming = options.onTiming || ((phase, durationMs, details) => {
+    console.info('[Auction Basket timing]', {phase, durationMs, ...details});
+  });
   const preparationTimeoutMs = options.preparationTimeoutMs || PREPARATION_TIMEOUT_MS;
   const broadcastTimeoutMs = options.broadcastTimeoutMs || BROADCAST_TIMEOUT_MS;
-  let stage = BID_SUBMISSION_PHASES.PREPARING;
+  let stage = BID_SUBMISSION_PHASES.CHECKING;
   let broadcastStarted = false;
   let baseline = null;
+  const attemptId = options.attemptId || `basket-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const preparationStartedAt = Date.now();
 
   const setPhase = (phase, details = {}) => {
@@ -447,13 +583,14 @@ export async function submitBidManyLifecycle(entries, deps, options = {}) {
   });
 
   try {
-    setPhase(BID_SUBMISSION_PHASES.PREPARING);
+    setPhase(BID_SUBMISSION_PHASES.CHECKING);
     baseline = transactionIds(await prepare(
       deps.findTransactions(entries.map(entry => entry.name)),
     ));
     await prepare(deps.requestPassphrase());
     throwIfCancelled(signal);
 
+    const auctionValidationStartedAt = Date.now();
     const missing = [];
     for (const entry of entries) {
       try {
@@ -504,19 +641,36 @@ export async function submitBidManyLifecycle(entries, deps, options = {}) {
     if (stillMissing.length) {
       throw new Error(`Wallet still missing auction data for: ${stillMissing.map(name => `${name}/`).join(', ')}.`);
     }
+    onTiming('auction-validation', Date.now() - auctionValidationStartedAt, {
+      count: entries.length,
+      imported: missing.length,
+    });
 
     throwIfCancelled(signal);
-    setPhase(BID_SUBMISSION_PHASES.BROADCASTING);
-    broadcastStarted = true;
     const payload = entries.map(entry => ({
       name: entry.name,
       bid: entry.bid,
       lockup: entry.lockup,
     }));
 
-    let result;
+    setPhase(BID_SUBMISSION_PHASES.BUILDING, {attemptId});
+    let prepared;
     try {
-      result = await waitForControlledPromise(deps.broadcast(payload), {
+      prepared = await prepare(deps.prepare(payload, attemptId));
+    } catch (error) {
+      if (signal?.aborted) await deps.cancel?.(attemptId);
+      throw error;
+    }
+    throwIfCancelled(signal);
+    const preparedTxid = prepared?.txid || '';
+    setPhase(BID_SUBMISSION_PHASES.SIGNING, {attemptId, txid: preparedTxid});
+    throwIfCancelled(signal);
+
+    let result;
+    setPhase(BID_SUBMISSION_PHASES.BROADCASTING, {attemptId, txid: preparedTxid});
+    broadcastStarted = true;
+    try {
+      result = await waitForControlledPromise(deps.broadcastPrepared(attemptId), {
         timeoutMs: broadcastTimeoutMs,
         timeoutError: createSubmissionError(
           'Broadcast did not return before the safety timeout. Its outcome is uncertain, so retry is disabled.',
@@ -558,7 +712,8 @@ export async function submitBidManyLifecycle(entries, deps, options = {}) {
       }
     }
 
-    let txid = result?.txid || result?.hash || result?.id;
+    setPhase(BID_SUBMISSION_PHASES.VERIFYING, {attemptId, txid: preparedTxid});
+    let txid = result?.txid || result?.hash || result?.id || preparedTxid;
     if (!txid) {
       const matches = await findNewBasketTransactions(entries, baseline, deps.findTransactions);
       if (matches.length === 1) txid = matches[0].txid;
@@ -587,29 +742,25 @@ export async function submitBidManyLifecycle(entries, deps, options = {}) {
     } catch (error) {
       console.error('Could not refresh pending transactions after basket submission:', error);
     }
-    setPhase(BID_SUBMISSION_PHASES.SUBMITTED, {txid});
-    return {txid};
+    setPhase(BID_SUBMISSION_PHASES.SUBMITTED, {txid, timings: result?.timings || prepared?.timings || {}});
+    return {txid, timings: result?.timings || prepared?.timings || {}};
   } catch (error) {
-    if (error?.code === 'BASKET_SUBMISSION_CANCELLED') throw error;
+    if (error?.code === 'BASKET_SUBMISSION_CANCELLED') {
+      await deps.cancel?.(attemptId);
+      throw error;
+    }
 
     let retryAllowed = !!error.retryAllowed;
     let broadcastUncertain = !!error.broadcastUncertain;
     if (!broadcastStarted) {
-      try {
-        const matches = baseline
-          ? await findNewBasketTransactions(entries, baseline, deps.findTransactions)
-          : null;
-        retryAllowed = !!matches && matches.length === 0;
-        broadcastUncertain = !!matches && matches.length > 0;
-      } catch (reconcileError) {
-        retryAllowed = false;
-        broadcastUncertain = true;
-      }
+      await deps.cancel?.(attemptId);
+      retryAllowed = true;
+      broadcastUncertain = false;
     }
 
     const wrapped = createSubmissionError(error.message || 'Basket submission failed.', {
       code: error.code || 'BASKET_SUBMISSION_FAILED',
-      stage: error.stage || stage,
+      stage: submissionFailureStage(error, stage),
       retryAllowed,
       broadcastUncertain,
     });
@@ -670,9 +821,14 @@ export const sendBidMany = (entries, options = {}) => async (dispatch, getState)
         requireRescanStart: true,
       })),
       findTransactions: names => walletClient.findBasketBidTransactions(names),
-      broadcast: payload => {
-        basketSubmissionLocks.set(submissionKey, {status: 'pending'});
-        return walletClient.sendBidMany(payload);
+      prepare: (payload, attemptId) => {
+        basketSubmissionLocks.set(submissionKey, {status: 'preparing', attemptId});
+        return walletClient.prepareBidMany(payload, attemptId);
+      },
+      cancel: attemptId => walletClient.cancelBidManyAttempt(attemptId),
+      broadcastPrepared: attemptId => {
+        basketSubmissionLocks.set(submissionKey, {status: 'broadcasting', attemptId});
+        return walletClient.broadcastPreparedBidMany(attemptId);
       },
       storeName: name => namesDb.storeName(name),
       refreshPending: () => dispatch(fetchPendingTransactions()),

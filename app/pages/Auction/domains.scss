@@ -72,6 +72,16 @@
       }
     }
 
+    &__load-error {
+      padding: 1rem 0;
+
+      button {
+        @extend %btn-primary;
+        margin-top: 1rem;
+        padding: .6rem 1rem;
+      }
+    }
+
     &__auction-detail {
       margin: 1rem;
       align-items: flex-start;

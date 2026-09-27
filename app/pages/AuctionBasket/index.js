@@ -10,6 +10,7 @@ import {
   removeFromBasket,
   updateBasketItem,
   clearBasket,
+  importBasketRows,
   AUCTION_BASKET_LIMIT,
 } from '../../ducks/auctionBasket';
 import * as nameActions from '../../ducks/names';
@@ -19,6 +20,13 @@ import { isBidding } from '../../utils/nameHelpers';
 import nodeClient from '../../utils/nodeClient';
 import { clientStub as aClientStub } from '../../background/analytics/client';
 import { I18nContext } from '../../utils/i18n';
+import {
+  basketToCSV,
+  parseBasketDraft,
+  parseCompleteBasket,
+  serializeBasketDraft,
+  splitBasket,
+} from '../../utils/auctionBasketData';
 import './auction-basket.scss';
 
 const analytics = aClientStub(() => require('electron').ipcRenderer);
@@ -56,10 +64,13 @@ export class AuctionBasket extends Component {
     removeFromBasket: PropTypes.func.isRequired,
     updateBasketItem: PropTypes.func.isRequired,
     clearBasket: PropTypes.func.isRequired,
+    importBasketRows: PropTypes.func.isRequired,
     sendBidMany: PropTypes.func.isRequired,
     showError: PropTypes.func.isRequired,
     showSuccess: PropTypes.func.isRequired,
     history: PropTypes.object.isRequired,
+    walletId: PropTypes.string,
+    basketSubmissionProgress: PropTypes.object,
   };
 
   static contextType = I18nContext;
@@ -68,6 +79,13 @@ export class AuctionBasket extends Component {
     singleName: '',
     pasteText: '',
     showPaste: false,
+    showCompletePaste: false,
+    completePasteText: '',
+    importPreview: [],
+    importChecking: false,
+    savedDraft: null,
+    splitSize: 10,
+    showSplit: false,
     step: 'edit', // edit | review
     checking: false,
     submissionPhase: 'idle',
@@ -83,6 +101,7 @@ export class AuctionBasket extends Component {
   componentDidMount() {
     this._mounted = true;
     analytics.screenView('Auction Basket');
+    this.loadSavedDraft();
     if (this.props.order.length) {
       this.refreshStatuses();
     }
@@ -90,17 +109,125 @@ export class AuctionBasket extends Component {
 
   componentWillUnmount() {
     this._mounted = false;
-    this.submissionRunId += 1;
-    if (this.submissionAbortController) {
-      this.submissionAbortController.abort();
+    if (['checking', 'rescanning', 'building', 'signing'].includes(this.state.submissionPhase)) {
+      this.submissionRunId += 1;
+      this.submissionAbortController?.abort();
     }
   }
 
-  componentDidUpdate(prevProps) {
+  componentDidUpdate(prevProps, prevState) {
     if (prevProps.order !== this.props.order && this.props.order.length) {
       this.refreshStatuses();
     }
+    if (
+      prevProps.order !== this.props.order
+      || prevProps.items !== this.props.items
+      || prevState.step !== this.state.step
+      || prevState.broadcastUncertain !== this.state.broadcastUncertain
+      || prevState.submissionTxid !== this.state.submissionTxid
+    ) {
+      if (this.props.order.length) this.persistDraft();
+    }
+    const progress = this.props.basketSubmissionProgress || {};
+    const previousProgress = prevProps.basketSubmissionProgress || {};
+    if (
+      progress !== previousProgress
+      && progress.attemptId
+      && progress.attemptId === this.state.activeAttemptId
+      && ['building', 'signing', 'broadcasting', 'verifying'].includes(progress.phase)
+    ) {
+      this.safeSetState({
+        submissionPhase: progress.phase,
+        submissionTxid: progress.txid || this.state.submissionTxid,
+      });
+    }
   }
+
+  getDraftKey = () => {
+    const {walletId, network} = this.props;
+    if (!walletId) return '';
+    return `bob-auction-basket-draft-v1:${network || 'main'}:${walletId}`;
+  };
+
+  loadSavedDraft = () => {
+    const key = this.getDraftKey();
+    if (!key || typeof window === 'undefined' || !window.localStorage) return;
+    try {
+      const draft = parseBasketDraft(window.localStorage.getItem(key), {
+        walletId: this.props.walletId,
+        network: this.props.network,
+      });
+      if (draft?.rows?.length) {
+        const currentRows = this.props.order.map(name => this.props.items[name]);
+        const currentMatchesDraft = currentRows.length === draft.rows.length
+          && draft.rows.every((row, index) => (
+            row.name === this.props.order[index]
+            && row.bidAmount === String(currentRows[index]?.bidAmount || '')
+            && row.blindAmount === String(currentRows[index]?.blindAmount || '')
+          ));
+        this.safeSetState({
+          savedDraft: draft,
+          ...(currentMatchesDraft ? this.submissionSafetyFromDraft(draft) : {}),
+        });
+      }
+    } catch (error) {
+      console.error('Could not read Auction Basket draft:', error);
+    }
+  };
+
+  persistDraft = () => {
+    const key = this.getDraftKey();
+    if (!key || typeof window === 'undefined' || !window.localStorage) return;
+    try {
+      window.localStorage.setItem(key, serializeBasketDraft({
+        walletId: this.props.walletId,
+        network: this.props.network,
+        order: this.props.order,
+        items: this.props.items,
+        formState: {
+          step: this.state.step,
+          broadcastUncertain: this.state.broadcastUncertain,
+          submissionTxid: this.state.submissionTxid,
+          submissionError: this.state.submissionError,
+          submissionFailedStage: this.state.submissionFailedStage,
+        },
+      }));
+    } catch (error) {
+      console.error('Could not save Auction Basket draft:', error);
+    }
+  };
+
+  clearSavedDraft = () => {
+    const key = this.getDraftKey();
+    if (key && typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.removeItem(key);
+    }
+    this.safeSetState({savedDraft: null});
+  };
+
+  restoreSavedDraft = () => {
+    const draft = this.state.savedDraft;
+    if (!draft?.rows?.length) return;
+    this.props.importBasketRows(draft.rows, 'replace');
+    this.setState({
+      step: 'edit',
+      accepted: false,
+      ...this.submissionSafetyFromDraft(draft),
+    });
+  };
+
+  submissionSafetyFromDraft = draft => {
+    if (!draft?.formState?.broadcastUncertain) return {};
+    return {
+      submissionPhase: 'failed',
+      submissionError: draft.formState.submissionError
+        || 'The previous broadcast outcome is still uncertain.',
+      submissionFailedStage: draft.formState.submissionFailedStage || 'broadcasting',
+      submissionTxid: draft.formState.submissionTxid || '',
+      retryAllowed: false,
+      broadcastUncertain: true,
+    };
+  };
 
   safeSetState = (nextState, callback) => {
     if (this._mounted) this.setState(nextState, callback);
@@ -169,6 +296,106 @@ export class AuctionBasket extends Component {
     if (result.limited) {
       this.notifyBasketFull();
     }
+  };
+
+  previewCompleteBasket = async () => {
+    const rows = parseCompleteBasket(this.state.completePasteText, AUCTION_BASKET_LIMIT);
+    if (!rows.length) {
+      this.props.showError('No complete basket rows were found.');
+      return;
+    }
+    this.setState({importChecking: true, importPreview: rows});
+    const net = Network.get(this.props.network || 'main');
+    const checked = await Promise.all(rows.map(async row => {
+      if (row.errors.length) return row;
+      try {
+        const info = await nodeClient.getNameInfo(row.name);
+        const bidding = isBidding({
+          start: info.start,
+          info: info.info,
+          pendingOperation: this.props.names?.[row.name]?.pendingOperation,
+        });
+        const state = info.info?.state || (info.start ? 'AVAILABLE' : 'UNKNOWN');
+        return {
+          ...row,
+          auctionState: bidding ? 'BIDDING' : state,
+          hoursUntilReveal: info.info?.stats?.hoursUntilReveal,
+          height: info.info?.height != null ? info.info.height - 1 : null,
+          targetSpacing: net.pow.targetSpacing,
+          errors: bidding ? row.errors : [...row.errors, `Auction is ${String(state).toLowerCase()}, not bidding.`],
+        };
+      } catch (error) {
+        return {...row, auctionState: 'ERROR', errors: [...row.errors, error.message || 'Auction lookup failed.']};
+      }
+    }));
+    this.safeSetState({importPreview: checked, importChecking: false});
+  };
+
+  applyCompleteBasket = (mode) => {
+    const valid = this.state.importPreview.filter(row => row.errors.length === 0);
+    if (!valid.length) {
+      this.props.showError('No valid bidding rows are available to import.');
+      return;
+    }
+    let rows = valid;
+    if (mode === 'add') rows = rows.filter(row => !this.props.items[row.name]);
+    const currentCount = mode === 'replace' ? 0 : this.props.order.length;
+    if (currentCount + rows.length > AUCTION_BASKET_LIMIT) {
+      this.props.showError(`This import would exceed the ${AUCTION_BASKET_LIMIT}-name basket limit.`);
+      return;
+    }
+    if (!rows.length) {
+      this.props.showError('All valid imported names are already in the basket.');
+      return;
+    }
+    this.props.importBasketRows(rows, mode);
+    this.setState({
+      completePasteText: '',
+      importPreview: [],
+      showCompletePaste: false,
+      accepted: false,
+      step: 'edit',
+    });
+    this.props.showSuccess(`Imported ${rows.length} complete basket row(s).`);
+  };
+
+  copyText = async (text, message) => {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      textarea.remove();
+    }
+    this.props.showSuccess(message);
+  };
+
+  copyBasket = () => this.copyText(
+    basketToCSV(this.props.order, this.props.items),
+    'Basket copied as CSV.',
+  );
+
+  exportBasketCSV = () => {
+    const csv = basketToCSV(this.props.order, this.props.items);
+    const url = URL.createObjectURL(new Blob([csv], {type: 'text/csv;charset=utf-8'}));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `bob-auction-basket-${this.props.walletId || 'wallet'}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  csvForRows = rows => {
+    const items = {};
+    const order = [];
+    for (const row of rows) {
+      order.push(row.name);
+      items[row.name] = row;
+    }
+    return basketToCSV(order, items);
   };
 
   onAddFromWatchlist = async () => {
@@ -475,14 +702,17 @@ export class AuctionBasket extends Component {
   submissionAbortController = null;
 
   isSubmissionActive = () => [
-    'preparing',
+    'checking',
     'rescanning',
+    'building',
+    'signing',
     'broadcasting',
+    'verifying',
   ].includes(this.state.submissionPhase);
 
   onBackToBasket = () => {
     const preserveSafetyLock = this.state.broadcastUncertain;
-    if (['preparing', 'rescanning'].includes(this.state.submissionPhase)) {
+    if (['checking', 'rescanning', 'building', 'signing'].includes(this.state.submissionPhase)) {
       this.submissionRunId += 1;
       this.submissionAbortController?.abort();
     }
@@ -522,12 +752,13 @@ export class AuctionBasket extends Component {
     this.submissionAbortController = new AbortController();
     const signal = this.submissionAbortController.signal;
     this.setState({
-      submissionPhase: 'preparing',
+      submissionPhase: 'checking',
       submissionError: '',
       submissionFailedStage: '',
       submissionTxid: '',
       retryAllowed: false,
       broadcastUncertain: false,
+      activeAttemptId: '',
     });
 
     try {
@@ -570,18 +801,23 @@ export class AuctionBasket extends Component {
             retryAllowed: !!details.retryAllowed,
             broadcastUncertain: !!details.broadcastUncertain,
             submissionTxid: details.txid || this.state.submissionTxid,
+            activeAttemptId: details.attemptId || this.state.activeAttemptId,
           });
         },
       });
-      if (res?.txid && this._mounted && runId === this.submissionRunId) {
-        showSuccess(t('basketSubmitSuccess', String(entries.length)));
-        const tracking = analytics.track('auction basket bid', { count: entries.length });
-        if (tracking?.catch) tracking.catch(() => {});
-        this.setState({
-          submissionPhase: 'submitted',
-          submissionTxid: res.txid,
-          submittedCount: entries.length,
-        }, clearBasket);
+      if (res?.txid) {
+        this.clearSavedDraft();
+        clearBasket();
+        if (this._mounted && runId === this.submissionRunId) {
+          showSuccess(t('basketSubmitSuccess', String(entries.length)));
+          const tracking = analytics.track('auction basket bid', { count: entries.length });
+          if (tracking?.catch) tracking.catch(() => {});
+          this.setState({
+            submissionPhase: 'submitted',
+            submissionTxid: res.txid,
+            submittedCount: entries.length,
+          });
+        }
       }
     } catch (e) {
       if (e?.code === 'BASKET_SUBMISSION_CANCELLED') return;
@@ -650,6 +886,16 @@ export class AuctionBasket extends Component {
           </div>
         )}
 
+        {this.state.savedDraft?.rows?.length > 0 && step === 'edit' && !order.length && (
+          <div className="auction-basket__warn-box">
+            <strong>Previous basket draft available</strong>
+            <span>{this.state.savedDraft.rows.length} saved name(s) from {new Date(this.state.savedDraft.savedAt).toLocaleString()}.</span>
+            <button type="button" className="auction-basket__btn" onClick={this.restoreSavedDraft}>
+              Restore previous basket
+            </button>
+          </div>
+        )}
+
         {step === 'edit' ? this.renderEdit() : this.renderReview()}
 
         {!!order.length && step === 'edit' && (
@@ -688,11 +934,25 @@ export class AuctionBasket extends Component {
               type="button"
               className="auction-basket__btn auction-basket__btn--danger"
               onClick={() => {
+                this.clearSavedDraft();
                 this.props.clearBasket();
                 this.setState({ rowMeta: {}, step: 'edit' });
               }}
             >
               {t('basketClear')}
+            </button>
+            <button type="button" className="auction-basket__btn auction-basket__btn--secondary" onClick={this.copyBasket}>
+              Copy basket
+            </button>
+            <button type="button" className="auction-basket__btn auction-basket__btn--secondary" onClick={this.exportBasketCSV}>
+              Export CSV
+            </button>
+            <button
+              type="button"
+              className="auction-basket__btn auction-basket__btn--secondary"
+              onClick={() => this.setState({showSplit: !this.state.showSplit})}
+            >
+              Split into batches
             </button>
             <button
               type="button"
@@ -704,6 +964,8 @@ export class AuctionBasket extends Component {
             </button>
           </div>
         )}
+
+        {!!order.length && step === 'edit' && this.state.showSplit && this.renderSplitBatches()}
       </div>
     );
   }
@@ -742,6 +1004,13 @@ export class AuctionBasket extends Component {
             <button
               type="button"
               className="auction-basket__btn auction-basket__btn--secondary"
+              onClick={() => this.setState({showCompletePaste: !this.state.showCompletePaste})}
+            >
+              Paste complete basket
+            </button>
+            <button
+              type="button"
+              className="auction-basket__btn auction-basket__btn--secondary"
               onClick={this.onAddFromWatchlist}
             >
               {t('basketAddWatchlist')}
@@ -762,6 +1031,35 @@ export class AuctionBasket extends Component {
                 </button>
               </div>
             </>
+          )}
+
+          {this.state.showCompletePaste && (
+            <div className="auction-basket__complete-import">
+              <textarea
+                className="auction-basket__textarea"
+                placeholder={'name,true_bid,blind\nexample,1.5,2.5'}
+                value={this.state.completePasteText}
+                onChange={(e) => this.setState({completePasteText: e.target.value})}
+              />
+              <div className="auction-basket__actions">
+                <button
+                  type="button"
+                  className="auction-basket__btn"
+                  onClick={this.previewCompleteBasket}
+                  disabled={this.state.importChecking || !this.state.completePasteText.trim()}
+                >
+                  {this.state.importChecking ? 'Checking auctions…' : 'Preview complete basket'}
+                </button>
+                <button
+                  type="button"
+                  className="auction-basket__btn auction-basket__btn--secondary"
+                  onClick={() => this.setState({showCompletePaste: false, importPreview: []})}
+                >
+                  Cancel
+                </button>
+              </div>
+              {!!this.state.importPreview.length && this.renderImportPreview()}
+            </div>
           )}
         </section>
 
@@ -874,6 +1172,88 @@ export class AuctionBasket extends Component {
           )}
         </section>
       </>
+    );
+  }
+
+  renderImportPreview() {
+    const rows = this.state.importPreview;
+    const accepted = rows.filter(row => row.errors.length === 0);
+    const totalBid = accepted.reduce((sum, row) => sum + Number(row.bidAmount || 0), 0);
+    const totalBlind = accepted.reduce((sum, row) => sum + Number(row.blindAmount || 0), 0);
+    const totalLockup = accepted.reduce((sum, row) => sum + Number(row.lockupAmount || 0), 0);
+    const fee = accepted.length * (FEE_BUFFER_PER_NAME / 1e6);
+    const after = (this.props.spendableBalance / 1e6) - totalLockup - fee;
+
+    return (
+      <div className="auction-basket__import-preview">
+        <div className="auction-basket__summary">
+          <div className="auction-basket__stat"><label>Accepted rows</label><strong>{accepted.length}</strong></div>
+          <div className="auction-basket__stat"><label>Total true bids</label><strong>{totalBid.toFixed(6)} HNS</strong></div>
+          <div className="auction-basket__stat"><label>Total blinds</label><strong>{totalBlind.toFixed(6)} HNS</strong></div>
+          <div className="auction-basket__stat"><label>Total lockup</label><strong>{totalLockup.toFixed(6)} HNS</strong></div>
+          <div className="auction-basket__stat"><label>Estimated fees</label><strong>~{fee.toFixed(4)} HNS</strong></div>
+          <div className="auction-basket__stat"><label>Estimated spendable afterward</label><strong>{after.toFixed(6)} HNS</strong></div>
+        </div>
+        <div className="auction-basket__table-wrap">
+          <table className="auction-basket__table">
+            <thead><tr><th>Row</th><th>Name</th><th>True bid</th><th>Blind</th><th>Lockup</th><th>State</th><th>Time left</th><th>Validation</th></tr></thead>
+            <tbody>
+              {rows.map(row => (
+                <tr key={`${row.rowNumber}-${row.name}`}>
+                  <td>{row.rowNumber}</td>
+                  <td>{row.name || '—'}</td>
+                  <td>{row.bidAmount || '—'}</td>
+                  <td>{row.blindAmount || '—'}</td>
+                  <td>{row.lockupAmount || '—'}</td>
+                  <td>{row.auctionState || '—'}</td>
+                  <td>{this.formatTime(row.hoursUntilReveal)}</td>
+                  <td className={row.errors.length ? 'auction-basket__row-error' : ''}>
+                    {row.errors.length ? row.errors.join(' ') : 'Ready'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="auction-basket__actions">
+          <button type="button" className="auction-basket__btn" onClick={() => this.applyCompleteBasket('replace')} disabled={!accepted.length}>
+            {this.props.order.length ? 'Replace basket' : 'Import basket'}
+          </button>
+          {!!this.props.order.length && (
+            <button type="button" className="auction-basket__btn auction-basket__btn--secondary" onClick={() => this.applyCompleteBasket('add')} disabled={!accepted.length}>
+              Add only new names
+            </button>
+          )}
+          <button type="button" className="auction-basket__btn auction-basket__btn--secondary" onClick={() => this.setState({importPreview: []})}>Cancel</button>
+        </div>
+      </div>
+    );
+  }
+
+  renderSplitBatches() {
+    const batches = splitBasket(this.props.order, this.props.items, this.state.splitSize);
+    return (
+      <section className="auction-basket__panel">
+        <div className="auction-basket__panel-header">
+          <h3>Split basket</h3>
+          <select value={this.state.splitSize} onChange={event => this.setState({splitSize: Number(event.target.value)})}>
+            {[5, 10, 20].map(size => <option key={size} value={size}>{size} names per batch</option>)}
+          </select>
+        </div>
+        <p className="auction-basket__help">Splitting only prepares separate CSV groups. It never submits a transaction.</p>
+        {batches.map((rows, index) => (
+          <div className="auction-basket__split" key={index}>
+            <strong>Batch {index + 1}: {rows.length} name(s)</strong>
+            <button
+              type="button"
+              className="auction-basket__btn auction-basket__btn--secondary"
+              onClick={() => this.copyText(this.csvForRows(rows), `Batch ${index + 1} copied.`)}
+            >
+              Copy batch CSV
+            </button>
+          </div>
+        ))}
+      </section>
     );
   }
 
@@ -992,10 +1372,22 @@ export class AuctionBasket extends Component {
           </label>
         </div>
 
-        {['preparing', 'rescanning'].includes(this.state.submissionPhase) && (
+        {['checking', 'rescanning'].includes(this.state.submissionPhase) && (
           <div className="auction-basket__submission-status">
             <strong>Preparing auction data — no transaction has been sent.</strong>
-            <span>{this.state.submissionPhase === 'rescanning' ? 'Wallet rescan in progress.' : 'Checking auction and wallet data.'}</span>
+            <span>{this.state.submissionPhase === 'rescanning' ? 'Wallet rescan in progress.' : 'Checking auctions.'}</span>
+          </div>
+        )}
+        {this.state.submissionPhase === 'building' && (
+          <div className="auction-basket__submission-status">
+            <strong>Building transaction — no transaction has been sent.</strong>
+            <span>Bob is selecting coins and constructing the complete basket transaction.</span>
+          </div>
+        )}
+        {this.state.submissionPhase === 'signing' && (
+          <div className="auction-basket__submission-status">
+            <strong>Signing transaction — no transaction has been sent.</strong>
+            <span>The signed transaction will remain local until the explicit broadcast step begins.</span>
           </div>
         )}
         {this.state.submissionPhase === 'broadcasting' && (
@@ -1004,10 +1396,19 @@ export class AuctionBasket extends Component {
             <span>Retry is disabled while Bob confirms the transaction outcome.</span>
           </div>
         )}
+        {this.state.submissionPhase === 'verifying' && (
+          <div className="auction-basket__submission-status">
+            <strong>Verifying transaction…</strong>
+            <span>{this.state.submissionTxid || 'Checking local WalletDB and transaction history.'}</span>
+          </div>
+        )}
         {this.state.submissionPhase === 'failed' && (
           <div className="auction-basket__submission-status auction-basket__submission-status--error">
             <strong>Submission failed during {this.state.submissionFailedStage || 'preparation'}.</strong>
             <span>{this.state.submissionError}</span>
+            {!this.state.broadcastUncertain && ['checking', 'rescanning', 'building', 'signing'].includes(this.state.submissionFailedStage) && (
+              <span>No transaction was sent. Every basket entry remains saved and Retry is safe.</span>
+            )}
             {this.state.broadcastUncertain && (
               <span>Wallet history could not prove that no transaction was sent. Retry remains disabled to prevent a duplicate bid.</span>
             )}
@@ -1019,9 +1420,9 @@ export class AuctionBasket extends Component {
             type="button"
             className="auction-basket__btn auction-basket__btn--secondary"
             onClick={this.onBackToBasket}
-            disabled={this.state.submissionPhase === 'broadcasting'}
+            disabled={['broadcasting', 'verifying'].includes(this.state.submissionPhase)}
           >
-            {['preparing', 'rescanning'].includes(this.state.submissionPhase) ? 'Stop waiting' : 'Back to basket'}
+            {['checking', 'rescanning', 'building', 'signing'].includes(this.state.submissionPhase) ? 'Stop waiting' : 'Back to basket'}
           </button>
           <button
             type="button"
@@ -1053,6 +1454,8 @@ export default withRouter(
       spendableBalance: state.wallet.balance.spendable,
       watchOnly: state.wallet.watchOnly,
       walletType: state.wallet.type,
+      walletId: state.wallet.wid,
+      basketSubmissionProgress: state.wallet.basketSubmissionProgress,
       network: state.wallet.network || state.node.network,
       height: state.node.chain.height,
       watchingNames: state.watching.names || [],
@@ -1063,6 +1466,7 @@ export default withRouter(
       removeFromBasket: (name) => dispatch(removeFromBasket(name)),
       updateBasketItem: (name, patch) => dispatch(updateBasketItem(name, patch)),
       clearBasket: () => dispatch(clearBasket()),
+      importBasketRows: (rows, mode) => dispatch(importBasketRows(rows, mode)),
       sendBidMany: (entries, options) => dispatch(nameActions.sendBidMany(entries, options)),
       showError: (msg) => dispatch(showError(msg)),
       showSuccess: (msg) => dispatch(showSuccess(msg)),

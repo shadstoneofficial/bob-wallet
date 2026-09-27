@@ -4,6 +4,7 @@ const path = require('path');
 const {spawn} = require('child_process');
 
 const appPath = path.resolve(process.argv[2] || '');
+const smokeProfile = process.argv[3] || '';
 const executable = path.join(appPath, 'Contents', 'MacOS', 'Bob LearnHNS');
 
 if (process.platform !== 'darwin') throw new Error('Packaged macOS smoke test requires macOS.');
@@ -28,6 +29,7 @@ async function main() {
       BOB_PACKAGED_SMOKE_TEST: 'true',
       BOB_SMOKE_USER_DATA: userData,
       BOB_SMOKE_REPORT: reportPath,
+      BOB_SMOKE_PROFILE: smokeProfile,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -65,6 +67,10 @@ async function main() {
   ];
   const failed = required.filter(key => report[key] !== true);
   if (report.unhandledStartupRejection !== false) failed.push('unhandledStartupRejection');
+  if (smokeProfile === 'existing-p2p-spv') {
+    if (report.existingP2PSpvFixture !== true) failed.push('existingP2PSpvFixture');
+    if (report.localTransactionClientAbsent !== true) failed.push('localTransactionClientAbsent');
+  }
   if (result.code !== 0) failed.push(`exitCode=${result.code}`);
 
   if (failed.length) {

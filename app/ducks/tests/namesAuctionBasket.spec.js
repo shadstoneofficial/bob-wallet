@@ -26,7 +26,9 @@ function lifecycleDeps(overrides = {}) {
     getNameInfo: async () => ({info: {height: 101}}),
     importNames: async () => ({rescanStarted: true}),
     waitForSync: async () => {},
-    broadcast: async () => ({txid: 'basket-tx'}),
+    prepare: async (payload, attemptId) => ({attemptId, txid: 'basket-tx'}),
+    cancel: async () => ({cancelled: true, broadcastAttempted: false}),
+    broadcastPrepared: async () => ({txid: 'basket-tx'}),
     storeName: async () => {},
     refreshPending: async () => {},
     ...overrides,
@@ -45,7 +47,7 @@ test('basket rescan completes normally and submission continues exactly once', a
       return {};
     },
     waitForSync: async () => { syncWaits++; },
-    broadcast: async () => {
+    broadcastPrepared: async () => {
       broadcasts++;
       return {txid: 'normal-rescan-tx'};
     },
@@ -55,9 +57,12 @@ test('basket rescan completes normally and submission continues exactly once', a
   t.equal(broadcasts, 1, 'broadcasts exactly once');
   t.equal(result.txid, 'normal-rescan-tx', 'returns the transaction ID');
   t.deepEqual(phases, [
-    BID_SUBMISSION_PHASES.PREPARING,
+    BID_SUBMISSION_PHASES.CHECKING,
     BID_SUBMISSION_PHASES.RESCANNING,
+    BID_SUBMISSION_PHASES.BUILDING,
+    BID_SUBMISSION_PHASES.SIGNING,
     BID_SUBMISSION_PHASES.BROADCASTING,
+    BID_SUBMISSION_PHASES.VERIFYING,
     BID_SUBMISSION_PHASES.SUBMITTED,
   ], 'reports explicit lifecycle phases');
   t.end();
@@ -75,7 +80,7 @@ test('completed rescan is authoritative when the import RPC never resolves', asy
     },
     importNames: () => never,
     waitForSync: async () => {},
-    broadcast: async () => {
+    broadcastPrepared: async () => {
       broadcasts++;
       return {txid: 'hung-import-tx'};
     },
@@ -83,6 +88,88 @@ test('completed rescan is authoritative when the import RPC never resolves', asy
 
   t.equal(result.txid, 'hung-import-tx', 'continues after observed rescan completion');
   t.equal(broadcasts, 1, 'does not duplicate the submission');
+  t.end();
+});
+
+test('a delayed 20-name createbatch completes once without using the short request timeout', async t => {
+  const twenty = Array.from({length: 20}, (_, index) => ({
+    name: `name${index}`,
+    bid: 1000000,
+    lockup: 2000000,
+    height: 100,
+  }));
+  let prepares = 0;
+  let broadcasts = 0;
+  const phases = [];
+  const result = await submitBidManyLifecycle(twenty, lifecycleDeps({
+    prepare: async (payload, attemptId) => {
+      prepares++;
+      await new Promise(resolve => setTimeout(resolve, 20));
+      t.equal(payload.length, 20, 'keeps the supported 20-name transaction');
+      return {attemptId, txid: 'delayed-createbatch-tx', timings: {createbatch: 15000}};
+    },
+    broadcastPrepared: async () => {
+      broadcasts++;
+      return {txid: 'delayed-createbatch-tx'};
+    },
+  }), {preparationTimeoutMs: 100, onPhase: phase => phases.push(phase)});
+
+  t.equal(prepares, 1, 'constructs exactly once');
+  t.equal(broadcasts, 1, 'broadcasts exactly once');
+  t.equal(result.txid, 'delayed-createbatch-tx');
+  t.ok(phases.includes(BID_SUBMISSION_PHASES.BUILDING));
+  t.ok(phases.includes(BID_SUBMISSION_PHASES.SIGNING));
+  t.ok(phases.includes(BID_SUBMISSION_PHASES.VERIFYING));
+  t.end();
+});
+
+test('createbatch failure before signing is a safe retry without history proof', async t => {
+  let historyCalls = 0;
+  let broadcasts = 0;
+  try {
+    await submitBidManyLifecycle(entries, lifecycleDeps({
+      findTransactions: async () => { historyCalls++; return []; },
+      prepare: async () => {
+        const error = new Error('fetch failed while createbatch was running');
+        error.code = 'BASKET_BUILD_FAILED';
+        throw error;
+      },
+      broadcastPrepared: async () => { broadcasts++; return {txid: 'unexpected'}; },
+    }));
+    t.fail('building should fail');
+  } catch (error) {
+    t.equal(error.stage, BID_SUBMISSION_PHASES.BUILDING);
+    t.equal(error.retryAllowed, true);
+    t.equal(error.broadcastUncertain, false);
+  }
+  t.equal(historyCalls, 1, 'history is read only for the initial baseline');
+  t.equal(broadcasts, 0, 'sendrawtransaction is never attempted');
+  t.end();
+});
+
+test('cancelling while createbatch is running prevents a late broadcast', async t => {
+  const building = deferred();
+  const controller = new AbortController();
+  let cancels = 0;
+  let broadcasts = 0;
+  const submission = submitBidManyLifecycle(entries, lifecycleDeps({
+    prepare: () => building.promise,
+    cancel: async () => { cancels++; return {cancelled: true, broadcastAttempted: false}; },
+    broadcastPrepared: async () => { broadcasts++; return {txid: 'unexpected'}; },
+  }), {signal: controller.signal});
+
+  await Promise.resolve();
+  controller.abort();
+  try {
+    await submission;
+    t.fail('submission should be cancelled');
+  } catch (error) {
+    t.equal(error.code, 'BASKET_SUBMISSION_CANCELLED');
+  }
+  building.resolve({attemptId: 'late', txid: 'late'});
+  await Promise.resolve();
+  t.ok(cancels >= 1, 'background attempt is explicitly cancelled');
+  t.equal(broadcasts, 0, 'late preparation cannot broadcast');
   t.end();
 });
 
@@ -115,7 +202,7 @@ test('leaving during preparation cancels continuation without touching the baske
   t.end();
 });
 
-test('pre-broadcast timeout permits retry only after history verifies no transaction', async t => {
+test('pre-broadcast timeout permits retry because broadcast was structurally impossible', async t => {
   let auctionChecks = 0;
   let broadcasts = 0;
   try {
@@ -127,7 +214,7 @@ test('pre-broadcast timeout permits retry only after history verifies no transac
       },
       importNames: () => new Promise(() => {}),
       waitForSync: () => new Promise(() => {}),
-      broadcast: async () => { broadcasts++; return {txid: 'unexpected'}; },
+    broadcastPrepared: async () => { broadcasts++; return {txid: 'unexpected'}; },
     }), {preparationTimeoutMs: 10});
     t.fail('preparation should time out');
   } catch (error) {
@@ -143,7 +230,7 @@ test('ambiguous broadcast timeout never permits a duplicate retry', async t => {
   let broadcasts = 0;
   try {
     await submitBidManyLifecycle(entries, lifecycleDeps({
-      broadcast: () => {
+    broadcastPrepared: () => {
         broadcasts++;
         return new Promise(() => {});
       },

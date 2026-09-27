@@ -21,13 +21,21 @@ export function createBroadcastError(error, txid) {
     || /bad-txns-inputs-spent|inputs?[- ]spent|conflict|duplicate/i.test(reason);
 
   if (isConflict) {
-    return new Error(
+    const conflict = new Error(
       `Transaction ${txid} was rejected by the network and may conflict with another pending transaction. `
       + 'Wait for the earlier transaction to confirm, then retry.',
     );
+    conflict.code = 'ETXREJECTED';
+    conflict.txid = txid;
+    conflict.broadcastAttempted = true;
+    return conflict;
   }
 
-  return new Error(`Transaction ${txid} was not accepted by the network: ${reason}`);
+  const uncertain = new Error(`Transaction ${txid} was not accepted by the network: ${reason}`);
+  uncertain.code = 'ETXBROADCASTUNCERTAIN';
+  uncertain.txid = txid;
+  uncertain.broadcastAttempted = true;
+  return uncertain;
 }
 
 export function reserveTransactionInputs(wallet, mtx) {
