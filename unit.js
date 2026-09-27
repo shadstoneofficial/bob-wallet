@@ -50,6 +50,7 @@ require('./app/background/wallet/tests/transactionSafety.spec');
 require('./app/background/hnsInvestments/tests/balanceSnapshot.spec');
 require('./app/background/hnsInvestments/tests/nameSnapshot.spec');
 require('./app/background/node/tests/spvHelper.spec');
+require('./app/background/node/tests/clientLifecycle.spec');
 require('./app/ducks/tests/nodeReducer.spec');
 require('./app/deeplink/tests/index.spec');
 require('./app/utils/tests/paidNameTransfer.spec');

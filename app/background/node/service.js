@@ -50,10 +50,21 @@ const LEARNHNS_TEST_PORT_OFFSET = 1000;
 const TRANSACTION_TIMEOUT_MS = 120000;
 
 export class NodeService extends EventEmitter {
-  constructor() {
+  constructor({
+    connectionProvider = getConnection,
+    customRPCProvider = getCustomRPC,
+    nodeClientClass = NodeClient,
+  } = {}) {
     super();
 
     this.height = 0;
+    this.hsd = null;
+    this.client = null;
+    this.transactionClient = null;
+    this.connectionType = null;
+    this.connectionProvider = connectionProvider;
+    this.customRPCProvider = customRPCProvider;
+    this.nodeClientClass = nodeClientClass;
   }
 
   async getAPIKey() {
@@ -203,7 +214,11 @@ export class NodeService extends EventEmitter {
 
   async start(networkName) {
     await this.setNetworkAndNodeOptions(networkName);
-    const conn = await getConnection();
+    const conn = await this.connectionProvider();
+
+    if (this.connectionType && this.connectionType !== conn.type) {
+      await this.stop();
+    }
 
     switch (conn.type) {
       case ConnectionTypes.P2P:
@@ -234,6 +249,7 @@ export class NodeService extends EventEmitter {
             rsPort: this.getRsPort(),
           },
         });
+        this.connectionType = conn.type;
         break;
       case ConnectionTypes.Custom:
         await this.setCustomRPCClient();
@@ -251,6 +267,7 @@ export class NodeService extends EventEmitter {
             rsPort: this.getRsPort(),
           },
         });
+        this.connectionType = conn.type;
         break;
       default:
         throw new Error('Unknown connection type.');
@@ -380,13 +397,19 @@ export class NodeService extends EventEmitter {
   }
 
   async setHSDLocalClient() {
+    if (this.transactionClient) {
+      const staleTransactionClient = this.transactionClient;
+      this.transactionClient = null;
+      await staleTransactionClient.close();
+    }
+
     if (this.client) {
       // The app was restarted but the nodes are already running,
       // just re-dispatch to redux store.
       return this.refreshNodeInfo();
     }
 
-    this.client = new NodeClient({
+    this.client = new this.nodeClientClass({
       network: this.network,
       port: this.getRpcPort(),
       apiKey: this.apiKey,
@@ -395,20 +418,22 @@ export class NodeService extends EventEmitter {
     this.client.on('error', e => {
       console.error('nodeclient error', e);
     });
-    this.transactionClient.on('error', e => {
-      console.error('transaction nodeclient error', e);
-    });
 
     await this.client.open();
     await this.refreshNodeInfo()
   }
 
   async setCustomRPCClient() {
-    if (this.client) {
+    if (this.client && this.transactionClient) {
       // The app was restarted but the nodes are already running,
       // just re-dispatch to redux store.
       await this.refreshNodeInfo();
       this.emit('start remote');
+      return;
+    }
+
+    if (this.client || this.transactionClient) {
+      await this.closeRPCClients();
     }
 
     this.client = await this.createCustomRPCClient();
@@ -417,9 +442,19 @@ export class NodeService extends EventEmitter {
     this.client.on('error', e => {
       console.error('nodeclient error', e);
     });
+    this.transactionClient.on('error', e => {
+      console.error('transaction nodeclient error', e);
+    });
 
-    await this.client.open();
-    await this.transactionClient.open();
+    try {
+      await this.client.open();
+      await this.transactionClient.open();
+    } catch (error) {
+      await this.closeRPCClients().catch(closeError => {
+        console.error('failed to close custom RPC clients', closeError);
+      });
+      throw error;
+    }
     await this.refreshNodeInfo()
     this.client.bind('block connect', async () => this.refreshNodeInfo());
     this.emit('start remote', this.network);
@@ -443,7 +478,7 @@ export class NodeService extends EventEmitter {
   }
 
   async createCustomRPCClient(timeout = 30000) {
-    const rpc = await getCustomRPC();
+    const rpc = await this.customRPCProvider();
     const {
       protocol,
       port,
@@ -456,7 +491,7 @@ export class NodeService extends EventEmitter {
     // but overwrite the local getAPIKey() just in case.
     this.apiKey = apiKey;
 
-    return new NodeClient({
+    return new this.nodeClientClass({
       apiKey,
       ssl: protocol === 'https',
       host,
@@ -466,21 +501,46 @@ export class NodeService extends EventEmitter {
     });
   }
 
-  async stop() {
-    if (this.client)
-      await this.client.close();
-    if (this.transactionClient)
-      await this.transactionClient.close();
-
-    if (this.hsd)
-      await this.hsd.close();
-
-    this.hsd = null;
+  async closeRPCClients() {
+    const clients = [...new Set([this.client, this.transactionClient].filter(Boolean))];
     this.client = null;
     this.transactionClient = null;
+
+    let firstError = null;
+    for (const client of clients) {
+      try {
+        await client.close();
+      } catch (error) {
+        firstError = firstError || error;
+      }
+    }
+
+    if (firstError) throw firstError;
+  }
+
+  async stop() {
+    const hsd = this.hsd;
+    this.hsd = null;
+    this.connectionType = null;
     this.height = 0;
 
+    let firstError = null;
+    try {
+      await this.closeRPCClients();
+    } catch (error) {
+      firstError = error;
+    }
+
+    if (hsd) {
+      try {
+        await hsd.close();
+      } catch (error) {
+        firstError = firstError || error;
+      }
+    }
+
     this.emit('stopped');
+    if (firstError) throw firstError;
   }
 
   async reset() {
@@ -601,6 +661,13 @@ export class NodeService extends EventEmitter {
     return this.client.getTX(hash);
   }
 
+  getBroadcastClient(timeout) {
+    if (timeout >= TRANSACTION_TIMEOUT_MS && this.transactionClient) {
+      return this.transactionClient;
+    }
+    return this.client;
+  }
+
   async broadcastRawTx(tx, {timeout = TRANSACTION_TIMEOUT_MS} = {}) {
     const storagePath = await this.getDir();
     await storageHealth.preflight(storagePath, {
@@ -631,9 +698,7 @@ export class NodeService extends EventEmitter {
         return txid;
       }
 
-      const client = timeout >= TRANSACTION_TIMEOUT_MS && this.transactionClient
-        ? this.transactionClient
-        : this.client;
+      const client = this.getBroadcastClient(timeout);
       await client.broadcast(tx);
       return txid;
     } catch (error) {

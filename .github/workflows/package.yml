@@ -136,7 +136,7 @@ jobs:
         shell: bash
         run: |
           app_path="release/${{ matrix.platform.app_dir }}/Bob LearnHNS.app"
-          node scripts/smoke-packaged-macos.js "${app_path}"
+          node scripts/smoke-packaged-macos.js "${app_path}" existing-p2p-spv
 
       - name: Generate checksums
         shell: bash

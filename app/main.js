@@ -9,6 +9,7 @@ import path from 'path';
 
 const DEEPLINK_PROTOCOLS = new Set(['bob:', 'bob-learnhns:']);
 const isPackagedSmokeTest = process.env.BOB_PACKAGED_SMOKE_TEST === 'true';
+const packagedSmokeProfile = process.env.BOB_SMOKE_PROFILE || '';
 let Sentry = null;
 let earlyStartupError = null;
 let runtimeModules = null;
@@ -160,12 +161,47 @@ if (isPrimaryInstance) {
   const handleUnhandledStartupRejection = reason => showStartupErrorAndQuit(reason);
   process.on('unhandledRejection', handleUnhandledStartupRejection);
 
-  async function runPackagedSmokeTest(firstWindow) {
+  async function waitForSmokeCondition(check, timeoutMs = 60000) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (check()) return true;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    return false;
+  }
+
+  async function preparePackagedSmokeFixture(services) {
+    if (!isPackagedSmokeTest || packagedSmokeProfile !== 'existing-p2p-spv') return;
+
+    const fs = require('fs');
+    const hsdDir = path.join(app.getPath('userData'), 'existing-hsd-profile');
+    fs.mkdirSync(hsdDir, {recursive: true});
+
+    await services.db.put('connection_type', 'P2P');
+    await services.db.put('network', 'regtest');
+    await services.db.put('nodeSpvMode', '1');
+    await services.db.put('nodeNoDns1', '1');
+    await services.db.put('nodeApiKey', 'packaged-smoke-node-api-key');
+    await services.db.put('walletApiKey', 'packaged-smoke-wallet-api-key');
+    await services.db.put('hsdPrefixDir', hsdDir);
+    await services.db.put('regtest-hsd-4.0.0-migrate-spv', true);
+  }
+
+  async function runPackagedSmokeTest(firstWindow, services) {
     if (!isPackagedSmokeTest) return;
     const fs = require('fs');
     const reportPath = process.env.BOB_SMOKE_REPORT;
     const firstReady = await runtimeModules.waitForMainWindowReady(0, 60000);
     const firstRendererPid = firstReady.window.webContents.getOSProcessId();
+    const expectsExistingP2PSpv = packagedSmokeProfile === 'existing-p2p-spv';
+    const nodeService = services.node.service;
+    const localNodeStarted = !expectsExistingP2PSpv || await waitForSmokeCondition(() => (
+      nodeService.connectionType === 'P2P'
+      && nodeService.networkName === 'regtest'
+      && nodeService.spv === true
+      && Boolean(nodeService.hsd)
+      && Boolean(nodeService.client)
+    ));
     await new Promise(resolve => setTimeout(resolve, 1000));
     const closed = new Promise(resolve => firstWindow.once('closed', resolve));
     firstWindow.close();
@@ -183,6 +219,8 @@ if (isPrimaryInstance) {
       dockReopenLoaded: secondReady.generation > firstReady.generation,
       secondRendererProcessStarted: secondReady.window.webContents.getOSProcessId() > 0,
       unhandledStartupRejection: false,
+      existingP2PSpvFixture: !expectsExistingP2PSpv || localNodeStarted,
+      localTransactionClientAbsent: !expectsExistingP2PSpv || nodeService.transactionClient === null,
     };
     if (reportPath) fs.writeFileSync(reportPath, JSON.stringify(report));
     app.quit();
@@ -222,6 +260,7 @@ if (isPrimaryInstance) {
     const server = services.ipc.start();
     services.logger.start(server);
     await services.db.start(server);
+    await preparePackagedSmokeFixture(services);
     await services.node.start(server);
     await services.storage.start(server);
     await services.wallet.start(server);
@@ -275,7 +314,7 @@ if (isPrimaryInstance) {
     const menuBuilder = new runtimeModules.MenuBuilder();
     menuBuilder.buildMenu();
 
-    await runPackagedSmokeTest(firstWindow);
+    await runPackagedSmokeTest(firstWindow, services);
   }
 
   app.on('ready', () => {
