@@ -8,6 +8,7 @@ export const INCREMENT_IDLE = 'app/wallet/incrementIdle';
 export const RESET_IDLE = 'app/wallet/resetIdle';
 export const SET_MAX_IDLE = 'app/wallet/setMaxIdle';
 export const SET_PENDING_TRANSACTIONS = 'app/wallet/setPendingTransactions';
+export const SET_PENDING_TRANSACTIONS_WARNING = 'app/wallet/setPendingTransactionsWarning';
 export const START_SYNC_WALLET = 'app/wallet/startSyncWallet';
 export const STOP_SYNC_WALLET = 'app/wallet/stopSyncWallet';
 export const SYNC_WALLET_PROGRESS = 'app/wallet/syncWalletProgress';
@@ -67,6 +68,7 @@ export function getInitialState() {
       broadcastAttempted: false,
       timings: {},
     },
+    pendingTransactionsWarning: null,
     requestGeneration: 0,
     requestWallet: '',
     m: null,
@@ -110,6 +112,7 @@ export default function walletReducer(state = getInitialState(), {type, payload}
         requestGeneration: state.requestGeneration + 1,
         requestWallet: payload || state.wid,
         isFetching: false,
+        pendingTransactionsWarning: null,
       };
     case SET_BALANCE:
       return {
@@ -216,6 +219,11 @@ export default function walletReducer(state = getInitialState(), {type, payload}
           ...state.basketSubmissionProgress,
           ...payload,
         },
+      };
+    case SET_PENDING_TRANSACTIONS_WARNING:
+      return {
+        ...state,
+        pendingTransactionsWarning: payload,
       };
     default:
       return state;

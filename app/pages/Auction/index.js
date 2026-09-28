@@ -28,10 +28,15 @@ import { showError, showSuccess } from '../../ducks/notifications';
 import VickreyProcess from './VickreyProcess';
 import BidHistory from './BidHistory';
 import Records from '../../components/Records';
+import Alert from '../../components/Alert';
 import './domains.scss';
 import { clientStub as aClientStub } from '../../background/analytics/client';
 import NameClaimModal from "../../components/NameClaimModal";
 import {I18nContext} from "../../utils/i18n";
+import {
+  hasPendingMetadataWarning,
+  normalizeAuctionDomain,
+} from '../../utils/auctionDomain';
 
 const Sentry = require('@sentry/electron/renderer');
 
@@ -41,11 +46,16 @@ const analytics = aClientStub(() => require('electron').ipcRenderer);
 @connect(
   (state, ownProps) => {
     const {name} = ownProps.match.params;
+    const domain = normalizeAuctionDomain(state.names[name]);
     return {
-      domain: state.names[name],
+      domain,
       chain: state.node.chain,
       explorer: state.node.explorer,
       walletRequestGeneration: state.wallet.requestGeneration || 0,
+      pendingTransactionsWarning: hasPendingMetadataWarning(
+        domain,
+        state.wallet.pendingTransactionsWarning,
+      ),
     };
   },
   dispatch => ({
@@ -76,12 +86,14 @@ export default class Auction extends Component {
     chain: PropTypes.object,
     explorer: PropTypes.object.isRequired,
     walletRequestGeneration: PropTypes.number.isRequired,
+    pendingTransactionsWarning: PropTypes.bool.isRequired,
   };
 
   state = {
     isShowingClaimModal: false,
     isLoading: false,
     loadError: '',
+    pendingMetadataWarning: false,
   };
 
   isMountedForRequests = false;
@@ -124,13 +136,13 @@ export default class Auction extends Component {
     this.loadController = new AbortController();
     const {signal} = this.loadController;
     if (this.isMountedForRequests) {
-      this.setState({isLoading: true, loadError: ''});
+      this.setState({isLoading: true, loadError: '', pendingMetadataWarning: false});
     }
 
     try {
       await this.props.getNameInfo(this.getDomain(), {signal});
       if (!this.isMountedForRequests || request !== this.loadGeneration) return;
-      await this.props.fetchPendingTransactions();
+      this.setState({isLoading: false});
     } catch (e) {
       if (!this.isMountedForRequests || request !== this.loadGeneration) return;
       if (e.code === 'STALE_WALLET_REQUEST' || signal.aborted) return;
@@ -139,10 +151,20 @@ export default class Auction extends Component {
       const message = e.message || 'Something went wrong fetching this name.';
       this.setState({loadError: message});
       this.props.showError(`${message} Please try again.`);
-    } finally {
       if (this.isMountedForRequests && request === this.loadGeneration) {
         this.setState({isLoading: false});
       }
+      return;
+    }
+
+    try {
+      await this.props.fetchPendingTransactions();
+    } catch (e) {
+      if (!this.isMountedForRequests || request !== this.loadGeneration) return;
+      if (e.code === 'STALE_WALLET_REQUEST' || signal.aborted) return;
+      console.error('Could not load pending auction metadata.', e);
+      Sentry.captureException(e);
+      this.setState({pendingMetadataWarning: true});
     }
   };
 
@@ -216,6 +238,13 @@ export default class Auction extends Component {
               className="domains__content__title__explorer-open-icon"
               onClick={viewOnExplorer} />
           </div>
+          {(this.props.pendingTransactionsWarning || this.state.pendingMetadataWarning) && (
+            <Alert
+              type="warning"
+              message={this.context.t('pendingAuctionMetadataWarning')}
+              className="domains__content__pending-warning"
+            />
+          )}
           <div className="domains__content__info-wrapper">
             <div className="domains__content__info-panel">
               {this.renderAuctionDetails()}
@@ -260,14 +289,10 @@ export default class Auction extends Component {
   maybeRenderCollapsibles() {
     const {t} = this.context;
     const domain = this.props.domain || {};
-    const {bids, reveals, pendingOperation, pendingOperationMeta} = domain;
+    const {bids = [], reveals = [], pendingOperationMeta = {bids: []}} = domain;
+    const bidsIncludingPending = [...pendingOperationMeta.bids, ...bids];
 
-    const bidsIncludingPending =
-      (pendingOperation === 'BID') ?
-        [...pendingOperationMeta.bids, ...bids]
-        : bids;
-
-    const bidsOrReveals = domain.bids || domain.reveals || [];
+    const bidsOrReveals = bidsIncludingPending.length ? bidsIncludingPending : reveals;
     const pillContent = bidsOrReveals.length === 1 ? `${bidsOrReveals.length} bid` : `${bidsOrReveals.length} bids`;
 
     if (isAvailable(domain) || isOpening(domain) || isBidding(domain) || isReveal(domain) || isClosed(domain)) {
