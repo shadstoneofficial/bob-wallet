@@ -59,36 +59,6 @@
     }
   }
 
-  &__migration {
-    width: 100%;
-    box-sizing: border-box;
-    margin-top: 1rem;
-    padding: .75rem;
-    border: 1px solid rgba($azure-blue, .25);
-    border-radius: 8px;
-    background: rgba($azure-blue, .04);
-
-    &__title {
-      color: $dark-grey;
-      font-size: .78rem;
-      font-weight: 700;
-      margin-bottom: .35rem;
-    }
-
-    &__body {
-      color: $manatee-gray;
-      font-size: .68rem;
-      line-height: 1rem;
-      margin-bottom: .5rem;
-    }
-
-    &__link {
-      text-align: center;
-      font-size: .68rem;
-      font-weight: 600;
-    }
-  }
-
   &__footer {
     @extend %col-nowrap;
 

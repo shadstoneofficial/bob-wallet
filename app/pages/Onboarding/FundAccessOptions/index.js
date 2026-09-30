@@ -2,7 +2,6 @@ import React, { Component } from 'react';
 import { withRouter, Link } from 'react-router-dom';
 import { connect } from 'react-redux';
 import PropTypes from 'prop-types';
-import Anchor from '../../../components/Anchor';
 import './access.scss';
 import {I18nContext} from "../../../utils/i18n";
 
@@ -28,19 +27,6 @@ class FundAccessOptions extends Component {
           </div>
           <div className="funding-options__content__body-text">
             {t('obMainBody')}
-          </div>
-          <div className="funding-options__migration">
-            <div className="funding-options__migration__title">
-              {t('obMigrationTitle')}
-            </div>
-            <div className="funding-options__migration__body">
-              {t('obMigrationBody')}
-            </div>
-            <div className="funding-options__migration__link">
-              <Anchor href="https://bobwallet.org/docs/migrate-to-bob-learnhns">
-                {t('obMigrationReadGuide')}
-              </Anchor>
-            </div>
           </div>
         </div>
         <div className="funding-options__footer">
