@@ -48,6 +48,9 @@ class ImportSeedWarning extends Component {
               {t('obImportWarningText')}
             </span>
           </div>
+          <div className="import_restore_scope_note">
+            {t('obImportRestoreScope')}
+          </div>
           <div className="import_user_input">
             <span className="import_checkbox_container">
               <Checkbox

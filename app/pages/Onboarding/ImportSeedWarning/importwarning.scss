@@ -33,6 +33,15 @@
   color: $manatee-gray;
 }
 
+.import_restore_scope_note {
+  @extend %h5;
+  margin-top: 0.75rem;
+  padding: 0.65rem;
+  border-radius: 6px;
+  background: rgba($azure-blue, 0.06);
+  color: $manatee-gray;
+}
+
 .import-learn-more-text {
   @extend %h4;
   @extend %link;
