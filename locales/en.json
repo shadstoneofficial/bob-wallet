@@ -587,6 +587,7 @@
   "obImportOption2Title": "Import Your xpriv",
   "obImportOption3Tip": "A master key file that is encrypted with a password.",
   "obImportOption3Title": "Import Your Master Key File",
+  "obImportRestoreScope": "Importing a seed or key restores on-chain wallet activity after scanning. It does not restore local settings, watchlists, or Marketplace listing files. Keep the old app and your Marketplace backups until you verify the restored wallet.",
   "obImportOptionHeader": "How would you like to access your Handshake wallet?",
   "obImportSeedCTA": "Unlock Wallet",
   "obImportSeedHeaderMaster": "Import your master key",
