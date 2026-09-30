@@ -3,16 +3,8 @@ import { withRouter, Link } from 'react-router-dom';
 import { connect } from 'react-redux';
 import PropTypes from 'prop-types';
 import Anchor from '../../../components/Anchor';
-import CopyButton from '../../../components/CopyButton';
 import './access.scss';
 import {I18nContext} from "../../../utils/i18n";
-
-const MIGRATE_ORIGINAL_BOB_COMMAND = `SRC="$HOME/Library/Application Support/Bob"
-DST="$HOME/Library/Application Support/Bob LearnHNS"
-[ -d "$SRC" ] || { echo "Original Bob data not found: $SRC"; exit 1; }
-[ -d "$DST" ] && ditto "$DST" "$DST backup $(date +%Y%m%d-%H%M%S)"
-ditto "$SRC" "$DST"
-echo "Copied Bob wallet data to Bob LearnHNS. Reopen Bob LearnHNS."`;
 
 class FundAccessOptions extends Component {
   static propTypes = {
@@ -44,14 +36,6 @@ class FundAccessOptions extends Component {
             <div className="funding-options__migration__body">
               {t('obMigrationBody')}
             </div>
-            <pre className="funding-options__migration__command">
-              {MIGRATE_ORIGINAL_BOB_COMMAND}
-            </pre>
-            <CopyButton
-              className="funding-options__migration__copy"
-              content={MIGRATE_ORIGINAL_BOB_COMMAND}
-              btnText={t('obMigrationCopyCommand')}
-            />
             <div className="funding-options__migration__link">
               <Anchor href="https://bobwallet.org/docs/migrate-to-bob-learnhns">
                 {t('obMigrationReadGuide')}
