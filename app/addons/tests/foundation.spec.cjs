@@ -122,9 +122,8 @@ function testCatalogCompatibility() {
 }
 
 function testExamplesAreContractsOnly() {
-  assert.equal(BUILTIN_ADDON_MANIFESTS.length, 3);
+  assert.equal(BUILTIN_ADDON_MANIFESTS.length, 4);
   assert.deepEqual(EXAMPLE_ADDON_MANIFESTS.map(item => item.id), [
-    'shakex',
     'bob-name-quest',
     'bob-system-dns',
   ]);
@@ -141,7 +140,13 @@ function testExamplesAreContractsOnly() {
   assert(resolver.capabilities.includes('resolver.requestSystemDnsControl'));
   assert.deepEqual(resolver.origins, []);
 
-  const shakex = EXAMPLE_ADDON_MANIFESTS.find(item => item.id === 'shakex');
+  const shakex = builtInAddonRegistry.get('shakex');
+  assert.equal(shakex.version, '1.0.0');
+  assert.equal(shakex.entry.kind, 'trusted-bundled-route');
+  assert.deepEqual(shakex.networks, ['main']);
+  assert(shakex.capabilities.includes('external.openUrl'));
+  assert(shakex.capabilities.includes('names.proposeRecordUpdate'));
+  assert.equal(shakex.capabilities.includes('names.reviewPaidTransfer'), false);
   assert.equal(shakex.entry.route, '/addons/shakex');
   assert.deepEqual(shakex.origins, ['https://shakex.fun']);
 }

@@ -1065,12 +1065,34 @@ export const revokeName = (name) => async (dispatch) => {
   return await walletClient.revokeName(name);
 };
 
-export const sendUpdate = (name, json) => async (dispatch) => {
-  await new Promise((resolve, reject) => {
-    dispatch(getPassphrase(resolve, reject));
-  });
-  await namesDb.storeName(name);
-  const res = await walletClient.sendUpdate(name, json);
-  await dispatch(fetchPendingTransactions());
+// Keep the asynchronous ordering testable without replacing immutable module
+// exports. assertCurrent is synchronous and runs directly before send().
+export async function submitNameUpdate(name, json, {
+  unlock, assertCurrent, beforeSend, storeName, send, refreshPending,
+}) {
+  await unlock();
+  assertCurrent();
+  if (beforeSend) await beforeSend();
+  assertCurrent();
+  await storeName(name);
+  assertCurrent();
+  const res = await send(name, json);
+  await refreshPending();
   return res;
+}
+
+export const sendUpdate = (name, json, beforeSend, assertReviewContext) => async (dispatch, getState) => {
+  const {wid, requestGeneration = 0} = getState().wallet;
+  const assertCurrent = () => {
+    if (!isCurrentWalletRequest(getState, requestGeneration, wid)) throw staleWalletRequestError();
+    if (assertReviewContext) assertReviewContext();
+  };
+  return submitNameUpdate(name, json, {
+    unlock: () => new Promise((resolve, reject) => dispatch(getPassphrase(resolve, reject))),
+    assertCurrent,
+    beforeSend,
+    storeName: namesDb.storeName,
+    send: (name, resource) => walletClient.sendUpdate(name, resource),
+    refreshPending: () => dispatch(fetchPendingTransactions()),
+  });
 };

@@ -1,0 +1,23 @@
+@import '../../variables.scss';
+.shakex-addon {
+  max-width: 64rem;
+  line-height: 1.5;
+  p, li, small { overflow-wrap: anywhere; }
+  &__actions { display: flex; flex-wrap: wrap; gap: .6rem; margin: 1rem 0; }
+  button { @extend %btn-secondary; width: auto; padding: .65rem 1rem; }
+  button:disabled { opacity: .6; cursor: wait; }
+  &__notice { border-left: 3px solid $azure-blue; padding: .6rem 1rem; background: rgba($azure-blue, .06); }
+  label { display: block; margin: 1rem 0; }
+  input { display: block; box-sizing: border-box; width: 100%; max-width: 30rem; padding: .7rem; margin-top: .4rem; border: 1px solid $manatee-gray; border-radius: .4rem; }
+  &__list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); gap: 1rem; }
+  article { min-width: 0; padding: 1rem; border: 1px solid rgba($manatee-gray, .4); border-radius: .5rem; user-select: text; }
+  h3 { margin: 0; overflow-wrap: anywhere; }
+  ul { padding-left: 1.25rem; }
+}
+body.bob-theme-dark .shakex-addon {
+  color: #e6edf3;
+  input { background: #0d1117; color: #e6edf3; }
+  article { background: #151b23; }
+}
+
+body.bob-theme-dark .shakex-addon a { color: #8ab4ff; }

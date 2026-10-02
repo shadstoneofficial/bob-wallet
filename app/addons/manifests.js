@@ -1,7 +1,9 @@
+import {SHAKEX_MANIFEST} from './shakex/manifest';
 import {LIQUIDITY_ADDON_NAME} from '../constants/liquiditySpotChannels';
 import {AddonRegistry, createCatalogEntries, validateManifest} from './foundation';
 
 const BUILTIN_ADDON_MANIFESTS = Object.freeze([
+  SHAKEX_MANIFEST,
   {
     schemaVersion: 1,
     id: 'shakedex-marketplace',

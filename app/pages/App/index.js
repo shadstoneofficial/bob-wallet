@@ -43,6 +43,7 @@ import Exchange from '../Exchange';
 import SignMessage from "../SignMessage";
 import VerifyMessage from "../VerifyMessage";
 import Addons from '../Addons';
+import ShakeX from '../../addons/shakex';
 import Messages from '../Messages';
 import {fetchLocale, fetchTheme, fetchShowUsdValue, initHip2, checkForUpdates} from "../../ducks/app";
 import Multisig from "../Multisig";
@@ -305,6 +306,12 @@ class App extends Component {
             wallets={wallets}
             path="/exchange"
             render={this.routeRenderer(t('headingExchange'), Exchange, true)}
+          />
+          <ProtectedRoute
+            isLocked={isLocked}
+            wallets={wallets}
+            path="/addons/shakex"
+            render={this.routeRenderer('ShakeX', ShakeX)}
           />
           <ProtectedRoute
             isLocked={isLocked}

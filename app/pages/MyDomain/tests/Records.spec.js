@@ -48,6 +48,7 @@ function makeRecords(overrides = {}) {
     const value = typeof update === 'function' ? update(component.state, component.props) : update;
     component.state = {...component.state, ...value};
   };
+  component.componentDidMount();
   return {component, sendCalls: () => sendCalls, loadCalls: () => loadCalls};
 }
 
@@ -220,5 +221,188 @@ test('Records submit rechecks canonical state before invoking the wallet action'
   await subject.component.sendUpdate();
   t.equal(subject.loadCalls(), 1, 'canonical state is fetched again');
   t.equal(subject.sendCalls(), 1, 'submit invokes the existing wallet action only after the check');
+  t.end();
+});
+
+
+test('ShakeX listing stages review without sending', async t => {
+  let current = '00';
+  const {component, sendCalls} = makeRecords({
+    async loadCanonicalNameInfo() { return {info: {data: current}}; },
+  });
+  await component.onStageSale({price: '5000', contact: 'X @alice'});
+  t.equal(sendCalls(), 0, 'staging never sends a transaction');
+  t.equal(component.state.importReview.kind, 'shakex', 'uses sale review');
+  t.equal(component.state.updatedResource.records.length, 2, 'stages price and contact');
+  t.ok(component.state.isDirty, 'requires explicit submit');
+  t.end();
+});
+
+test('ShakeX listing rejects dirty drafts and pending transfers', async t => {
+  const dirty = makeRecords();
+  dirty.component.state.isDirty = true;
+  await dirty.component.onStageSale({contact: 'X @alice'});
+  t.equal(dirty.loadCalls(), 0, 'does not overwrite a dirty draft');
+  const transferring = makeRecords({transferring: true});
+  await transferring.component.onStageSale({contact: 'X @alice'});
+  t.equal(transferring.loadCalls(), 0, 'does not stage during a transfer');
+  const valid = makeRecords();
+  await valid.component.onStageSale({contact: 'X @alice'});
+  await valid.component.sendUpdate();
+  t.equal(valid.sendCalls(), 1, 'explicit submit uses existing wallet action');
+  t.end();
+});
+
+
+for (const mode of [
+  {label: 'watch-only', watchOnly: true, type: 'pubkeyhash'},
+  {label: 'hardware-backed watch-only', watchOnly: true, type: 'pubkeyhash', hardware: true},
+  {label: 'multisig', watchOnly: false, type: 'multisig', m: 2, n: 3},
+]) {
+  test(`ShakeX ${mode.label} fixture stages only for owner and delegates explicit submit`, async t => {
+    const subject = makeRecords({...mode});
+    await subject.component.onStageSale({price: '5000', contact: 'X @alice'});
+    t.equal(subject.sendCalls(), 0, 'staging does not sign or submit');
+    t.equal(subject.component.state.importReview.kind, 'shakex');
+    await subject.component.sendUpdate();
+    t.equal(subject.sendCalls(), 1, 'explicit submit delegates to the existing host action');
+    const denied = makeRecords({...mode, domain: {isOwner: false}});
+    await denied.component.onStageSale({contact: 'X @alice'});
+    t.equal(denied.loadCalls(), 0, 'non-owner cannot stage');
+    t.equal(denied.sendCalls(), 0);
+    t.end();
+  });
+}
+
+function deferred() {
+  let resolve, reject;
+  const promise = new Promise((yes, no) => {resolve = yes; reject = no;});
+  return {promise, resolve, reject};
+}
+
+function changeContext(component, changes) {
+  component.props = {...component.props, ...changes};
+  component.state = {...component.state, ...Records.getDerivedStateFromProps(component.props, component.state)};
+}
+
+for (const fails of [false, true]) {
+  test(`ShakeX staging ignores ${fails ? 'failed' : 'successful'} lookup after unmount`, async t => {
+    const lookup = deferred();
+    const subject = mountRecords({loadCanonicalNameInfo: () => lookup.promise});
+    const component = subject.wrapper.instance();
+    const pending = component.onStageSale({contact: 'X @alice'});
+    subject.wrapper.unmount();
+    let updates = 0;
+    component.setState = () => updates++;
+    if (fails) lookup.reject(new Error('old lookup failed')); else lookup.resolve({info: {data: '00'}});
+    await pending;
+    t.equal(updates, 0, 'no stale success/error/finally updates');
+    t.end();
+  });
+}
+
+test('ShakeX old staging error cannot clear a new wallet draft operation', async t => {
+  const oldLookup = deferred(), newLookup = deferred();
+  let calls = 0;
+  const {component} = makeRecords({walletId: 'a', loadCanonicalNameInfo: () => (++calls === 1 ? oldLookup.promise : newLookup.promise)});
+  const oldStage = component.onStageSale({contact: 'old'});
+  component.state = {...component.state, isUpdating: true, isRefreshingRecords: true, errorMessage: 'old error'};
+  changeContext(component, {walletId: 'b', walletGeneration: 2});
+  t.equal(component.state.isImporting, false);
+  t.equal(component.state.isUpdating, false);
+  t.equal(component.state.isRefreshingRecords, false);
+  t.equal(component.state.errorMessage, '');
+  const newStage = component.onStageSale({contact: 'new'});
+  oldLookup.reject(new Error('old lookup failed'));
+  await oldStage;
+  t.equal(component.state.isImporting, true, 'old finally does not clear newer busy state');
+  t.equal(component.state.errorMessage, '', 'old error is suppressed');
+  newLookup.resolve({info: {data: '00'}});
+  await newStage;
+  t.equal(component.state.importReview.afterResource.records[0].txt[0], 'v=FORSALE1;ftxt=new');
+  t.equal(component.state.isImporting, false);
+  t.end();
+});
+
+for (const boundary of ['canonical', 'unlock']) {
+  for (const transition of ['unmount', 'wallet-switch', 'switch-back']) {
+    test(`ShakeX submit blocks ${boundary} continuation after ${transition}`, async t => {
+      const gate = deferred(), entered = deferred();
+      let broadcasts = 0, calls = 0;
+      const {component} = makeRecords({walletId: 'a', walletGeneration: 1,
+        async sendUpdate(name, resource, review, assertActive) {
+          calls++;
+          entered.resolve();
+          await gate.promise;
+          await review();
+          assertActive();
+          broadcasts++;
+          return null;
+        },
+      });
+      await component.onStageSale({contact: 'alice'});
+      if (boundary === 'canonical') component.props.loadCanonicalNameInfo = () => {entered.resolve(); return gate.promise;};
+      const pending = component.sendUpdate();
+      await entered.promise;
+      if (transition === 'unmount') component.componentWillUnmount();
+      else {
+        changeContext(component, {walletId: 'b', walletGeneration: 2});
+        if (transition === 'switch-back') changeContext(component, {walletId: 'a', walletGeneration: 1});
+      }
+      let updates = 0;
+      component.setState = () => updates++;
+      gate.resolve({info: {data: '00'}});
+      await pending;
+      t.equal(broadcasts, 0, 'no wallet broadcast');
+      t.equal(calls, boundary === 'canonical' ? 0 : 1, 'host entered only after canonical preflight');
+      t.equal(updates, 0, 'stale completion/error does not touch current UI');
+      t.end();
+    });
+  }
+}
+
+for (const transition of ['unmount', 'wallet-switch']) {
+  test(`ShakeX already-sent completion is ignored after ${transition}`, async t => {
+    const result = deferred(), sent = deferred();
+    let broadcasts = 0, success = 0;
+    const {component} = makeRecords({walletId: 'a',
+      showSuccess: () => success++,
+      async sendUpdate(name, resource, review, assertActive) {
+        await review();
+        assertActive();
+        broadcasts++;
+        sent.resolve();
+        return result.promise;
+      },
+    });
+    await component.onStageSale({contact: 'alice'});
+    const pending = component.sendUpdate();
+    await sent.promise;
+    if (transition === 'unmount') component.componentWillUnmount();
+    else changeContext(component, {walletId: 'b', walletGeneration: 2});
+    let updates = 0;
+    component.setState = () => updates++;
+    result.resolve({hash: 'already sent'});
+    await pending;
+    t.equal(broadcasts, 1, 'already-sent transaction is not aborted or retried');
+    t.equal(updates, 0, 'new UI state is untouched');
+    t.equal(success, 0, 'no success toast in a stale context');
+    t.end();
+  });
+}
+
+test('activation import ignores a file dialog result after context changes', async t => {
+  const dialog = deferred();
+  let reads = 0;
+  const {component} = makeRecords({walletId: 'a', openProposalFile: () => dialog.promise,
+    readProposalFile: async () => {reads++; return Buffer.from(JSON.stringify(fixture));},
+  });
+  const pending = component.onImportProposal();
+  changeContext(component, {walletId: 'b'});
+  dialog.resolve({filePaths: ['/authorized/proposal.json']});
+  await pending;
+  t.equal(reads, 0);
+  t.equal(component.state.importReview, null);
+  t.equal(component.state.isImporting, false);
   t.end();
 });

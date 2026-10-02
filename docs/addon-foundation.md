@@ -49,12 +49,22 @@ record, node API key, DNS queries, seed, or wallet secret. A future facade may
 offer sanitized status and host-owned request/confirmation flows only. The
 signed native helper and exact DNS restoration remain Bob core responsibilities.
 
+## Registered ShakeX adapter
+
+`app/addons/shakex/manifest.js` registers `shakex` version `1.0.0` as a trusted
+bundled route at `/addons/shakex`, with the exact `https://shakex.fun` origin.
+It declares listing discovery, fixed external links, selected-name resource
+reading, reviewed record proposals and owned-name navigation. The public feed
+is mainnet-only; isolated regtest listing tests use Bob's core Records flow.
+The catalog derives identity/navigation from the registry and retains English
+and Simplified Chinese presentation keys. It does not declare paid-transfer
+import, wallet signing or resolver capabilities. Bob remains responsible for
+all review, ownership, freshness and submission checks.
+
 ## Coordination examples are not installed
 
 `app/addons/examples.js` contains validated design contracts for:
 
-- ShakeX as a reviewed bundled route with its exact API origin and proposed
-  name-resource capabilities from PR #12's documentation;
 - Bob's Name Quest as fixed external content with only `external.openUrl` and
   no wallet/name capabilities; and
 - Bob System DNS as a native service with no network origins and a
@@ -92,4 +102,5 @@ node app/addons/tests/foundation.spec.cjs
 The checks cover malformed/unknown fields, unsafe entries and origins, unknown
 or duplicated capabilities, native-only capability misuse, duplicate IDs,
 missing lookups, prohibited catalog overrides, exact navigation compatibility,
-and the non-installed status of all three coordination examples.
+the registered ShakeX adapter and localized catalog, and the non-installed
+status of the two remaining coordination examples.
