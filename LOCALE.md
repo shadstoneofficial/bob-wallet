@@ -1,6 +1,6 @@
 # Internationalization (i18n)
 
-This documents describes how i18n works in Bob Wallet, and how to add support for a new language
+This document describes how i18n works in Bob Wallet, and how to add support for a new language.
 
 ## Overview
 
@@ -58,9 +58,15 @@ When getting string using the injected `this.context.t(localeKey)` function, the
 
 As new copies are added to Bob Wallet, new keys will be added to `en.json`. There is a npm script added to help extend new key to existing locale json. 
 
-The following script will extend `zh.json` with any new keys from `en.json` without overwritting existing translations.
+The following script will extend `zh-CN.json` with any new keys from `en.json` without overwriting existing translations.
 ```bash
-npm run add-locale zh
+npm run add-locale zh-CN
+```
+
+Validate key parity, `%s` placeholders, URLs, known technical tokens, and formatting markers against English:
+
+```bash
+npm run check-locale -- zh-CN
 ```
 
 ## Testing New Translation
@@ -70,7 +76,7 @@ npm run add-locale zh
 
 ## Note to Maintainers
 
-- When merging in a new locale json, be sure to update the dropdown list in `app/util/i18n.js` with the new locale.
+- Enable a new locale only after its translation, safety, and visual review gates pass; then update the dropdown list in `app/utils/i18n.js` with the new locale.
 - When new keys are added to `en.json`, make sure to run `npm run add-locale` to extend new keys to existing locale json.
 
 ## Languages
@@ -80,3 +86,4 @@ npm run add-locale zh
 | Catalan | ca.json | Faltrum (@faltrum) |
 | Spanish | es-ES.json | Faltrum (@faltrum) |
 | French | fr-FR.json | Miguel Gargallo (@miguelgargallo) |
+| Simplified Chinese (translated; review pending) | zh-CN.json | Community contributors welcome |

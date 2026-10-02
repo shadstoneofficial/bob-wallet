@@ -197,7 +197,7 @@ export default class Overview extends Component {
         level: 'urgent',
         title: t('overviewActionReveal', String(revealable.num)),
         detail: revealable.block != null
-          ? t('overviewActionRevealDetail', blocksDeltaToTimeDelta(revealable.block, network, true))
+          ? t('overviewActionRevealDetail', blocksDeltaToTimeDelta(revealable.block, network, t))
           : t('overviewActionOpenBids'),
         path: `/bids/${BIDS_FILTER_NEED_REVEAL}`,
       });
@@ -232,7 +232,7 @@ export default class Overview extends Component {
         level: 'urgent',
         title: t('overviewActionRenew', String(renewable.domains.length)),
         detail: renewable.block != null
-          ? t('overviewActionRenewDetail', blocksDeltaToTimeDelta(renewable.block, network, true))
+          ? t('overviewActionRenewDetail', blocksDeltaToTimeDelta(renewable.block, network, t))
           : t('overviewActionOpenDomains'),
         path: '/domain_manager',
       });
@@ -254,7 +254,7 @@ export default class Overview extends Component {
         level: 'info',
         title: t('overviewActionTransfer', String(transferring.domains.length)),
         detail: transferring.block != null
-          ? t('overviewActionTransferDetail', blocksDeltaToTimeDelta(transferring.block, network))
+          ? t('overviewActionTransferDetail', blocksDeltaToTimeDelta(transferring.block, network, t))
           : t('overviewActionOpenDomains'),
         path: '/domain_manager',
       });
@@ -673,10 +673,10 @@ function pluralize(value, word, ending = 's') {
   return word + ending;
 }
 
-function blocksDeltaToTimeDelta(blocks, network, hideMinsIfLarge = false) {
+function blocksDeltaToTimeDelta(blocks, network, t) {
   if (blocks == null || !network || !networks[network]) {
-    return 'N/A';
+    return t('durationUnavailable');
   }
   const hours = (blocks * networks[network].pow.targetSpacing) / 3600;
-  return hoursToNow(hours);
+  return hoursToNow(hours, t);
 }

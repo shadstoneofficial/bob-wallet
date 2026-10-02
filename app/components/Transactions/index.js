@@ -273,7 +273,7 @@ export default class Transactions extends Component {
             onChange={currentPageIndex => this.setState({ currentPageIndex })}
             currentIndex={currentPageIndex}
           />
-          <div className="transactions__go-to__total">of {totalPages}</div>
+          <div className="transactions__go-to__total">{t('paginationOf', String(totalPages))}</div>
         </div>
       </div>
     )

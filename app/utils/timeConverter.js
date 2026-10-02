@@ -1,3 +1,5 @@
+import {translateEnglish} from './localeText';
+
 const createAMPMTimeStamp = timestamp => {
   const date = new Date(timestamp);
   const year = date
@@ -29,21 +31,21 @@ function pad(num) {
   return num.toString();
 }
 
-export function hoursToNow(hoursUntil) {
+export function hoursToNow(hoursUntil, t = translateEnglish) {
   if (!hoursUntil) {
-    return 'N/A';
+    return t('durationUnavailable');
   }
 
   if (hoursUntil < 24) {
     const hours = Math.floor(hoursUntil % 24);
     const mins = Math.floor((hoursUntil % 1) * 60);
-    return `~${hours}h ${mins}m`
+    return t('durationHoursMinutes', String(hours), String(mins));
   }
 
   const days = Math.floor(hoursUntil / 24);
   const hours = Math.floor(hoursUntil % 24);
   const mins = Math.floor((hoursUntil % 1) * 60);
-  return `~${days}d ${hours}h ${mins}m`
+  return t('durationDaysHoursMinutes', String(days), String(hours), String(mins));
 }
 
 export default createAMPMTimeStamp;
