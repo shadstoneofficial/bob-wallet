@@ -83,3 +83,5 @@ require('./app/pages/AuctionBasket/tests/localization.spec');
 require('./app/utils/tests/localeFormatting.spec');
 
 require("./app/utils/tests/reviewText.spec");
+
+require('./app/pages/Addons/tests/catalog.spec');
