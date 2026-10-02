@@ -632,7 +632,7 @@ export default class Settings extends Component {
           })}
           onClick={() => history.push("/settings/addons")}
         >
-          Add Ons
+          {t('headingAddOns')}
         </div>
       </div>
     );
@@ -1104,18 +1104,18 @@ export default class Settings extends Component {
                 false,
               )}
               {this.renderSection(
-                'Appearance',
+                t('settingAppearance'),
                 theme === 'dark'
-                  ? 'Dark mode is enabled.'
-                  : 'Use a darker interface for lower-light environments.',
-                theme === 'dark' ? 'Use Light Mode' : 'Use Dark Mode',
+                  ? t('settingDarkEnabled')
+                  : t('settingDarkHelp'),
+                theme === 'dark' ? t('settingUseLight') : t('settingUseDark'),
                 () => this.props.setTheme(theme === 'dark' ? 'light' : 'dark'),
               )}
               {this.renderSection(
-                'Show USD value',
+                t('settingShowUSD'),
                 showUsdValue
-                  ? 'The HNS balance includes its approximate USD value.'
-                  : 'The HNS balance is shown without an approximate USD value.',
+                  ? t('settingUSDShown')
+                  : t('settingUSDHidden'),
                 null,
                 null,
                 <button
@@ -1129,7 +1129,7 @@ export default class Settings extends Component {
                 >
                   <span className="settings__toggle__knob" />
                   <span className="settings__toggle__label">
-                    {showUsdValue ? 'On' : 'Off'}
+                    {showUsdValue ? t('toggleOn') : t('toggleOff')}
                   </span>
                 </button>,
               )}

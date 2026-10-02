@@ -465,3 +465,15 @@
 .claim-name-for-payment-invalid {
   color: $orange-red;
 }
+
+.domain-manager .domain-manager__search {
+  // Beat the shared compact search input rule regardless of stylesheet order.
+  width: 14rem;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.domain-manager__filters {
+  flex-wrap: wrap;
+  gap: .75rem;
+}
