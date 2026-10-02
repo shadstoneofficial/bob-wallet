@@ -1,10 +1,14 @@
-import React, {useEffect, useRef, useState} from 'react';
+import {I18nContext} from '../../utils/i18n';
+import {reviewText, reviewDate} from '../../utils/reviewText';
+import React, {useContext, useEffect, useRef, useState} from 'react';
 import {Link} from 'react-router-dom';
 import {shell} from 'electron';
 import {fetchListings, SHAKEX_ORIGIN} from './client';
 import './shakex.scss';
 
 export default function ShakeX() {
+  const {t, locale} = useContext(I18nContext);
+  const tr = (key, ...values) => reviewText(t, key, ...values);
   const [listings, setListings] = useState([]);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
@@ -32,8 +36,8 @@ export default function ShakeX() {
     } catch (e) {
       if (request.current === controller) {
         setError(controller.signal.aborted
-          ? 'The request timed out. Please try again.'
-          : 'Unable to load ShakeX listings. Please try again later or open ShakeX.');
+          ? 'shakexLoadTimeout'
+          : 'shakexLoadError');
       }
     } finally {
       clearTimeout(timeout);
@@ -46,31 +50,31 @@ export default function ShakeX() {
 
   const filtered = listings.filter(item => item.name.includes(query.trim().toLowerCase()));
   return <section className="shakex-addon">
-    <Link to="/addons">← Add Ons</Link>
+    <Link to="/addons">{tr('shakexBackToAddons')}</Link>
     <h2>ShakeX</h2>
-    <p>Community name listings by Marioo. Browse asking prices and contact sellers to agree a deal.</p>
-    <p>Listings are for Handshake mainnet. Loading contacts shakex.fun; no wallet addresses, balances or keys are sent.</p>
-    <p><Link to="/domain_manager">Manage my listings in Domain Manager</Link> — open an owned name’s records to create, edit or remove its sale listing.</p>
+    <p>{tr('shakexIntro')}</p>
+    <p>{tr('shakexPrivacyMainnet')}</p>
+    <p><Link to="/domain_manager">{tr('shakexManageListings')}</Link> — {tr('shakexManageListingsHelp')}</p>
     <div className="shakex-addon__actions">
-      <button onClick={load} disabled={loading}>{loading ? 'Loading…' : loaded ? 'Refresh listings' : 'Load listings'}</button>
-      <button onClick={() => shell.openExternal(SHAKEX_ORIGIN)}>Open ShakeX ↗</button>
-      <button onClick={() => shell.openExternal(`${SHAKEX_ORIGIN}/docs`)}>Listing instructions ↗</button>
-      <button onClick={() => shell.openExternal(`${SHAKEX_ORIGIN}/deal`)}>Deal guide ↗</button>
+      <button onClick={load} disabled={loading}>{loading ? tr('shakexLoading') : loaded ? tr('shakexRefresh') : tr('shakexLoad')}</button>
+      <button onClick={() => shell.openExternal(SHAKEX_ORIGIN)}>{tr('shakexOpenSite')}</button>
+      <button onClick={() => shell.openExternal(`${SHAKEX_ORIGIN}/docs`)}>{tr('shakexListingInstructions')}</button>
+      <button onClick={() => shell.openExternal(`${SHAKEX_ORIGIN}/deal`)}>{tr('shakexDealGuide')}</button>
     </div>
-    <p className="shakex-addon__notice">An asking price is not a signed sale offer. For HNS settlement, use Bob’s Finalize With Payment and Claim Name For Payment flow. Do not send a separate payment expecting the seller to transfer later. Network fees apply.</p>
-    {error && <p role="alert">{error}{loaded ? ' Previously loaded listings remain below.' : ''}</p>}
+    <p className="shakex-addon__notice">{tr('shakexSettlementNotice')}</p>
+    {error && <p role="alert">{tr(error)}{loaded ? ` ${tr('shakexShowingPrevious')}` : ''}</p>}
     {loaded && <>
-      <label>Search names (ASCII / punycode)
-        <input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search names" />
+      <label>{tr('shakexSearchLabel')}
+        <input value={query} onChange={event => setQuery(event.target.value)} placeholder={tr('shakexSearchPlaceholder')} />
       </label>
-      <p role="status">{filtered.length} listing{filtered.length === 1 ? '' : 's'}. Seller contacts are shown as published, not verified identities.</p>
-      {!filtered.length && <p>{listings.length ? 'No names match your search.' : 'No listings are available.'}</p>}
+      <p role="status">{tr(filtered.length === 1 ? 'shakexListingCountOne' : 'shakexListingCountMany', filtered.length)}</p>
+      {!filtered.length && <p>{listings.length ? tr('shakexNoMatches') : tr('shakexEmpty')}</p>}
       <div className="shakex-addon__list">
         {filtered.map(item => <article key={item.name}>
           <h3>{item.name}/</h3>
-          <p>{item.prices.length ? item.prices.map(price => `${price.amount} ${price.unit}`).join(' · ') : 'Contact seller for price'}</p>
+          <p>{item.prices.length ? item.prices.map(price => `${price.amount} ${price.unit}`).join(' · ') : tr('shakexContactForPrice')}</p>
           <ul>{item.contacts.map((contact, index) => <li key={index}>{contact}</li>)}</ul>
-          <small>Last checked by ShakeX: {item.verifiedAt ? new Date(item.verifiedAt).toLocaleString() : 'Unknown'}. Recheck before a deal.</small>
+          <small>{tr('shakexLastVerified', item.verifiedAt ? reviewDate(item.verifiedAt, locale) : tr('shakexVerifiedUnknown'))}</small>
         </article>)}
       </div>
     </>}

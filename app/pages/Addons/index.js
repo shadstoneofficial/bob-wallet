@@ -1,3 +1,4 @@
+import {reviewText} from '../../utils/reviewText';
 import React, {Component} from 'react';
 import {shell} from 'electron';
 import {withRouter} from 'react-router-dom';
@@ -27,6 +28,9 @@ const settingClient = settingClientStub(() => require('electron').ipcRenderer);
 const ADDONS = [
   {
     name: 'ShakeX',
+    descriptionKey: 'shakexAddonDescription',
+    statusKey: 'shakexAvailable',
+    actionKey: 'shakexOpen',
     status: 'Available',
     description: 'Community name listings by Marioo. Browse asking prices, seller contacts and the Bob paid-transfer guide.',
     action: 'Open',
@@ -851,9 +855,9 @@ class Addons extends Component {
             <div className="addons-page__card" key={addon.name}>
               <div className="addons-page__card-header">
                 <h3>{addon.name}</h3>
-                <span>{addon.status}</span>
+                <span>{addon.statusKey ? reviewText(this.context.t, addon.statusKey) : addon.status}</span>
               </div>
-              <p>{addon.description}</p>
+              <p>{addon.descriptionKey ? reviewText(this.context.t, addon.descriptionKey) : addon.description}</p>
               {addon.details && (
                 <ul className="addons-page__details">
                   {addon.details.map(detail => (
@@ -864,7 +868,7 @@ class Addons extends Component {
               <div className="addons-page__actions">
                 {addon.href && (
                   <button onClick={() => this.openAddon(addon)}>
-                    {addon.action}
+                    {addon.actionKey ? reviewText(this.context.t, addon.actionKey) : addon.action}
                   </button>
                 )}
                 {addon.docsHref && (

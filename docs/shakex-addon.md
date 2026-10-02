@@ -6,7 +6,7 @@ ShakeX is Marioo's independent Handshake sale directory. This patch adds read-on
 
 Prepared on `codex/shakex-addon` from `origin/master` commit `7781df159fbb7bd4426e5e0ac877b7fdd195d4ca` (Bob 2.3.13). Original implementation was uncommitted on local master `116e0e80af1dfdf51e0c555ea9f017af306314ca` (2.3.9), mixed with unrelated wallet/auction changes. Only ShakeX files and its Records integration were copied into this worktree. The original checkout was left intact.
 
-The earlier 393-assertion report concerned that older mixed checkout. It is not evidence for current master. On this base the suite passes 648 assertions, including three new post-unlock rejection scenarios. Current wallet mutation coordinator, storage preflight, pending-auction handling and request-lifecycle protections remain inherited from master.
+The earlier 393-assertion report concerned that older mixed checkout. It is not evidence for current master. After integrating master `10a79f1d08ce9c71797b72f819d6c8a15f5f4de0` (Simplified Chinese PR #9), the combined suite passes 689 assertions, including post-unlock rejection and placeholder-safety scenarios. Current wallet mutation coordinator, storage preflight, pending-auction handling and request-lifecycle protections remain inherited from master.
 
 ## User flow
 
@@ -53,6 +53,9 @@ node scripts/shakex/regtest-unsigned.cjs
 node scripts/shakex/regtest-lifecycle.cjs
 node scripts/shakex/build-desktop.cjs
 node_modules/.bin/electron scripts/shakex/desktop.cjs
+node_modules/.bin/electron scripts/shakex/desktop.cjs --zh-CN
+node scripts/check-locale.js zh-CN
+node scripts/check-locale.test.js
 ```
 
 The desktop harness loads the actual Records component in a separate sandboxed Electron window with fake props, no wallet connection and a temporary user-data directory. It checks preview, preservation, explicit submission and rejection of a resource changed during the simulated unlock interval. Screenshots are written under `/tmp/bob-shakex-desktop/`. The fixture exposed a dark-theme preview contrast problem; this patch fixes it for the ShakeX review.
@@ -67,13 +70,13 @@ The Electron fixture now covers 600px review layout and loading/empty/error/popu
 
 Watch-only, hardware-backed watch-only and 2-of-3 multisig metadata fixtures verify that ownership gates staging, review alone never submits, and explicit Submit delegates to the existing Bob host action. These are UI eligibility fixtures with a mocked host, not device/cosigner signing tests. Bob currently routes non-multisig watch-only accounts through its Ledger path and multisig inputs through its multisig coordinator. The addon does not introduce a signer or promise generic watch-only signing. Physical-device availability, cancellation and actual cosigner completion still require installed-app testing.
 
-Localization is coordinated through a [key and overlap inventory](shakex-localization-handoff.md) against PR #9 at `695a8d761e9deddaf667782a0382b26f61f1b1d4`. That branch was not edited. Preserve both `unit.js` test additions when combining the PRs. English strings remain untranslated pending that work.
+Localization is implemented for English and Simplified Chinese after integrating PR #9's merged master. All existing test imports and locale keys are retained. The [localization integration notes](shakex-localization-handoff.md) cover 83 added entries, literal placeholder substitution, locale-aware timestamps, unchanged wire values and the combined 689-assertion result. Both languages pass the 600px Electron fixtures; screenshots were inspected. The fixture now uses global Bob styles and blocks external font requests. The resource-size badge stays on one line and the Records header grows to fit translated text. Native-speaker feedback is deferred until the next build by user direction.
 
 ## Remaining draft PR blockers
 
 - Public ShakeX index refresh is not tested on regtest; no mainnet listing was submitted.
 - Installed-app smoke testing, real unlock/cancel, hardware signing and multisig cosigner completion remain deferred.
-- Localization wiring, translation and translated-layout review remain.
+- Native-speaker feedback is deferred until the next build; localization and translated-layout checks are complete.
 - Marioo has not been contacted; no API partnership or formal endorsement is implied.
 
-Only disposable in-memory regtest transactions were signed/mined. No mainnet/testnet activity, existing-wallet signing, merge, release signing, tagging, public packaging or release occurred.
+Only disposable in-memory regtest transactions were signed/mined. No mainnet/testnet activity, existing-wallet signing, PR #12 merge, release signing, tagging, public packaging or release occurred.

@@ -3,6 +3,7 @@ window.bobElectron = {
   shell: {openExternal() {return Promise.resolve(true);}},
   dialog: {}, files: {}, app: {isPackaged: false},
 };
+require('../../app/global.scss');
 const React = require('react');
 const {createRoot} = require('react-dom/client');
 const {Provider} = require('react-redux');
@@ -11,6 +12,11 @@ const ShakeX = require('../../app/addons/shakex').default;
 const {Records} = require('../../app/components/Records');
 const {Resource} = require('hsd/lib/dns/resource');
 const {I18nContext} = require('../../app/utils/i18n');
+const locale = new URLSearchParams(location.search).get('locale') || 'en';
+const english = require('../../locales/en.json');
+const chinese = require('../../locales/zh-CN.json');
+const {reviewText} = require('../../app/utils/reviewText');
+const t = (key, ...values) => reviewText(k => (locale === 'zh-CN' ? chinese : english)[k], key, ...values);
 const {Simulate} = require('react-dom/test-utils');
 const resource = {records: [
   {type: 'NS', ns: 'ns1.example.'},
@@ -33,7 +39,7 @@ const props = {
 };
 const root = createRoot(document.getElementById('root'));
 root.render(
-  <MemoryRouter><Provider store={store}><I18nContext.Provider value={{t: key => key}}>
+  <MemoryRouter><Provider store={store}><I18nContext.Provider value={{t, locale}}>
     <h1>ShakeX listing review — isolated fixture</h1>
     <Records {...props} ref={ref => {instance = ref;}} />
   </I18nContext.Provider></Provider></MemoryRouter>
@@ -45,7 +51,7 @@ window.fixture = {
       if (mode === 'error') throw new Error('fixture offline');
       return {ok: true, text: async () => JSON.stringify({listings: mode === 'empty' ? [] : [{name:'xn--ls8h', prices:[{unit:'HNS',amount:'123.000001'}], contacts:[{type:'text',value:'X @alice'}]}]})};
     };
-    root.render(<MemoryRouter><ShakeX key={mode} /></MemoryRouter>);
+    root.render(<MemoryRouter><I18nContext.Provider value={{t, locale}}><ShakeX key={mode} /></I18nContext.Provider></MemoryRouter>);
   },
   edit() {
     const inputs = document.querySelectorAll('.shakex-listing-form input');
@@ -60,7 +66,7 @@ window.fixture = {
     const oldSend = instance.props.sendUpdate;
     const next = {...instance.props, sendUpdate: async (name, next, guard) => {
       canonical = '00';
-      try {await guard();} catch (error) {rejected = /changed/.test(error.message);}
+      try {await guard();} catch (error) {rejected = error.message === t('recordsStale');}
       return null;
     }};
     instance.props = next;

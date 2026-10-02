@@ -1,3 +1,4 @@
+import {reviewText} from '../../utils/reviewText';
 import React, { Component } from 'react';
 import { HeaderItem, HeaderRow, Table, TableRow } from '../Table';
 import Blocktime from '../../components/Blocktime';
@@ -43,6 +44,16 @@ function makeDefaultResource() {
 
 export class Records extends Component {
   static contextType = I18nContext;
+
+  tr = (key, ...values) => reviewText(this.context.t, key, ...values);
+
+  assertCurrent = (review, hex) => {
+    try {
+      assertCanonicalStillCurrent(review, hex);
+    } catch (error) {
+      throw new Error(this.tr('recordsStale'));
+    }
+  };
 
   static propTypes = {
     name: PropTypes.string.isRequired,
@@ -163,31 +174,31 @@ export class Records extends Component {
       const review = this.state.importReview;
       const assertContext = () => {
         if (this.props.name !== submitName || this.props.network !== submitNetwork || this.props.walletId !== submitWallet || this.props.walletGeneration !== submitGeneration) {
-          throw new Error('The selected wallet, name or network changed. Review the listing again.');
+          throw new Error(this.tr('recordsContextChanged'));
         }
       };
       const recheckSale = review?.kind === 'shakex' ? async () => {
         assertContext();
-        if (!this.props.domain?.isOwner || this.props.pendingData || this.props.transferring || this.props.domain.pendingOperation) throw new Error('The name is no longer available for an update.');
+        if (!this.props.domain?.isOwner || this.props.pendingData || this.props.transferring || this.props.domain.pendingOperation) throw new Error(this.tr('recordsUnavailable'));
         const latest = await this.props.loadCanonicalNameInfo(submitName);
         assertContext();
-        if (!latest?.info || latest.info.transfer || latest.info.revoked) throw new Error('The name is no longer available for an update.');
-        assertCanonicalStillCurrent(review, latest.info.data || '00');
+        if (!latest?.info || latest.info.transfer || latest.info.revoked) throw new Error(this.tr('recordsUnavailable'));
+        this.assertCurrent(review, latest.info.data || '00');
       } : undefined;
       if (this.state.importReview?.kind === 'shakex' && (!this.props.domain?.isOwner || this.props.pendingData || this.props.transferring || this.props.domain.pendingOperation)) {
-        throw new Error('Wait for pending operations and confirm ownership before submitting.');
+        throw new Error(this.tr('recordsConfirmOwnership'));
       }
       if (review) {
         const result = await this.props.loadCanonicalNameInfo(this.props.name);
-        if (!result || !result.info) throw new Error('Bob could not reload canonical name information before submit.');
+        if (!result || !result.info) throw new Error(this.tr('recordsReloadFailed'));
         assertContext();
         if (review.kind === 'shakex' && (result.info.transfer || result.info.revoked)) {
-          throw new Error('The name is transferring or revoked. Refresh before preparing a listing.');
+          throw new Error(this.tr('recordsTransferring'));
         }
-        assertCanonicalStillCurrent(review, result.info.data || '00');
+        this.assertCurrent(review, result.info.data || '00');
       }
       if (this.props.name !== submitName || this.props.network !== submitNetwork) {
-        throw new Error('The selected name or network changed. Review the listing again.');
+        throw new Error(this.tr('recordsContextChanged'));
       }
       const res = await this.props.sendUpdate(submitName, updatedResource, recheckSale);
       this.setState({
@@ -248,7 +259,7 @@ export class Records extends Component {
       logger.error(`Error received from Records.js - refreshRecords\n\n${error.message}\n${error.stack}\n`);
       this.setState({
         isRefreshingRecords: false,
-        refreshError: error.message || 'Canonical records could not be refreshed.',
+        refreshError: error.message || this.tr('recordsRefreshFailed'),
       });
     }
   };
@@ -256,7 +267,7 @@ export class Records extends Component {
   onStageSale = async options => {
     if (!this.props.domain?.isOwner || this.props.pendingData || this.props.transferring ||
         this.props.domain.pendingOperation || this.state.isDirty || this.state.isUpdating || this.state.isImporting) {
-      this.setState({errorMessage: 'Discard existing edits and wait for pending name operations before preparing a listing.'});
+      this.setState({errorMessage: this.tr('shakexPendingOrDirty')});
       return;
     }
     const name = this.props.name;
@@ -268,10 +279,10 @@ export class Records extends Component {
       const result = await this.props.loadCanonicalNameInfo(name);
       if (this.props.name !== name || this.props.network !== network || this.props.walletId !== wallet || this.props.walletGeneration !== generation) return;
       if (!result?.info || !this.props.domain?.isOwner || this.props.domain.pendingOperation || this.props.transferring || this.props.pendingData) {
-        throw new Error('The name is unavailable for a record update. Refresh and try again.');
+        throw new Error(this.tr('recordsUpdateUnavailable'));
       }
-      if (result.info.transfer || result.info.revoked) throw new Error('The name is transferring or revoked.');
-      const importReview = buildSaleReview(result.info.data || '00', options);
+      if (result.info.transfer || result.info.revoked) throw new Error(this.tr('recordsTransferring'));
+      const importReview = buildSaleReview(result.info.data || '00', options, this.context.t);
       this.setState({importReview, updatedResource: importReview.afterResource, isDirty: true});
     } catch (error) {
       if (this.props.name === name) this.setState({errorMessage: error.message});
@@ -282,11 +293,11 @@ export class Records extends Component {
 
   onImportProposal = async () => {
     if (!this.props.domain || !this.props.domain.isOwner) {
-      this.setState({errorMessage: 'Only the owner of this name can import a proposal.'});
+      this.setState({errorMessage: this.tr('recordsImportOwnerOnly')});
       return;
     }
     if (this.props.pendingData) {
-      this.setState({errorMessage: 'Wait for the pending name update before importing a proposal.'});
+      this.setState({errorMessage: this.tr('recordsImportPending')});
       return;
     }
 
@@ -294,7 +305,7 @@ export class Records extends Component {
     try {
       const result = await this.props.openProposalFile({
         properties: ['openFile'],
-        filters: [{name: 'LearnHNS activation proposal', extensions: ['json']}],
+        filters: [{name: this.tr('recordsProposalFile'), extensions: ['json']}],
       });
       if (result.canceled || !result.filePaths || !result.filePaths[0]) {
         this.setState({isImporting: false});
@@ -303,7 +314,7 @@ export class Records extends Component {
 
       const contents = await this.props.readProposalFile(result.filePaths[0]);
       const nameInfo = await this.props.loadCanonicalNameInfo(this.props.name);
-      if (!nameInfo || !nameInfo.info) throw new Error('Bob could not independently load canonical name information.');
+      if (!nameInfo || !nameInfo.info) throw new Error(this.tr('recordsLoadFailed'));
       const importReview = parseActivateProposal(contents, {
         expectedName: this.props.name,
         expectedNetwork: this.props.network,
@@ -381,14 +392,14 @@ export class Records extends Component {
           disabled={this.state.isImporting || this.state.isUpdating || Boolean(this.props.pendingData) || this.state.importReview?.kind === 'shakex'}
           onClick={this.onImportProposal}
         >
-          {this.state.isImporting ? 'Importing…' : 'Import LearnHNS proposal'}
+          {this.state.isImporting ? this.tr('recordsImporting') : this.tr('recordsImport')}
         </button>
         <button
           className="records-table__action-row__submit-btn"
           disabled={!this.hasChanged() || this.state.isUpdating || this.state.isImporting}
           onClick={this.sendUpdate}
         >
-          Submit
+          {this.tr('recordsSubmit')}
         </button>
         <button
           className="records-table__action-row__dismiss-link"
@@ -400,7 +411,7 @@ export class Records extends Component {
           })}
           disabled={!this.hasChanged() || this.state.isUpdating || this.state.isImporting}
         >
-          Discard Changes
+          {this.tr('recordsDiscard')}
         </button>
       </TableRow>
     );
@@ -417,19 +428,19 @@ export class Records extends Component {
       })}>
         <div className="records-table__refresh-status__message">
           {error
-            ? `Bob could not refresh canonical records: ${error}. The editable draft has not been changed.`
+            ? this.tr('recordsRefreshError', error)
             : isRefreshing
-              ? 'Refreshing canonical records from the name tree…'
+              ? this.tr('recordsRefreshingCanonical')
               : this.state.isDirty
-                ? 'Unsaved record changes are preserved. Discard them before refreshing.'
-                : 'Records shown here come from the canonical name tree.'}
+                ? this.tr('recordsPreservedDraft')
+                : this.tr('recordsCanonicalNotice')}
         </div>
         <button
           className="records-table__refresh-status__button"
           onClick={this.refreshRecords}
           disabled={this.state.isDirty || isRefreshing || this.state.isUpdating || this.state.isImporting}
         >
-          {isRefreshing ? 'Refreshing…' : 'Refresh records'}
+          {isRefreshing ? this.tr('recordsRefreshing') : this.tr('recordsRefresh')}
         </button>
       </div>
     );
@@ -441,9 +452,9 @@ export class Records extends Component {
 
     const renderResource = (resource, label) => (
       <div className="activate-import-review__resource">
-        <h4>{label} <span>{resource.records.length} record{resource.records.length === 1 ? '' : 's'}</span></h4>
+        <h4>{label} <span>{this.tr(resource.records.length === 1 ? 'recordsCountOne' : 'recordsCountMany', resource.records.length)}</span></h4>
         {resource.records.length === 0
-          ? <div className="activate-import-review__empty">No records</div>
+          ? <div className="activate-import-review__empty">{this.tr('recordsEmpty')}</div>
           : resource.records.map((record, index) => (
             <div className="activate-import-review__record" key={`${label}-${record.type}-${index}`}>
               <b>{record.type}</b>
@@ -454,17 +465,17 @@ export class Records extends Component {
     );
 
     return (
-      <section className={cn("activate-import-review", {"activate-import-review--shakex": review.kind === "shakex"})} aria-label={review.kind === "shakex" ? "ShakeX listing review" : "LearnHNS proposal review"}>
+      <section className={cn("activate-import-review", {"activate-import-review--shakex": review.kind === "shakex"})} aria-label={review.kind === "shakex" ? this.tr('shakexReviewAriaLabel') : this.tr('recordsReviewAriaLabel')}>
         <div className="activate-import-review__header">
           <div>
-            <strong>{review.kind === 'shakex' ? 'ShakeX listing changes staged' : 'LearnHNS activation proposal staged'}</strong>
-            <p>Review only. Import did not unlock, sign, broadcast, or update this name. Submit remains a separate wallet action.</p>
+            <strong>{review.kind === 'shakex' ? this.tr('shakexReviewTitle') : this.tr('recordsReviewTitle')}</strong>
+            <p>{this.tr('recordsReviewHelp')}</p>
           </div>
-          <span>{review.kind === 'shakex' ? `${review.bytes} / 512 bytes` : `v${review.proposal.version}`}</span>
+          <span>{review.kind === 'shakex' ? this.tr('shakexResourceBytes', review.bytes) : `v${review.proposal.version}`}</span>
         </div>
         <div className="activate-import-review__grid">
-          {renderResource(review.beforeResource, 'Canonical before')}
-          {renderResource(review.afterResource, 'Complete result')}
+          {renderResource(review.beforeResource, this.tr('recordsBefore'))}
+          {renderResource(review.afterResource, this.tr('recordsAfter'))}
         </div>
       </section>
     );
@@ -523,10 +534,10 @@ export class Records extends Component {
     return (
       <HeaderRow>
         <HeaderItem>
-          <div>Type</div>
+          <div>{this.tr('recordsType')}</div>
         </HeaderItem>
         <HeaderItem>
-          Value
+          {this.tr('recordsValue')}
         </HeaderItem>
         <HeaderItem>
           {this.renderTreeUpdateInfo()}

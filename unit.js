@@ -81,3 +81,5 @@ require('./app/background/node/tests/spvHelperRequest.spec');
 require("./app/ducks/tests/nameUpdateReview.spec");
 require('./app/pages/AuctionBasket/tests/localization.spec');
 require('./app/utils/tests/localeFormatting.spec');
+
+require("./app/utils/tests/reviewText.spec");

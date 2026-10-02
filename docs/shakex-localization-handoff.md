@@ -1,36 +1,27 @@
-# ShakeX localization handoff for PR 9
+# ShakeX localization integration
 
-Reviewed PR #9 (`codex/simplified-chinese`) at `695a8d761e9deddaf667782a0382b26f61f1b1d4`. Its branch was not modified. PR #12 still contains English strings; this inventory is a proposed key contract, not completed translation.
+PR #9 was merged into master at `10a79f1d08ce9c71797b72f819d6c8a15f5f4de0`. PR #12 integrates that master and preserves both PRs' `unit.js` imports, including Auction Basket localization, locale formatting and post-unlock name-update review tests. The PR #9 branch was not edited.
 
-## Overlap and merge handling
+## Implemented
 
-PR #9 edits `locales/en.json`, adds `locales/zh-CN.json`, adds `app/utils/localeText.js`, updates `app/utils/i18n.js`, adds locale validation scripts, and registers tests in `unit.js`. PR #12 currently changes none of those locale files or helpers. Both append to `unit.js`: retain both sets of test imports. PR #9 also changes Domain Manager and Exchange; ShakeX links to Domain Manager without changing its source. Add Ons, Records and `app/addons/shakex/` are not among PR #9's current edited files.
+- 83 new English and Simplified Chinese entries cover the ShakeX card, browse states, privacy/settlement notices, listing form, validation and shared Records review/refresh/import/submit controls.
+- Components use Bob's `I18nContext`. The context now supplies the selected locale for verification timestamps. Other languages fall back to English for these new keys.
+- `app/utils/reviewText.js` retrieves a translated template without arguments, then substitutes values once using a callback. Dollar replacement tokens and `%s` inside contacts or error details stay literal. New unit tests exercise this behavior.
+- `shakexListingCountOne`/`shakexListingCountMany` and shared `recordsCountOne`/`recordsCountMany` translate complete count messages. Byte limits and dates use `%s` in accordance with the existing locale validator.
+- Resource validation accepts an optional translator while defaulting to English in CLI fixtures. Locale selection never changes generated wire records or exact decimal amount strings.
+- `FORSALE1`, currency codes, DNS types, canonical names, addresses, URLs and published contact content remain unchanged. The paid-transfer instructions use the existing translated Bob action names.
+- Client transport failures map to localized browse errors rather than exposing internal English API diagnostics. Existing node/wallet/library error details and the older activation-proposal parser can still return English technical details within the shared Records UI.
 
-After agreeing the host API, translate using the existing `I18nContext` and PR #9's conventions. Keep currency amounts as exact decimal strings. Use pluralization for listing/record counts and named placeholders for byte counts, dates and limits; do not concatenate translated fragments. Do not translate `FORSALE1`, TXT field names, wallet addresses, published contact content, URLs or canonical names. Replace the raw `toLocaleString()` verification timestamp with the agreed locale-aware formatter. Before readiness, run both PRs' locale/unit checks and repeat the 600px fixtures with Simplified Chinese.
+## Validation
 
-## Proposed new keys
+The combined unit suite passes **689 assertions**. `node scripts/check-locale.js zh-CN` verifies all 1,276 keys, placeholders, technical tokens, URLs and formatting markers; all 12 locale-validator regression cases pass. Production renderer and dedicated client/React/record checks pass.
 
-| Keys | Source and English intent |
-| --- | --- |
-| `shakexTitle`, `shakexAddonDescription`, `shakexBackToAddons` | Add Ons card and browsing title/navigation |
-| `shakexIntro`, `shakexPrivacyMainnet` | Community attribution; mainnet-only feed and opt-in request disclosure |
-| `shakexManageListings`, `shakexManageListingsHelp` | Domain Manager handoff |
-| `shakexLoad`, `shakexLoading`, `shakexRefresh` | Load button states |
-| `shakexOpenSite`, `shakexListingInstructions`, `shakexDealGuide` | Fixed external links |
-| `shakexSettlementNotice` | Asking price versus signed offer; paid-finalize flow and network fees |
-| `shakexLoadError`, `shakexLoadTimeout`, `shakexShowingPrevious` | Loading failures and cached rows |
-| `shakexSearchLabel`, `shakexSearchPlaceholder` | Canonical-name search |
-| `shakexListingCount`, `shakexContactNotice` | Count and unverified seller contact disclaimer |
-| `shakexNoMatches`, `shakexEmpty`, `shakexContactForPrice` | Empty/filter/offer-only states |
-| `shakexLastVerified`, `shakexVerifiedUnknown`, `shakexRecheckBeforeDeal` | Verification timestamp and freshness |
-| `shakexSaleLegend`, `shakexSaleHelp` | Listing form heading and replacement behavior |
-| `shakexCurrentRecords`, `shakexPriceLabel`, `shakexPricePlaceholder`, `shakexContactLabel`, `shakexContactPlaceholder` | Current sale fields and input labels/examples |
-| `shakexReviewChanges`, `shakexReviewRemoval`, `shakexReviewHelp` | Explicit staging actions and signing distinction |
-| `shakexReviewTitle`, `shakexReviewAriaLabel`, `shakexResourceBytes` | Before/after review title, accessibility name and byte budget |
-| `shakexPendingOrDirty`, `shakexUnavailable`, `shakexTransferringOrRevoked`, `shakexContextChanged` | Host eligibility and asynchronous-context errors |
-| `shakexResourceUnreadable`, `shakexResourceMalformed`, `shakexResourceUnsupported`, `shakexMixedRecord` | Resource/record parse errors |
-| `shakexInvalidPrice`, `shakexInvalidContact`, `shakexContactTooLong` | Form validation |
-| `shakexResourceEncodeLimit`, `shakexResourceSizeLimit`, `shakexNoSaleRecords`, `shakexAlreadyPublished` | Encoded-size/no-op validation |
-| `shakexApiInvalid`, `shakexApiRateLimited`, `shakexApiUnavailable`, `shakexApiOversized` | Client-layer errors; map typed errors to localized UI rather than parsing English strings |
+The actual Records and ShakeX components are exercised in sandboxed Electron using mock wallet props and offline feed fixtures. Run both locales:
 
-Existing shared Records strings (Submit, Discard Changes, canonical before, complete result, import/refresh states and proposal staleness) also need localization ownership. Avoid duplicating those as ShakeX-only keys. Developer fixture headings and test errors are not end-user strings.
+```sh
+node scripts/shakex/build-desktop.cjs
+node_modules/.bin/electron scripts/shakex/desktop.cjs
+node_modules/.bin/electron scripts/shakex/desktop.cjs --zh-CN
+```
+
+The fixture uses Bob's global theme styles and blocks external font/network requests. It tests 600px layouts, loading/empty/error/populated states, full before/after review, explicit submit and post-unlock stale rejection. Chinese screenshot evidence is under `docs/shakex-evidence/*-zh-CN.png`. Native-speaker feedback is deferred to the next build by user direction; rendered-layout checks do not substitute for that feedback. Installed-app/device/cosigner validation remains separate.

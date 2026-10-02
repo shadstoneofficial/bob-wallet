@@ -436,4 +436,16 @@ body.bob-theme-dark .activate-import-review--shakex {
   .activate-import-review__header > span { color: #bda0ff; }
 }
 
-.records-table--shakex { overflow-x: auto; }
+.activate-import-review--shakex .activate-import-review__header > span {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.records-table--shakex {
+  overflow-x: auto;
+  .table__header {
+    height: auto;
+    min-height: 1.8rem;
+    padding: .4rem 0;
+  }
+}
