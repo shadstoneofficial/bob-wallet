@@ -221,7 +221,7 @@ export class AuctionBasket extends Component {
     return {
       submissionPhase: 'failed',
       submissionError: draft.formState.submissionError
-        || 'The previous broadcast outcome is still uncertain.',
+        || this.context.t('basketPreviousUncertain'),
       submissionFailedStage: draft.formState.submissionFailedStage || 'broadcasting',
       submissionTxid: draft.formState.submissionTxid || '',
       retryAllowed: false,
@@ -299,9 +299,9 @@ export class AuctionBasket extends Component {
   };
 
   previewCompleteBasket = async () => {
-    const rows = parseCompleteBasket(this.state.completePasteText, AUCTION_BASKET_LIMIT);
+    const rows = parseCompleteBasket(this.state.completePasteText, AUCTION_BASKET_LIMIT, this.context.t);
     if (!rows.length) {
-      this.props.showError('No complete basket rows were found.');
+      this.props.showError(this.context.t('basketImportNoRows'));
       return;
     }
     this.setState({importChecking: true, importPreview: rows});
@@ -322,10 +322,10 @@ export class AuctionBasket extends Component {
           hoursUntilReveal: info.info?.stats?.hoursUntilReveal,
           height: info.info?.height != null ? info.info.height - 1 : null,
           targetSpacing: net.pow.targetSpacing,
-          errors: bidding ? row.errors : [...row.errors, `Auction is ${String(state).toLowerCase()}, not bidding.`],
+          errors: bidding ? row.errors : [...row.errors, this.context.t('basketAuctionNotBidding', state)],
         };
       } catch (error) {
-        return {...row, auctionState: 'ERROR', errors: [...row.errors, error.message || 'Auction lookup failed.']};
+        return {...row, auctionState: 'ERROR', errors: [...row.errors, error.message || this.context.t('basketLookupFailed')]};
       }
     }));
     this.safeSetState({importPreview: checked, importChecking: false});
@@ -334,18 +334,18 @@ export class AuctionBasket extends Component {
   applyCompleteBasket = (mode) => {
     const valid = this.state.importPreview.filter(row => row.errors.length === 0);
     if (!valid.length) {
-      this.props.showError('No valid bidding rows are available to import.');
+      this.props.showError(this.context.t('basketImportNoValidRows'));
       return;
     }
     let rows = valid;
     if (mode === 'add') rows = rows.filter(row => !this.props.items[row.name]);
     const currentCount = mode === 'replace' ? 0 : this.props.order.length;
     if (currentCount + rows.length > AUCTION_BASKET_LIMIT) {
-      this.props.showError(`This import would exceed the ${AUCTION_BASKET_LIMIT}-name basket limit.`);
+      this.props.showError(this.context.t('basketImportLimit', String(AUCTION_BASKET_LIMIT)));
       return;
     }
     if (!rows.length) {
-      this.props.showError('All valid imported names are already in the basket.');
+      this.props.showError(this.context.t('basketImportAllPresent'));
       return;
     }
     this.props.importBasketRows(rows, mode);
@@ -356,7 +356,7 @@ export class AuctionBasket extends Component {
       accepted: false,
       step: 'edit',
     });
-    this.props.showSuccess(`Imported ${rows.length} complete basket row(s).`);
+    this.props.showSuccess(this.context.t('basketImportedRows', String(rows.length)));
   };
 
   copyText = async (text, message) => {
@@ -375,7 +375,7 @@ export class AuctionBasket extends Component {
 
   copyBasket = () => this.copyText(
     basketToCSV(this.props.order, this.props.items),
-    'Basket copied as CSV.',
+    this.context.t('basketCopiedCSV'),
   );
 
   exportBasketCSV = () => {
@@ -484,12 +484,12 @@ export class AuctionBasket extends Component {
           let error = '';
           if (!bidding) {
             error = state === 'OPENING'
-              ? 'Opening'
+              ? this.context.t('opening')
               : state === 'REVEAL'
-                ? 'In reveal'
+                ? this.context.t('inReveals')
                 : state === 'CLOSED'
-                  ? 'Closed'
-                  : 'Not bidding';
+                  ? this.context.t('closed')
+                  : this.context.t('basketNotBidding');
           }
 
           rowMeta[name] = {
@@ -503,7 +503,7 @@ export class AuctionBasket extends Component {
         } catch (e) {
           rowMeta[name] = {
             state: 'ERROR',
-            error: e.message || 'Lookup failed',
+            error: e.message || this.context.t('basketLookupFailed'),
             hoursUntilReveal: null,
             height: null,
             walletHasName: false,
@@ -834,16 +834,25 @@ export class AuctionBasket extends Component {
     }
   };
 
+  formatSubmissionStage = stage => {
+    const keys = {
+      checking: 'basketStageChecking', rescanning: 'basketStageRescanning',
+      building: 'basketStageBuilding', signing: 'basketStageSigning',
+      broadcasting: 'basketStageBroadcasting', verifying: 'basketStageVerifying',
+    };
+    return this.context.t(keys[stage] || 'basketStagePreparation');
+  };
+
   formatTime = (hours) => {
     if (hours == null || !Number.isFinite(hours)) return '—';
     if (hours < 24) {
       const h = Math.floor(hours);
       const m = Math.floor((hours - h) * 60);
-      return `~${h}h ${m}m`;
+      return this.context.t('durationHoursMinutes', String(h), String(m));
     }
     const d = Math.floor(hours / 24);
     const h = Math.floor(hours - d * 24);
-    return `~${d}d ${h}h`;
+    return this.context.t('durationDaysHours', String(d), String(h));
   };
 
   render() {
@@ -855,9 +864,9 @@ export class AuctionBasket extends Component {
       return (
         <div className="auction-basket">
           <section className="auction-basket__panel auction-basket__submission-status auction-basket__submission-status--success">
-            <h3>Basket bid submitted</h3>
-            <p>{this.state.submittedCount} bid(s) were broadcast in one transaction.</p>
-            <label>Transaction ID</label>
+            <h3>{t('basketSubmittedTitle')}</h3>
+            <p>{t('basketBroadcastCount', String(this.state.submittedCount))}</p>
+            <label>{t('transactionID')}</label>
             <code>{this.state.submissionTxid}</code>
             <div className="auction-basket__footer-actions">
               <button
@@ -865,7 +874,7 @@ export class AuctionBasket extends Component {
                 className="auction-basket__btn"
                 onClick={() => this.props.history.push('/bids/BIDDING')}
               >
-                View bids
+                {t('basketViewBids')}
               </button>
             </div>
           </section>
@@ -888,10 +897,10 @@ export class AuctionBasket extends Component {
 
         {this.state.savedDraft?.rows?.length > 0 && step === 'edit' && !order.length && (
           <div className="auction-basket__warn-box">
-            <strong>Previous basket draft available</strong>
-            <span>{this.state.savedDraft.rows.length} saved name(s) from {new Date(this.state.savedDraft.savedAt).toLocaleString()}.</span>
+            <strong>{t('basketDraftAvailable')}</strong>
+            <span>{t('basketDraftSaved', String(this.state.savedDraft.rows.length), new Date(this.state.savedDraft.savedAt).toLocaleString())}</span>
             <button type="button" className="auction-basket__btn" onClick={this.restoreSavedDraft}>
-              Restore previous basket
+              {t('basketRestoreDraft')}
             </button>
           </div>
         )}
@@ -942,17 +951,17 @@ export class AuctionBasket extends Component {
               {t('basketClear')}
             </button>
             <button type="button" className="auction-basket__btn auction-basket__btn--secondary" onClick={this.copyBasket}>
-              Copy basket
+              {t('basketCopy')}
             </button>
             <button type="button" className="auction-basket__btn auction-basket__btn--secondary" onClick={this.exportBasketCSV}>
-              Export CSV
+              {t('basketExportCSV')}
             </button>
             <button
               type="button"
               className="auction-basket__btn auction-basket__btn--secondary"
               onClick={() => this.setState({showSplit: !this.state.showSplit})}
             >
-              Split into batches
+              {t('basketSplit')}
             </button>
             <button
               type="button"
@@ -1006,7 +1015,7 @@ export class AuctionBasket extends Component {
               className="auction-basket__btn auction-basket__btn--secondary"
               onClick={() => this.setState({showCompletePaste: !this.state.showCompletePaste})}
             >
-              Paste complete basket
+              {t('basketPasteComplete')}
             </button>
             <button
               type="button"
@@ -1048,14 +1057,14 @@ export class AuctionBasket extends Component {
                   onClick={this.previewCompleteBasket}
                   disabled={this.state.importChecking || !this.state.completePasteText.trim()}
                 >
-                  {this.state.importChecking ? 'Checking auctions…' : 'Preview complete basket'}
+                  {this.state.importChecking ? t('basketCheckingAuctions') : t('basketPreviewComplete')}
                 </button>
                 <button
                   type="button"
                   className="auction-basket__btn auction-basket__btn--secondary"
                   onClick={() => this.setState({showCompletePaste: false, importPreview: []})}
                 >
-                  Cancel
+                  {t('cancel')}
                 </button>
               </div>
               {!!this.state.importPreview.length && this.renderImportPreview()}
@@ -1176,6 +1185,7 @@ export class AuctionBasket extends Component {
   }
 
   renderImportPreview() {
+    const {t} = this.context;
     const rows = this.state.importPreview;
     const accepted = rows.filter(row => row.errors.length === 0);
     const totalBid = accepted.reduce((sum, row) => sum + Number(row.bidAmount || 0), 0);
@@ -1187,16 +1197,16 @@ export class AuctionBasket extends Component {
     return (
       <div className="auction-basket__import-preview">
         <div className="auction-basket__summary">
-          <div className="auction-basket__stat"><label>Accepted rows</label><strong>{accepted.length}</strong></div>
-          <div className="auction-basket__stat"><label>Total true bids</label><strong>{totalBid.toFixed(6)} HNS</strong></div>
-          <div className="auction-basket__stat"><label>Total blinds</label><strong>{totalBlind.toFixed(6)} HNS</strong></div>
-          <div className="auction-basket__stat"><label>Total lockup</label><strong>{totalLockup.toFixed(6)} HNS</strong></div>
-          <div className="auction-basket__stat"><label>Estimated fees</label><strong>~{fee.toFixed(4)} HNS</strong></div>
-          <div className="auction-basket__stat"><label>Estimated spendable afterward</label><strong>{after.toFixed(6)} HNS</strong></div>
+          <div className="auction-basket__stat"><label>{t('basketImportAccepted')}</label><strong>{accepted.length}</strong></div>
+          <div className="auction-basket__stat"><label>{t('basketTotalBid')}</label><strong>{totalBid.toFixed(6)} HNS</strong></div>
+          <div className="auction-basket__stat"><label>{t('basketTotalBlind')}</label><strong>{totalBlind.toFixed(6)} HNS</strong></div>
+          <div className="auction-basket__stat"><label>{t('basketTotalLockup')}</label><strong>{totalLockup.toFixed(6)} HNS</strong></div>
+          <div className="auction-basket__stat"><label>{t('basketEstimatedFees')}</label><strong>~{fee.toFixed(4)} HNS</strong></div>
+          <div className="auction-basket__stat"><label>{t('basketAfterSubmit')}</label><strong>{after.toFixed(6)} HNS</strong></div>
         </div>
         <div className="auction-basket__table-wrap">
           <table className="auction-basket__table">
-            <thead><tr><th>Row</th><th>Name</th><th>True bid</th><th>Blind</th><th>Lockup</th><th>State</th><th>Time left</th><th>Validation</th></tr></thead>
+            <thead><tr><th>{t('basketImportRow')}</th><th>{t('domain')}</th><th>{t('basketTrueBid')}</th><th>{t('basketBlind')}</th><th>{t('basketLockup')}</th><th>{t('status')}</th><th>{t('timeLeft')}</th><th>{t('basketValidation')}</th></tr></thead>
             <tbody>
               {rows.map(row => (
                 <tr key={`${row.rowNumber}-${row.name}`}>
@@ -1208,7 +1218,7 @@ export class AuctionBasket extends Component {
                   <td>{row.auctionState || '—'}</td>
                   <td>{this.formatTime(row.hoursUntilReveal)}</td>
                   <td className={row.errors.length ? 'auction-basket__row-error' : ''}>
-                    {row.errors.length ? row.errors.join(' ') : 'Ready'}
+                    {row.errors.length ? row.errors.join(' ') : t('ready')}
                   </td>
                 </tr>
               ))}
@@ -1217,39 +1227,40 @@ export class AuctionBasket extends Component {
         </div>
         <div className="auction-basket__actions">
           <button type="button" className="auction-basket__btn" onClick={() => this.applyCompleteBasket('replace')} disabled={!accepted.length}>
-            {this.props.order.length ? 'Replace basket' : 'Import basket'}
+            {this.props.order.length ? t('basketReplace') : t('basketImport')}
           </button>
           {!!this.props.order.length && (
             <button type="button" className="auction-basket__btn auction-basket__btn--secondary" onClick={() => this.applyCompleteBasket('add')} disabled={!accepted.length}>
-              Add only new names
+              {t('basketImportNewOnly')}
             </button>
           )}
-          <button type="button" className="auction-basket__btn auction-basket__btn--secondary" onClick={() => this.setState({importPreview: []})}>Cancel</button>
+          <button type="button" className="auction-basket__btn auction-basket__btn--secondary" onClick={() => this.setState({importPreview: []})}>{t('cancel')}</button>
         </div>
       </div>
     );
   }
 
   renderSplitBatches() {
+    const {t} = this.context;
     const batches = splitBasket(this.props.order, this.props.items, this.state.splitSize);
     return (
       <section className="auction-basket__panel">
         <div className="auction-basket__panel-header">
-          <h3>Split basket</h3>
+          <h3>{t('basketSplitTitle')}</h3>
           <select value={this.state.splitSize} onChange={event => this.setState({splitSize: Number(event.target.value)})}>
-            {[5, 10, 20].map(size => <option key={size} value={size}>{size} names per batch</option>)}
+            {[5, 10, 20].map(size => <option key={size} value={size}>{t('basketBatchSize', String(size))}</option>)}
           </select>
         </div>
-        <p className="auction-basket__help">Splitting only prepares separate CSV groups. It never submits a transaction.</p>
+        <p className="auction-basket__help">{t('basketSplitHelp')}</p>
         {batches.map((rows, index) => (
           <div className="auction-basket__split" key={index}>
-            <strong>Batch {index + 1}: {rows.length} name(s)</strong>
+            <strong>{t('basketBatchCount', String(index + 1), String(rows.length))}</strong>
             <button
               type="button"
               className="auction-basket__btn auction-basket__btn--secondary"
-              onClick={() => this.copyText(this.csvForRows(rows), `Batch ${index + 1} copied.`)}
+              onClick={() => this.copyText(this.csvForRows(rows), t('basketBatchCopied', String(index + 1)))}
             >
-              Copy batch CSV
+              {t('basketCopyBatchCSV')}
             </button>
           </div>
         ))}
@@ -1374,43 +1385,43 @@ export class AuctionBasket extends Component {
 
         {['checking', 'rescanning'].includes(this.state.submissionPhase) && (
           <div className="auction-basket__submission-status">
-            <strong>Preparing auction data — no transaction has been sent.</strong>
-            <span>{this.state.submissionPhase === 'rescanning' ? 'Wallet rescan in progress.' : 'Checking auctions.'}</span>
+            <strong>{t('basketPreparingStatus')}</strong>
+            <span>{this.state.submissionPhase === 'rescanning' ? t('basketRescanningStatus') : t('basketCheckingStatus')}</span>
           </div>
         )}
         {this.state.submissionPhase === 'building' && (
           <div className="auction-basket__submission-status">
-            <strong>Building transaction — no transaction has been sent.</strong>
-            <span>Bob is selecting coins and constructing the complete basket transaction.</span>
+            <strong>{t('basketBuildingStatus')}</strong>
+            <span>{t('basketBuildingHelp')}</span>
           </div>
         )}
         {this.state.submissionPhase === 'signing' && (
           <div className="auction-basket__submission-status">
-            <strong>Signing transaction — no transaction has been sent.</strong>
-            <span>The signed transaction will remain local until the explicit broadcast step begins.</span>
+            <strong>{t('basketSigningStatus')}</strong>
+            <span>{t('basketSigningHelp')}</span>
           </div>
         )}
         {this.state.submissionPhase === 'broadcasting' && (
           <div className="auction-basket__submission-status">
-            <strong>Broadcasting basket transaction…</strong>
-            <span>Retry is disabled while Bob confirms the transaction outcome.</span>
+            <strong>{t('basketBroadcastingStatus')}</strong>
+            <span>{t('basketBroadcastingHelp')}</span>
           </div>
         )}
         {this.state.submissionPhase === 'verifying' && (
           <div className="auction-basket__submission-status">
-            <strong>Verifying transaction…</strong>
-            <span>{this.state.submissionTxid || 'Checking local WalletDB and transaction history.'}</span>
+            <strong>{t('basketVerifyingStatus')}</strong>
+            <span>{this.state.submissionTxid || t('basketVerifyingHelp')}</span>
           </div>
         )}
         {this.state.submissionPhase === 'failed' && (
           <div className="auction-basket__submission-status auction-basket__submission-status--error">
-            <strong>Submission failed during {this.state.submissionFailedStage || 'preparation'}.</strong>
+            <strong>{t('basketFailedStage', this.formatSubmissionStage(this.state.submissionFailedStage))}</strong>
             <span>{this.state.submissionError}</span>
             {!this.state.broadcastUncertain && ['checking', 'rescanning', 'building', 'signing'].includes(this.state.submissionFailedStage) && (
-              <span>No transaction was sent. Every basket entry remains saved and Retry is safe.</span>
+              <span>{t('basketRetrySafe')}</span>
             )}
             {this.state.broadcastUncertain && (
-              <span>Wallet history could not prove that no transaction was sent. Retry remains disabled to prevent a duplicate bid.</span>
+              <span>{t('basketRetryUncertain')}</span>
             )}
           </div>
         )}
@@ -1422,7 +1433,7 @@ export class AuctionBasket extends Component {
             onClick={this.onBackToBasket}
             disabled={['broadcasting', 'verifying'].includes(this.state.submissionPhase)}
           >
-            {['checking', 'rescanning', 'building', 'signing'].includes(this.state.submissionPhase) ? 'Stop waiting' : 'Back to basket'}
+            {['checking', 'rescanning', 'building', 'signing'].includes(this.state.submissionPhase) ? t('basketStopWaiting') : t('basketBack')}
           </button>
           <button
             type="button"
@@ -1437,7 +1448,7 @@ export class AuctionBasket extends Component {
             }
           >
             {this.state.submissionPhase === 'failed' && this.state.retryAllowed
-              ? 'Retry submission'
+              ? t('basketRetrySubmission')
               : this.isSubmissionActive() ? t('submitting') : t('basketSubmit')}
           </button>
         </div>

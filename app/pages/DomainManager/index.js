@@ -387,7 +387,7 @@ class DomainManager extends Component {
             onChange={currentPageIndex => this.setState({currentPageIndex})}
             currentIndex={currentPageIndex}
           />
-          <div className="domain-manager__go-to__total">of {totalPages}</div>
+          <div className="domain-manager__go-to__total">{t('paginationOf', String(totalPages))}</div>
         </div>
       </div>
     );
