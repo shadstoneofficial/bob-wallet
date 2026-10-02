@@ -222,3 +222,32 @@ test('Records submit rechecks canonical state before invoking the wallet action'
   t.equal(subject.sendCalls(), 1, 'submit invokes the existing wallet action only after the check');
   t.end();
 });
+
+
+test('ShakeX listing stages review without sending', async t => {
+  let current = '00';
+  const {component, sendCalls} = makeRecords({
+    async loadCanonicalNameInfo() { return {info: {data: current}}; },
+  });
+  await component.onStageSale({price: '5000', contact: 'X @alice'});
+  t.equal(sendCalls(), 0, 'staging never sends a transaction');
+  t.equal(component.state.importReview.kind, 'shakex', 'uses sale review');
+  t.equal(component.state.updatedResource.records.length, 2, 'stages price and contact');
+  t.ok(component.state.isDirty, 'requires explicit submit');
+  t.end();
+});
+
+test('ShakeX listing rejects dirty drafts and pending transfers', async t => {
+  const dirty = makeRecords();
+  dirty.component.state.isDirty = true;
+  await dirty.component.onStageSale({contact: 'X @alice'});
+  t.equal(dirty.loadCalls(), 0, 'does not overwrite a dirty draft');
+  const transferring = makeRecords({transferring: true});
+  await transferring.component.onStageSale({contact: 'X @alice'});
+  t.equal(transferring.loadCalls(), 0, 'does not stage during a transfer');
+  const valid = makeRecords();
+  await valid.component.onStageSale({contact: 'X @alice'});
+  await valid.component.sendUpdate();
+  t.equal(valid.sendCalls(), 1, 'explicit submit uses existing wallet action');
+  t.end();
+});

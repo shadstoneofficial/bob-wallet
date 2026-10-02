@@ -20,6 +20,8 @@ import {clearDeeplinkParams} from "../../ducks/app";
 import {deserializeRecord, serializeRecord} from '../../utils/recordHelpers';
 import {I18nContext} from "../../utils/i18n";
 import fs from 'fs';
+import ListingForm from '../../addons/shakex/ListingForm';
+import {buildSaleReview} from '../../addons/shakex/records';
 import nodeClient from '../../utils/nodeClient';
 import {assertCanonicalStillCurrent, parseActivateProposal} from '../../utils/activateProposal';
 
@@ -74,6 +76,9 @@ export class Records extends Component {
       updatedResource: canonicalResource || makeDefaultResource(),
       canonicalResource,
       resourceName: props.name,
+      resourceWallet: props.walletId,
+      resourceGeneration: props.walletGeneration,
+      resourceNetwork: props.network,
       isDirty: false,
       isRefreshingRecords: false,
       refreshError: '',
@@ -83,7 +88,7 @@ export class Records extends Component {
   }
 
   static getDerivedStateFromProps(props, state) {
-    const nameChanged = props.name !== state.resourceName;
+    const nameChanged = props.name !== state.resourceName || props.walletId !== state.resourceWallet || props.walletGeneration !== state.resourceGeneration || props.network !== state.resourceNetwork;
     const canonicalChanged = !deepEqual(props.resource || null, state.canonicalResource);
     let nextState = null;
 
@@ -91,6 +96,9 @@ export class Records extends Component {
       const canonicalResource = cloneResource(props.resource);
       nextState = {
         resourceName: props.name,
+        resourceWallet: props.walletId,
+        resourceGeneration: props.walletGeneration,
+        resourceNetwork: props.network,
         canonicalResource,
         updatedResource: canonicalResource || makeDefaultResource(),
         isDirty: false,
@@ -148,15 +156,43 @@ export class Records extends Component {
     this.setState({isUpdating: true});
     try {
       const {updatedResource} = this.state;
-      if (this.state.importReview) {
+      const submitName = this.props.name;
+      const submitNetwork = this.props.network;
+      const submitWallet = this.props.walletId;
+      const submitGeneration = this.props.walletGeneration;
+      const review = this.state.importReview;
+      const assertContext = () => {
+        if (this.props.name !== submitName || this.props.network !== submitNetwork || this.props.walletId !== submitWallet || this.props.walletGeneration !== submitGeneration) {
+          throw new Error('The selected wallet, name or network changed. Review the listing again.');
+        }
+      };
+      const recheckSale = review?.kind === 'shakex' ? async () => {
+        assertContext();
+        if (!this.props.domain?.isOwner || this.props.pendingData || this.props.transferring || this.props.domain.pendingOperation) throw new Error('The name is no longer available for an update.');
+        const latest = await this.props.loadCanonicalNameInfo(submitName);
+        assertContext();
+        if (!latest?.info || latest.info.transfer || latest.info.revoked) throw new Error('The name is no longer available for an update.');
+        assertCanonicalStillCurrent(review, latest.info.data || '00');
+      } : undefined;
+      if (this.state.importReview?.kind === 'shakex' && (!this.props.domain?.isOwner || this.props.pendingData || this.props.transferring || this.props.domain.pendingOperation)) {
+        throw new Error('Wait for pending operations and confirm ownership before submitting.');
+      }
+      if (review) {
         const result = await this.props.loadCanonicalNameInfo(this.props.name);
         if (!result || !result.info) throw new Error('Bob could not reload canonical name information before submit.');
-        assertCanonicalStillCurrent(this.state.importReview, result.info.data || '00');
+        assertContext();
+        if (review.kind === 'shakex' && (result.info.transfer || result.info.revoked)) {
+          throw new Error('The name is transferring or revoked. Refresh before preparing a listing.');
+        }
+        assertCanonicalStillCurrent(review, result.info.data || '00');
       }
-      const res = await this.props.sendUpdate(this.props.name, updatedResource);
+      if (this.props.name !== submitName || this.props.network !== submitNetwork) {
+        throw new Error('The selected name or network changed. Review the listing again.');
+      }
+      const res = await this.props.sendUpdate(submitName, updatedResource, recheckSale);
       this.setState({
         isUpdating: false,
-        ...(res !== null ? {isDirty: false} : {}),
+        ...(res !== null ? {isDirty: false, importReview: null} : {}),
       });
       if (res !== null) {
         this.props.showSuccess(t('updateSuccess'));
@@ -214,6 +250,33 @@ export class Records extends Component {
         isRefreshingRecords: false,
         refreshError: error.message || 'Canonical records could not be refreshed.',
       });
+    }
+  };
+
+  onStageSale = async options => {
+    if (!this.props.domain?.isOwner || this.props.pendingData || this.props.transferring ||
+        this.props.domain.pendingOperation || this.state.isDirty || this.state.isUpdating || this.state.isImporting) {
+      this.setState({errorMessage: 'Discard existing edits and wait for pending name operations before preparing a listing.'});
+      return;
+    }
+    const name = this.props.name;
+    const network = this.props.network;
+    const wallet = this.props.walletId;
+    const generation = this.props.walletGeneration;
+    this.setState({isImporting: true, errorMessage: ''});
+    try {
+      const result = await this.props.loadCanonicalNameInfo(name);
+      if (this.props.name !== name || this.props.network !== network || this.props.walletId !== wallet || this.props.walletGeneration !== generation) return;
+      if (!result?.info || !this.props.domain?.isOwner || this.props.domain.pendingOperation || this.props.transferring || this.props.pendingData) {
+        throw new Error('The name is unavailable for a record update. Refresh and try again.');
+      }
+      if (result.info.transfer || result.info.revoked) throw new Error('The name is transferring or revoked.');
+      const importReview = buildSaleReview(result.info.data || '00', options);
+      this.setState({importReview, updatedResource: importReview.afterResource, isDirty: true});
+    } catch (error) {
+      if (this.props.name === name) this.setState({errorMessage: error.message});
+    } finally {
+      this.setState({isImporting: false});
     }
   };
 
@@ -277,7 +340,7 @@ export class Records extends Component {
             record={record}
             onEdit={this.makeOnEdit(i)}
             onRemove={() => this.onRemove(i)}
-            disabled={!this.props.domain || !this.props.domain.isOwner}
+            disabled={!this.props.domain || !this.props.domain.isOwner || this.state.isImporting || this.state.importReview?.kind === 'shakex'}
           />
         );
       });
@@ -302,7 +365,7 @@ export class Records extends Component {
       <CreateRecord
         name={this.props.name}
         onCreate={this.onCreate}
-        disabled={!this.props.domain || !this.props.domain.isOwner}
+        disabled={!this.props.domain || !this.props.domain.isOwner || this.state.isImporting || this.state.importReview?.kind === 'shakex'}
       />
     );
   }
@@ -315,14 +378,14 @@ export class Records extends Component {
         </div>
         <button
           className="records-table__action-row__import-btn"
-          disabled={this.state.isImporting || this.state.isUpdating || Boolean(this.props.pendingData)}
+          disabled={this.state.isImporting || this.state.isUpdating || Boolean(this.props.pendingData) || this.state.importReview?.kind === 'shakex'}
           onClick={this.onImportProposal}
         >
           {this.state.isImporting ? 'Importing…' : 'Import LearnHNS proposal'}
         </button>
         <button
           className="records-table__action-row__submit-btn"
-          disabled={!this.hasChanged() || this.state.isUpdating}
+          disabled={!this.hasChanged() || this.state.isUpdating || this.state.isImporting}
           onClick={this.sendUpdate}
         >
           Submit
@@ -335,7 +398,7 @@ export class Records extends Component {
             importReview: null,
             errorMessage: '',
           })}
-          disabled={!this.hasChanged() || this.state.isUpdating}
+          disabled={!this.hasChanged() || this.state.isUpdating || this.state.isImporting}
         >
           Discard Changes
         </button>
@@ -391,13 +454,13 @@ export class Records extends Component {
     );
 
     return (
-      <section className="activate-import-review" aria-label="LearnHNS proposal review">
+      <section className={cn("activate-import-review", {"activate-import-review--shakex": review.kind === "shakex"})} aria-label={review.kind === "shakex" ? "ShakeX listing review" : "LearnHNS proposal review"}>
         <div className="activate-import-review__header">
           <div>
-            <strong>LearnHNS activation proposal staged</strong>
+            <strong>{review.kind === 'shakex' ? 'ShakeX listing changes staged' : 'LearnHNS activation proposal staged'}</strong>
             <p>Review only. Import did not unlock, sign, broadcast, or update this name. Submit remains a separate wallet action.</p>
           </div>
-          <span>v{review.proposal.version}</span>
+          <span>{review.kind === 'shakex' ? `${review.bytes} / 512 bytes` : `v${review.proposal.version}`}</span>
         </div>
         <div className="activate-import-review__grid">
           {renderResource(review.beforeResource, 'Canonical before')}
@@ -499,6 +562,12 @@ export class Records extends Component {
     return (
       <div>
         {this.renderRefreshStatus()}
+        {editable && domain.isOwner && <ListingForm
+          key={this.props.name}
+          resource={resource}
+          disabled={this.state.isDirty || this.state.isImporting || this.state.isUpdating || !!pendingData || transferring || !!domain.pendingOperation}
+          onStage={this.onStageSale}
+        />}
         {this.renderImportReview()}
         <Table
           className={cn('records-table', {
@@ -530,11 +599,13 @@ export default withRouter(
         pendingData: getPendingData(domain),
         currentHeight: state.node.chain.height,
         network: state.wallet.network,
+        walletId: state.wallet.wid,
+        walletGeneration: state.wallet.requestGeneration || 0,
         deeplinkParams,
       };
     },
     (dispatch, ownProps) => ({
-      sendUpdate: (name, json) => dispatch(nameActions.sendUpdate(name, json)),
+      sendUpdate: (name, json, beforeSend) => dispatch(nameActions.sendUpdate(name, json, beforeSend)),
       showSuccess: (message) => dispatch(showSuccess(message)),
       clearDeeplinkParams: () => dispatch(clearDeeplinkParams()),
       loadCanonicalNameInfo: name => nodeClient.getNameInfo(name),

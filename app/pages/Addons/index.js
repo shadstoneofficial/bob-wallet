@@ -26,6 +26,14 @@ const settingClient = settingClientStub(() => require('electron').ipcRenderer);
 
 const ADDONS = [
   {
+    name: 'ShakeX',
+    status: 'Available',
+    description: 'Community name listings by Marioo. Browse asking prices, seller contacts and the Bob paid-transfer guide.',
+    action: 'Open',
+    href: '/addons/shakex',
+    internal: true,
+  },
+  {
     name: 'Shakedex Marketplace',
     status: 'Available',
     description: 'Browse pending and active Shakedex channel listings from inside Bob.',

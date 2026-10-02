@@ -1065,11 +1065,19 @@ export const revokeName = (name) => async (dispatch) => {
   return await walletClient.revokeName(name);
 };
 
-export const sendUpdate = (name, json) => async (dispatch) => {
+export const sendUpdate = (name, json, beforeSend) => async (dispatch, getState) => {
+  const {wid, requestGeneration = 0} = getState().wallet;
+  const assertCurrent = () => {
+    if (!isCurrentWalletRequest(getState, requestGeneration, wid)) throw staleWalletRequestError();
+  };
   await new Promise((resolve, reject) => {
     dispatch(getPassphrase(resolve, reject));
   });
+  assertCurrent();
+  if (beforeSend) await beforeSend();
+  assertCurrent();
   await namesDb.storeName(name);
+  assertCurrent();
   const res = await walletClient.sendUpdate(name, json);
   await dispatch(fetchPendingTransactions());
   return res;
