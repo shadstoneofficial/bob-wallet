@@ -1,6 +1,6 @@
 # Simplified Chinese translation
 
-`locales/zh-CN.json` translates all 1,092 keys in `locales/en.json` at master
+`locales/zh-CN.json` translates all 1,193 keys in `locales/en.json` on a branch based on master
 `7781df159fbb7bd4426e5e0ac877b7fdd195d4ca`. The Simplified Chinese selector
 remains disabled. This is a reviewed translation draft, not a release approval.
 
@@ -10,6 +10,9 @@ Translate values only. Keep keys, `%s` placeholders in their argument order,
 URLs, technical identifiers, and formatting markers intact. Use natural
 Simplified Chinese punctuation. Do not add wallet secrets or real transaction
 data to examples, screenshots, tests, or the PR.
+
+This follow-up extracts 101 additional English source strings, including submission
+phases and import validation errors, and translates them into Chinese.
 
 The only values intentionally identical to English are `SPV`, `API`, `Shakedex`,
 `—`, and `lockedLearnMoreURL`. The four obsolete `obMigration*` strings have
@@ -43,7 +46,7 @@ and translation against their component contexts on 2026-10-02. It corrected
 the paid-transfer recipient wording to **接收方**, clarified transaction
 construction, and checked all the categories above. This is **not independent
 native-speaker sign-off**. That review remains required before enabling the
-selector. Detailed evidence and remaining visual issues are in
+selector. Detailed evidence and review limits are in
 [the review record](locale-review/zh-CN-review.md).
 
 ## Validation
@@ -88,12 +91,24 @@ for checking every dialog/state. Generated files stay under ignored
 
 - [x] Every current English key translated or explicitly retained.
 - [x] Locale parity, placeholders, URLs, and technical markers validated.
-- [x] Full application suite passes (617 assertions).
+- [x] Full application suite passes (649 assertions).
 - [x] Separate second safety wording pass completed by the translation agent.
 - [x] Major screen fixtures inspected at narrow and wide sizes.
 - [ ] Independent native Simplified Chinese security review completed.
-- [ ] Remaining clipping and hardcoded English reviewed/resolved; visual approval recorded.
+- [x] Documented Marketplace clipping and targeted hardcoded labels resolved in fixture review.
+- [ ] Native reviewer approves wording and visual evidence; remaining screen states audited.
 - [ ] Rerun validation against the eventual release head before enabling `简体中文`.
 
 Do not enable the selector simply because automated checks pass. Keep PR #9 a
 draft while review gates remain open. Do not test with real transactions.
+
+## Native review handoff
+
+Use [the concise volunteer checklist](locale-review/zh-CN-native-review.md).
+Do not count the agent safety passes as native approval. The selector remains disabled.
+
+Preview parameters: `shell=1` includes the 230px sidebar/content padding for
+regular screens (Settings correctly omits them); `locale=en` compares the English
+source; `phase=failed` shows an uncertain-broadcast warning on `screen=review`.
+For inert content use `offset=400` to inspect lower content and `edge=right` to
+inspect the rightmost Marketplace columns. These only position fixture views.

@@ -5,7 +5,7 @@ Scope: existing draft PR #9; no merge, tag, signed package, release, or deployme
 
 ## Automated evidence
 
-- 1,092 English keys and 1,092 Chinese keys; no duplicate, missing, or extra keys.
+- 1,193 English keys and 1,193 Chinese keys; no duplicate, missing, or extra keys.
 - Only five intentionally unchanged values: SPV, API, Shakedex, em dash, URL.
 - `%s` counts and `%s%` literal-percent markers pass; placeholder arguments
   remain in source order, including the M-of-N signature policy.
@@ -13,7 +13,7 @@ Scope: existing draft PR #9; no merge, tag, signed package, release, or deployme
 - 12 CLI regression cases pass (valid translation plus missing/obsolete keys,
   missing/duplicated placeholders, literal percent, URL, identifier, markup,
   newline, empty value, and non-string value mutations).
-- Full `npm test`: 617/617 assertions pass.
+- Full `npm test`: 649/649 assertions pass.
 - Local fixture webpack compilation and `git diff --check` pass.
 
 ## Separate safety pass
@@ -55,17 +55,40 @@ hardware wallet, populated market sale, all transaction dialogs, dark theme,
 or every error state. The fixture port does not mount React lifecycles or
 connect to services. Portal contents are rendered inline with original styles.
 
-### Open findings — selector stays disabled
+### Follow-up review and remaining gates
 
-1. Hardcoded English remains outside `locales/en.json`: Send HNS / Send Name,
-   fee speed names, Paste complete basket / Back to basket, Settings appearance
-   and USD options, Add Ons, EXPIRES, pagination `of`, and duration units.
-   These are source i18n extraction follow-ups, not untranslated zh-CN values.
-2. The narrow Marketplace seller filter row clips its trailing listing count.
-   Some table loading text and search placeholders are also constrained by
-   existing fixed-width columns/inputs. Review layout before release approval.
-3. Independent native Simplified Chinese security review is still pending.
-   Automated token checks and this agent's second pass do not replace it.
+The 101 newly extracted keys cover the documented Send tabs/fee labels, General
+Settings appearance/USD controls, Add Ons navigation, expiry/pagination/duration
+labels, proof publication confirmation, and Auction Basket import, draft, split,
+construction, signing, broadcast, verification, failure, and retry states.
+Internal fee identifiers, protocol states, CSV schema, and numeric validation
+are unchanged. Other source text and backend-provided errors can remain English;
+this is not a claim that every application screen is fully localized.
+
+The narrow Marketplace filter count now wraps inside the content pane. Search
+fields expand, empty/loading messages span the table, and populated columns use
+internal horizontal scrolling. Domain Manager search/filter sizing was corrected.
+Follow-up browser inspection used 800×700 and 1280×900 with a synthetic 230px
+sidebar and actual content styles for Marketplace, Send, Domain Manager, and
+Auction Basket. Settings follows its real route without the main sidebar/padding.
+The fixture omits the real topbar; this is component/layout review, not full app QA.
+Reviewed both left/right Marketplace column positions and the lower uncertain
+broadcast warning. The warning wraps, says the result is unproven, and keeps
+retry disabled. Screenshots below record these views.
+
+A fresh source-context safety pass checked the new phase translations separately:
+construction/signing retain “not sent”; broadcasting/verifying do not assert that;
+uncertain failure does not promise safe retry; successful broadcast does not claim
+chain confirmation; publishing a proof does not claim to send an on-chain transaction.
+Added mock/static-render tests verify these distinctions and translated parser
+errors without changing parsed amounts or rejection counts. This is still the
+same agent's review, not an independent native-speaker acceptance.
+
+Open gates: independent native Simplified Chinese safety/visual approval and
+validation against the eventual release head. The selector remains disabled and
+PR #9 remains a draft. See [the volunteer checklist](zh-CN-native-review.md).
+Additional dialogs, populated market purchases, hardware wallets, dark theme,
+and backend errors still need broader release QA.
 
 The historical airdrop/auction descriptions remain translations of the current
 English source; this PR does not independently revise their factual content.
@@ -75,3 +98,13 @@ English source; this PR does not independently revise their factual content.
 ![Narrow populated auction review](zh-CN-basket-800x700.jpg)
 
 ![Wide populated auction review](zh-CN-basket-1280x900.jpg)
+
+### Follow-up screenshots
+
+![Narrow seller filters and rows](zh-CN-marketplace-800x700.jpg)
+
+![Narrow rightmost seller actions](zh-CN-marketplace-actions-800x700.jpg)
+
+![Wide marketplace](zh-CN-marketplace-1280x900.jpg)
+
+![Narrow uncertain broadcast warning](zh-CN-basket-uncertain-800x700.jpg)

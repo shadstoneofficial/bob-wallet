@@ -784,3 +784,62 @@ body.bob-theme-dark {
     }
   }
 }
+
+// Filter controls must wrap within the content pane (which may include a sidebar).
+.exchange-listing-filters,
+.exchange-marketplace-filters,
+.exchange__button-header,
+.exchange__button-header-actions,
+.exchange-marketplace-header,
+.exchange-marketplace-header__actions {
+  flex-wrap: wrap;
+  gap: .75rem;
+}
+
+.exchange-listing-filters__search,
+.exchange-marketplace-filters__search {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
+.exchange-listing-filters__status,
+.exchange-listing-filters__sort,
+.exchange-marketplace-filters__availability,
+.exchange-marketplace-filters__mode,
+.exchange-marketplace-filters__sort {
+  flex: 1 1 11rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.exchange-listing-filters__count,
+.exchange-marketplace-filters__count {
+  white-space: nowrap;
+}
+
+// Empty/loading messages span the table instead of inheriting the name column.
+.exchange-table .table__row.exchange-table__empty-row .exchange-table__empty-cell {
+  flex: 1 1 100%;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  padding: .75rem 1.5rem;
+}
+
+// Keep all populated columns/actions reachable inside the table at narrow widths.
+.exchange-table {
+  min-width: 0;
+  overflow-x: auto;
+
+  .table__header,
+  .table__row:not(.exchange-table__empty-row) {
+    min-width: 50rem;
+  }
+
+  &.exchange-table--listings {
+    .table__header,
+    .table__row:not(.exchange-table__empty-row) {
+      min-width: 58rem;
+    }
+  }
+}

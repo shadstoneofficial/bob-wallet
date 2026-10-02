@@ -1,4 +1,5 @@
 import BigNumber from 'bignumber.js';
+import {translateEnglish} from './localeText';
 import punycode from 'punycode';
 import {verifyName} from 'hsd/lib/covenants/rules';
 
@@ -20,15 +21,15 @@ export function normalizeBasketName(value) {
   return name;
 }
 
-function parseAmount(value, label) {
+function parseAmount(value, label, t) {
   const raw = String(value == null ? '' : value).trim();
-  if (!raw) return {error: `${label} is required.`};
-  if (/^-/.test(raw)) return {error: `${label} cannot be negative.`};
-  if (!/^\d+(?:\.\d+)?$/.test(raw)) return {error: `${label} is malformed.`};
+  if (!raw) return {error: t('basketAmountRequired', label)};
+  if (/^-/.test(raw)) return {error: t('basketAmountNegative', label)};
+  if (!/^\d+(?:\.\d+)?$/.test(raw)) return {error: t('basketAmountMalformed', label)};
   const decimals = raw.includes('.') ? raw.split('.')[1].length : 0;
-  if (decimals > 6) return {error: `${label} has more than six decimal places.`};
+  if (decimals > 6) return {error: t('basketAmountPrecision', label)};
   const amount = new BigNumber(raw);
-  if (!amount.isFinite()) return {error: `${label} is malformed.`};
+  if (!amount.isFinite()) return {error: t('basketAmountMalformed', label)};
   return {value: amount.toFixed()};
 }
 
@@ -54,7 +55,7 @@ function isHeader(cells) {
     && HEADER_BLINDS.has(cells[2].toLowerCase().replace(/-/g, '_'));
 }
 
-export function parseCompleteBasket(text, limit = BASKET_LIMIT) {
+export function parseCompleteBasket(text, limit = BASKET_LIMIT, t = translateEnglish) {
   const parsed = [];
   const lines = String(text || '').split(/\r?\n/);
 
@@ -73,12 +74,12 @@ export function parseCompleteBasket(text, limit = BASKET_LIMIT) {
     };
 
     if (cells.length !== 3) {
-      row.errors.push('Expected exactly three columns: name, true bid, and blind.');
+      row.errors.push(t('basketImportColumns'));
     }
-    if (!row.name || !verifyName(row.name)) row.errors.push('Invalid Handshake name.');
+    if (!row.name || !verifyName(row.name)) row.errors.push(t('basketImportInvalidName'));
 
-    const bid = parseAmount(cells[1], 'True bid');
-    const blind = parseAmount(cells[2], 'Blind');
+    const bid = parseAmount(cells[1], t('basketTrueBid'), t);
+    const blind = parseAmount(cells[2], t('basketBlind'), t);
     if (bid.error) row.errors.push(bid.error);
     else row.bidAmount = bid.value;
     if (blind.error) row.errors.push(blind.error);
@@ -86,7 +87,7 @@ export function parseCompleteBasket(text, limit = BASKET_LIMIT) {
 
     if (!bid.error && !blind.error) {
       const lockup = new BigNumber(bid.value).plus(blind.value);
-      if (lockup.isZero()) row.errors.push('True bid and blind cannot both be zero.');
+      if (lockup.isZero()) row.errors.push(t('basketImportZeroAmounts'));
       row.lockupAmount = lockup.toFixed();
     }
     parsed.push(row);
@@ -97,8 +98,8 @@ export function parseCompleteBasket(text, limit = BASKET_LIMIT) {
     if (row.name) counts.set(row.name, (counts.get(row.name) || 0) + 1);
   });
   parsed.forEach((row, index) => {
-    if (row.name && counts.get(row.name) > 1) row.errors.push('Duplicate name in import.');
-    if (index >= limit) row.errors.push(`Basket limit is ${limit} names.`);
+    if (row.name && counts.get(row.name) > 1) row.errors.push(t('basketImportDuplicate'));
+    if (index >= limit) row.errors.push(t('basketLimitReached', String(limit)));
   });
 
   return parsed;

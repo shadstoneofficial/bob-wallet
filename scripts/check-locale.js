@@ -17,7 +17,7 @@ const placeholders = value => String(value).match(/%s/g) || [];
 // Preserve machine-readable text, including the literal percent after %s.
 const markers = value => String(value).match(/%s%?|\n|<[^>]+>|`+|\*\*/g) || [];
 const urls = value => String(value).match(/https?:\/\/[^\s<>]+/g) || [];
-const technicalTokens = value => String(value).match(/\b(?:HNS|Handshake|Bob|LearnHNS|HIP-2|HSD|hsd|hsd_data|hs-client|DNSSEC|DNS|TXT|TLSA|RPC|HTTP|API|JSON|SPV|OPEN|BID|BIDDING|OPENING|Shakedex|Ledger|ledger|ICANN|TLDs|SSH|PGP|WOT|RSA|GooSig|goosig|GitHub|Github|WalletDB|walletdb|xpriv|xprv|xpub|xPub|nonce|nonces|Urkel|DB|OS|QR|TX)\b/g) || [];
+const technicalTokens = value => String(value).match(/\b(?:HNS|Handshake|Bob|LearnHNS|HIP-2|HSD|hsd|hsd_data|hs-client|DNSSEC|DNS|TXT|TLSA|RPC|HTTP|API|JSON|SPV|OPEN|BID|BIDDING|OPENING|Shakedex|Ledger|ledger|ICANN|TLDs|SSH|PGP|WOT|RSA|GooSig|goosig|GitHub|Github|WalletDB|walletdb|xpriv|xprv|xpub|xPub|nonce|nonces|Urkel|DB|OS|QR|TX|CSV|USD|ID)\b/g) || [];
 const sameTokens = (a, b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
 const english = readLocale('en');
 const locale = readLocale(localeName);
