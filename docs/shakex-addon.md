@@ -6,7 +6,7 @@ ShakeX is Marioo's independent Handshake sale directory. This patch adds read-on
 
 Prepared on `codex/shakex-addon` from `origin/master` commit `7781df159fbb7bd4426e5e0ac877b7fdd195d4ca` (Bob 2.3.13). Original implementation was uncommitted on local master `116e0e80af1dfdf51e0c555ea9f017af306314ca` (2.3.9), mixed with unrelated wallet/auction changes. Only ShakeX files and its Records integration were copied into this worktree. The original checkout was left intact.
 
-The earlier 393-assertion report concerned that older mixed checkout. It is not evidence for current master. After integrating master `10a79f1d08ce9c71797b72f819d6c8a15f5f4de0` (Simplified Chinese PR #9), the combined suite passes 689 assertions, including post-unlock rejection and placeholder-safety scenarios. Current wallet mutation coordinator, storage preflight, pending-auction handling and request-lifecycle protections remain inherited from master.
+The earlier 393-assertion report concerned that older mixed checkout. It is not evidence for current master. After integrating master `1164a20ef80b0eabfd5de589db042ff8724b268b` (Chinese PR #9 and Foundation PR #14), the combined suite passes 704 assertions, including post-unlock rejection and placeholder-safety scenarios. Current wallet mutation coordinator, storage preflight, pending-auction handling and request-lifecycle protections remain inherited from master.
 
 ## User flow
 
@@ -16,11 +16,11 @@ For publication, choose Manage my listings → Domain Manager → owned name →
 
 Submit is a separate Bob action. The complete resource is checked before submission and again after the unlock prompt. Wallet/request-generation changes abort before wallet submission. Pending transfers/updates and dirty drafts block staging. Normal node validation remains necessary: no preflight can guarantee the chain remains unchanged afterward.
 
-## Add-On Foundation contract proposal
+## Registered Add-On Foundation manifest
 
-This is an integration contract for the planned foundation, not an implemented or registered runtime manifest. Capability names are proposed for coordination.
+The validated build-time manifest lives in `app/addons/shakex/manifest.js`, version `1.0.0`, and is registered in `builtInAddonRegistry`. The Add Ons card uses `manifestId: shakex`; Foundation derives its stable ID, name and route while preserving localized presentation. The previous ShakeX coordination example is removed. This is trusted bundled metadata, not an installer or permission-enforcement runtime.
 
-| Field | Proposed value |
+| Field | Registered value / integration boundary |
 | --- | --- |
 | Stable ID | `shakex` |
 | Display name | ShakeX |
@@ -32,18 +32,20 @@ This is an integration contract for the planned foundation, not an implemented o
 | Allowed API origin | `https://shakex.fun` |
 | API method/path | GET `/api/listings`; omit credentials/referrer; reject redirects |
 | External destinations | Exact fixed URLs `https://shakex.fun`, `/docs`, `/deal` |
-| Default wallet permissions | None for browsing |
-| Optional capabilities | `names.readSelectedResource`, `names.proposeRecordUpdate`, `navigation.openOwnedName` |
+| Declared discovery capabilities | `marketplace.readListings`, `external.openUrl` |
+| Wallet access while browsing | None |
+| Declared name capabilities | `names.readSelectedResource`, `names.proposeRecordUpdate`, `navigation.openOwnedName` |
 | Future separately reviewed capability | `names.reviewPaidTransfer`; not implemented here |
 | Never expose | Seed/private keys, wallet password, unrestricted RPC/IPC/filesystem or arbitrary transaction signing |
 
-The host must own name/wallet selection, ownership and pending-state checks, canonical resource loading, complete before/after preview, size validation, explicit confirmation/unlock, post-unlock revalidation and final transaction submission. An addon may propose a change, never bypass those controls. Browsing must still work if optional capabilities are denied. Today's bundled code calls existing Bob components; moving it into an untrusted runtime requires a new isolated bridge, not reuse of renderer privileges.
+The host must own name/wallet selection, ownership and pending-state checks, canonical resource loading, complete before/after preview, size validation, explicit confirmation/unlock, post-unlock revalidation and final transaction submission. An addon may propose a change, never bypass those controls. A future permission broker must keep browsing usable if name capabilities are denied; Foundation v1 does not implement permission prompts or enforcement. Today's bundled code calls existing Bob components; moving it into an untrusted runtime requires a new isolated bridge, not reuse of renderer privileges.
 
 ## Reproducible validation
 
 From the repository root with dependencies installed:
 
 ```sh
+node app/addons/tests/foundation.spec.cjs
 npm test
 npm run build-renderer
 node app/addons/shakex/client.spec.cjs
@@ -70,9 +72,9 @@ The Electron fixture now covers 600px review layout and loading/empty/error/popu
 
 Watch-only, hardware-backed watch-only and 2-of-3 multisig metadata fixtures verify that ownership gates staging, review alone never submits, and explicit Submit delegates to the existing Bob host action. These are UI eligibility fixtures with a mocked host, not device/cosigner signing tests. Bob currently routes non-multisig watch-only accounts through its Ledger path and multisig inputs through its multisig coordinator. The addon does not introduce a signer or promise generic watch-only signing. Physical-device availability, cancellation and actual cosigner completion still require installed-app testing.
 
-Localization is implemented for English and Simplified Chinese after integrating PR #9's merged master. All existing test imports and locale keys are retained. The [localization integration notes](shakex-localization-handoff.md) cover 83 added entries, literal placeholder substitution, locale-aware timestamps, unchanged wire values and the combined 689-assertion result. Both languages pass the 600px Electron fixtures; screenshots were inspected. The fixture now uses global Bob styles and blocks external font requests. The resource-size badge stays on one line and the Records header grows to fit translated text. Native-speaker feedback is deferred until the next build by user direction.
+Localization is implemented for English and Simplified Chinese after integrating PR #9's merged master. All existing test imports and locale keys are retained. The [localization integration notes](shakex-localization-handoff.md) cover 83 added entries, literal placeholder substitution, locale-aware timestamps, unchanged wire values and the combined 704-assertion result. Both languages pass the 600px Electron fixtures; screenshots were inspected. The fixture now uses global Bob styles and blocks external font requests. The resource-size badge stays on one line and the Records header grows to fit translated text. Native-speaker feedback is deferred until the next build by user direction.
 
-## Remaining draft PR blockers
+## Remaining release validation
 
 - Public ShakeX index refresh is not tested on regtest; no mainnet listing was submitted.
 - Installed-app smoke testing, real unlock/cancel, hardware signing and multisig cosigner completion remain deferred.
