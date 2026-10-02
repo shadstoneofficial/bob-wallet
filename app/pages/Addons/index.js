@@ -9,7 +9,6 @@ import walletClient from '../../utils/walletClient';
 import {clientStub as settingClientStub} from '../../background/setting/client';
 import {
   DEFAULT_LIQUIDITY_SPOT_CHANNEL_HOST,
-  LIQUIDITY_ADDON_NAME,
   LIQUIDITY_SPOT_CHANNEL_LIST_STORAGE_KEY,
   LIQUIDITY_SPOT_CHANNEL_STORAGE_KEY,
   getLiquiditySpotChannelUrl,
@@ -21,32 +20,28 @@ import {
   getLiquiditySwapRoomUrl,
   getSafeLiquidityIntentUrl,
 } from '../../utils/urlPolicy';
+import {createBuiltInCatalog} from '../../addons/manifests';
 
 const settingClient = settingClientStub(() => require('electron').ipcRenderer);
 
-const ADDONS = [
+const ADDONS = createBuiltInCatalog([
   {
-    name: 'Shakedex Marketplace',
+    manifestId: 'shakedex-marketplace',
     status: 'Available',
     description: 'Browse pending and active Shakedex channel listings from inside Bob.',
     action: 'Open',
-    href: '/exchange',
-    internal: true,
   },
   {
-    name: 'Send Name',
+    manifestId: 'send-name',
     status: 'Available',
     description: 'Send or sell a domain directly to another user with a paid claim payload.',
     action: 'Open',
-    href: '/send?asset=name&mode=send',
-    internal: true,
   },
   {
-    name: LIQUIDITY_ADDON_NAME,
+    manifestId: 'liquidity-spot',
     status: 'Public Preview',
     description: 'Human P2P coordination is available now. Atomic-swap tooling is the next build track and will need Bitcoin wallet integration research.',
     action: 'Open',
-    href: 'https://liquidity.spot/p2p',
     docsHref: 'https://bobwallet.org/docs/liquidity-spot',
     externalNotice: 'Liquidity opens outside Bob. Bob will not share your seed phrase, private keys, wallet password, or signing permissions with this Add On.',
     details: [
@@ -57,21 +52,24 @@ const ADDONS = [
     ],
   },
   {
+    id: 'resolver-directory',
     name: 'Resolver Directory',
     status: 'Planned',
     description: 'Find working Handshake resolvers and see their health before changing your setup.',
   },
   {
+    id: 'agentic-web',
     name: 'Agentic Web',
     status: 'Research',
     description: 'Agent-friendly tools built around HNS TXT records and the hns.bio standard.',
   },
   {
+    id: 'sld-manager',
     name: 'SLD Manager',
     status: 'Research',
     description: 'Help TLD owners run nameservers and manage second-level domains without DNS guesswork.',
   },
-];
+]);
 
 class Addons extends Component {
   static propTypes = {
@@ -677,7 +675,7 @@ class Addons extends Component {
     const liquiditySwapIntentUrl = deeplinkParams?.liquiditySwapIntentUrl;
     const isLiquiditySwapPage = location.pathname === '/liquidity-swap';
     const addons = ADDONS.map(addon => {
-      if (addon.name !== LIQUIDITY_ADDON_NAME) {
+      if (addon.id !== 'liquidity-spot') {
         return addon;
       }
 
@@ -840,7 +838,7 @@ class Addons extends Component {
         {!isLiquiditySwapPage && (
           <div className="addons-page__grid">
           {addons.map(addon => (
-            <div className="addons-page__card" key={addon.name}>
+            <div className="addons-page__card" key={addon.id || addon.name}>
               <div className="addons-page__card-header">
                 <h3>{addon.name}</h3>
                 <span>{addon.status}</span>
@@ -865,7 +863,7 @@ class Addons extends Component {
                   </button>
                 )}
               </div>
-              {pendingExternalAddon?.name === addon.name && (
+              {pendingExternalAddon?.id === addon.id && (
                 <div className="addons-page__external-notice">
                   <h4>Open External Add On?</h4>
                   <p>{addon.externalNotice || 'This Add On opens outside Bob.'}</p>
