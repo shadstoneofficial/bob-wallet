@@ -63,7 +63,7 @@ The following script will extend `zh-CN.json` with any new keys from `en.json` w
 npm run add-locale zh-CN
 ```
 
-Validate that a locale has the same keys and `%s` placeholders as English:
+Validate key parity, `%s` placeholders, URLs, known technical tokens, and formatting markers against English:
 
 ```bash
 npm run check-locale -- zh-CN
@@ -76,7 +76,7 @@ npm run check-locale -- zh-CN
 
 ## Note to Maintainers
 
-- When merging in a new locale json, be sure to update the dropdown list in `app/util/i18n.js` with the new locale.
+- Enable a new locale only after its translation, safety, and visual review gates pass; then update the dropdown list in `app/utils/i18n.js` with the new locale.
 - When new keys are added to `en.json`, make sure to run `npm run add-locale` to extend new keys to existing locale json.
 
 ## Languages
@@ -86,4 +86,4 @@ npm run check-locale -- zh-CN
 | Catalan | ca.json | Faltrum (@faltrum) |
 | Spanish | es-ES.json | Faltrum (@faltrum) |
 | French | fr-FR.json | Miguel Gargallo (@miguelgargallo) |
-| Simplified Chinese (in progress) | zh-CN.json | Community contributors welcome |
+| Simplified Chinese (translated; review pending) | zh-CN.json | Community contributors welcome |

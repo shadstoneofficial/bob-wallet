@@ -24,7 +24,8 @@
     "test": "tape -r jsdom-global/register ./test-dist/test.js",
     "add-locale": "node scripts/add-locale.js",
     "check-all-locales": "node scripts/check-all-locales.js",
-    "check-locale": "node scripts/check-locale.js"
+    "check-locale": "node scripts/check-locale.js",
+    "preview-locale": "webpack --config scripts/locale-preview/webpack.config.js"
   },
   "main": "./dist/main.js",
   "build": {

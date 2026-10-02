@@ -14,6 +14,11 @@ const readLocale = name => {
 };
 
 const placeholders = value => String(value).match(/%s/g) || [];
+// Preserve machine-readable text, including the literal percent after %s.
+const markers = value => String(value).match(/%s%?|\n|<[^>]+>|`+|\*\*/g) || [];
+const urls = value => String(value).match(/https?:\/\/[^\s<>]+/g) || [];
+const technicalTokens = value => String(value).match(/\b(?:HNS|Handshake|Bob|LearnHNS|HIP-2|HSD|hsd|hsd_data|hs-client|DNSSEC|DNS|TXT|TLSA|RPC|HTTP|API|JSON|SPV|OPEN|BID|BIDDING|OPENING|Shakedex|Ledger|ledger|ICANN|TLDs|SSH|PGP|WOT|RSA|GooSig|goosig|GitHub|Github|WalletDB|walletdb|xpriv|xprv|xpub|xPub|nonce|nonces|Urkel|DB|OS|QR|TX)\b/g) || [];
+const sameTokens = (a, b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
 const english = readLocale('en');
 const locale = readLocale(localeName);
 const englishKeys = Object.keys(english);
@@ -27,6 +32,15 @@ const placeholderErrors = englishKeys.filter(key => (
   && placeholders(locale[key]).length !== placeholders(english[key]).length
 ));
 
+const valueErrors = englishKeys.filter(key => typeof locale[key] !== 'string' || !locale[key].trim());
+const tokenErrors = englishKeys.filter(key => (
+  typeof locale[key] === 'string' && (
+    !sameTokens(markers(english[key]), markers(locale[key]))
+    || !sameTokens(urls(english[key]), urls(locale[key]))
+    || !sameTokens(technicalTokens(english[key]), technicalTokens(locale[key]))
+  )
+));
+
 console.log(`Locale: ${localeName}`);
 console.log(`English keys: ${englishKeys.length}`);
 console.log(`Locale keys: ${localeKeys.length}`);
@@ -38,6 +52,8 @@ if (placeholderErrors.length) {
   console.error(`Placeholder count differs from English: ${placeholderErrors.join(', ')}`);
 }
 
-if (missing.length || extra.length || placeholderErrors.length) process.exit(1);
+if (valueErrors.length) console.error(`Missing/empty/non-string values: ${valueErrors.join(', ')}`);
+if (tokenErrors.length) console.error(`URL, technical token, or formatting marker mismatch: ${tokenErrors.join(', ')}`);
+if (missing.length || extra.length || placeholderErrors.length || valueErrors.length || tokenErrors.length) process.exit(1);
 
-console.log('Locale structure and placeholders are valid.');
+console.log('Locale structure, placeholders, URLs, technical tokens, and formatting markers are valid.');
