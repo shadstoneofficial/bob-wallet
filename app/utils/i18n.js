@@ -19,8 +19,6 @@ export const languageDropdownItems = [
   { label: 'French (FR)', value: 'fr-FR' },
   { label: 'Español (ES)', value: 'es-ES' },
   { label: 'Català (CAT)', value: 'ca' },
-  // Keep disabled until parity/tests, narrow+wide visual approval, and
-  // independent security wording review pass. See docs/simplified-chinese-translation.md.
-  // { label: '简体中文', value: 'zh-CN' },
+  { label: '简体中文', value: 'zh-CN' },
   { label: 'Custom JSON', value: 'custom' },
 ];

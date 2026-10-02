@@ -108,3 +108,10 @@ English source; this PR does not independently revise their factual content.
 ![Wide marketplace](zh-CN-marketplace-1280x900.jpg)
 
 ![Narrow uncertain broadcast warning](zh-CN-basket-uncertain-800x700.jpg)
+> Decision update, 2026-10-02: The maintainer approved merging PR #9 and enabling
+> Simplified Chinese for the next planned build. Independent native-speaker
+> feedback is deferred until that build is available. Earlier disabled-selector
+> and pre-merge native-review requirements below are historical and superseded
+> by this decision. Native approval has not been claimed; release-head testing
+> and follow-up wording corrections remain outstanding. No public build is
+> authorized by this change.

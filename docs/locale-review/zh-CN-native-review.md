@@ -31,3 +31,10 @@ AI passes and automated checks are supporting evidence, not native approval.
 Do not enable the selector until all checks and the recorded review pass on the
 release candidate revision. This checklist is ready to share with a volunteer;
 no Telegram message has been sent by this task.
+> Decision update, 2026-10-02: The maintainer approved merging PR #9 and enabling
+> Simplified Chinese for the next planned build. Independent native-speaker
+> feedback is deferred until that build is available. Earlier disabled-selector
+> and pre-merge native-review requirements below are historical and superseded
+> by this decision. Native approval has not been claimed; release-head testing
+> and follow-up wording corrections remain outstanding. No public build is
+> authorized by this change.

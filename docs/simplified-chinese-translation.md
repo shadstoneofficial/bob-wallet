@@ -112,3 +112,10 @@ regular screens (Settings correctly omits them); `locale=en` compares the Englis
 source; `phase=failed` shows an uncertain-broadcast warning on `screen=review`.
 For inert content use `offset=400` to inspect lower content and `edge=right` to
 inspect the rightmost Marketplace columns. These only position fixture views.
+> Decision update, 2026-10-02: The maintainer approved merging PR #9 and enabling
+> Simplified Chinese for the next planned build. Independent native-speaker
+> feedback is deferred until that build is available. Earlier disabled-selector
+> and pre-merge native-review requirements below are historical and superseded
+> by this decision. Native approval has not been claimed; release-head testing
+> and follow-up wording corrections remain outstanding. No public build is
+> authorized by this change.
