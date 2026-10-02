@@ -102,14 +102,14 @@ function isAuctionExpired(auction) {
   return Boolean(expiryTime && expiryTime <= Date.now());
 }
 
-function getAuctionExpiryLabel(auction) {
+function getAuctionExpiryLabel(auction, t) {
   const expiryTime = getAuctionExpiryTime(auction);
   if (!expiryTime) {
-    return 'Not generated';
+    return t('listingNotGenerated');
   }
 
   const daysLeft = Math.max(0, Math.ceil((expiryTime - Date.now()) / (24 * 60 * 60 * 1000)));
-  return `${moment(expiryTime).utc().format('YYYY-MM-DD')} (${daysLeft}d)`;
+  return t('listingExpiryDays', moment(expiryTime).utc().format('YYYY-MM-DD'), String(daysLeft));
 }
 
 function isShortFixedListingProof(listing) {
@@ -1171,7 +1171,7 @@ export class Exchange extends Component {
 
     return (
       <MiniModal
-        title="Submit Listing Proof"
+        title={t('submitListingProofTitle')}
         onClose={() => {
           if (!this.state.isSubmittingListingProof) {
             this.setState({submitConfirmationListing: null});
@@ -1179,7 +1179,7 @@ export class Exchange extends Component {
         }}
       >
         <p>
-          This publishes your locally generated proof to the Shakedex channel so buyers can see and buy the listing.
+          {t('submitListingProofIntro')}
         </p>
         {this.state.isSubmittingListingProof && (
           <div className="exchange-submit-confirmation__processing">
@@ -1193,15 +1193,15 @@ export class Exchange extends Component {
         )}
         <div className="exchange-submit-confirmation__details">
           <div>
-            <strong>Domain</strong>
+            <strong>{t('domain')}</strong>
             <span>{formatName(listing.nameLock.name)}</span>
           </div>
           <div>
-            <strong>Listing Type</strong>
+            <strong>{t('listingType')}</strong>
             <span>{isFixedPrice ? t('buyNow') : t('reverseAuction')}</span>
           </div>
           <div>
-            <strong>{isFixedPrice ? 'Buy Now Price' : 'Price Range'}</strong>
+            <strong>{isFixedPrice ? t('buyNowPrice') : t('listingPriceRange')}</strong>
             <span>
               {isFixedPrice
                 ? `${displayBalance(listing.params.price)} HNS`
@@ -1209,16 +1209,16 @@ export class Exchange extends Component {
             </span>
           </div>
           <div>
-            <strong>Buyable Until</strong>
-            <span>{expiryTime ? moment(expiryTime).utc().format('YYYY-MM-DD HH:mm [UTC]') : 'Unknown'}</span>
+            <strong>{t('listingBuyableUntil')}</strong>
+            <span>{expiryTime ? moment(expiryTime).utc().format('YYYY-MM-DD HH:mm [UTC]') : t('unknown')}</span>
           </div>
         </div>
         <p className="exchange-submit-confirmation__note">
-          No on-chain transaction is sent by this step. You can still Download the proof as a backup.
+          {t('submitListingProofNoTransaction')}
         </p>
         {isShortProof && (
           <div className="exchange-submit-confirmation__warning">
-            This proof expires in less than 30 days. To make a longer fixed-price listing, click Cancel, then Regenerate and choose a longer listing length before submitting.
+            {t('submitListingProofShortWarning')}
           </div>
         )}
         <div className="place-bid-modal__buttons">
@@ -1500,15 +1500,15 @@ export class Exchange extends Component {
               </TableRow>
             )}
             {marketplaceView.showRefreshing && (
-              <TableRow>
-                <TableItem>{t('refreshingMarketplaceListings')}</TableItem>
+              <TableRow className="exchange-table__empty-row">
+                <TableItem className="exchange-table__empty-cell">{t('refreshingMarketplaceListings')}</TableItem>
               </TableRow>
             )}
             {!!marketplaceAuctions.length && marketplaceAuctions.map(this.renderAuctionRow)}
             {this.renderListingControls()}
             {marketplaceView.showEmpty && (
-              <TableRow>
-                <TableItem>
+              <TableRow className="exchange-table__empty-row">
+                <TableItem className="exchange-table__empty-cell">
                   {t('marketplaceLoadedEmpty')}
                 </TableItem>
               </TableRow>
@@ -1518,8 +1518,8 @@ export class Exchange extends Component {
               && this.props.auctions.length > 0
               && !marketplaceAuctions.length
               && (
-                <TableRow>
-                  <TableItem>{t('noMarketplaceListingsFound')}</TableItem>
+                <TableRow className="exchange-table__empty-row">
+                  <TableItem className="exchange-table__empty-cell">{t('noMarketplaceListingsFound')}</TableItem>
                 </TableRow>
               )
             }
@@ -1668,12 +1668,12 @@ export class Exchange extends Component {
                 <HeaderItem>{t('status')}</HeaderItem>
                 <HeaderItem>{t('listingType')}</HeaderItem>
                 <HeaderItem>{t('price')}</HeaderItem>
-                <HeaderItem>Expires</HeaderItem>
+                <HeaderItem>{t('expiresOn')}</HeaderItem>
                 <HeaderItem />
               </HeaderRow>
               {this.state.isLoadingLocalListings && (
-                <TableRow>
-                  <TableItem>
+                <TableRow className="exchange-table__empty-row">
+                  <TableItem className="exchange-table__empty-cell">
                     <div className="exchange-table__empty-note">
                       {t('checkingLocalListings')}
                     </div>
@@ -1873,7 +1873,7 @@ export class Exchange extends Component {
             }}
             currentIndex={currentPageIndex - 1}
           />
-          <div className="domain-manager__go-to__total">of {totalPages}</div>
+          <div className="domain-manager__go-to__total">{t('paginationOf', String(totalPages))}</div>
         </div>
       </div>
     )
@@ -2074,7 +2074,7 @@ export class Exchange extends Component {
     const hasLastBidReleased = now > lockTime * 1000;
     const isBulkGenerating = this.state.bulkGeneratingNames.includes(l.nameLock.name);
     const isPreparingSubmit = this.state.preparingSubmitNames.includes(l.nameLock.name);
-    const expiryLabel = getAuctionExpiryLabel(l.auction);
+    const expiryLabel = getAuctionExpiryLabel(l.auction, this.context.t);
     const isSold = l.status === LISTING_STATUS.SOLD;
     const {t} = this.context;
 
@@ -2114,8 +2114,8 @@ export class Exchange extends Component {
             title={isSold
               ? t('soldListingNoExpiryHelp')
               : l.auction
-                ? `Buyable until ${expiryLabel}`
-                : 'Generate a proof to set the listing length.'}
+                ? t('listingBuyableUntilDetail', expiryLabel)
+                : t('listingGenerateForLength')}
           >
             {isSold ? t('notApplicable') : expiryLabel}
           </span>
@@ -2160,7 +2160,7 @@ export class Exchange extends Component {
           {!isPreparingSubmit && l.status === LISTING_STATUS.FINALIZE_CONFIRMED && (
             <div className="bid-action">
               {isBulkGenerating
-                ? this.renderDisabledListingAction(`${t('generating')}...`, 'Generating this listing proof now.')
+                ? this.renderDisabledListingAction(`${t('generating')}...`, t('listingGeneratingProof'))
                 : (
                   <div
                     className="bid-action__link"
@@ -2175,11 +2175,11 @@ export class Exchange extends Component {
               }
               {this.renderDisabledListingAction(
                 t('download'),
-                'Available after you generate the listing proof.'
+                t('listingAfterProof')
               )}
               {this.renderDisabledListingAction(
                 t('submit'),
-                'Available after you generate the listing proof.'
+                t('listingAfterProof')
               )}
               <div
                 className="bid-action__link bid-action__link--private-proof"
@@ -2196,15 +2196,15 @@ export class Exchange extends Component {
             <div className="bid-action">
               {this.renderDisabledListingAction(
                 t('generate'),
-                'Available after the finalize transaction confirms on-chain.'
+                t('listingAfterFinalize')
               )}
               {this.renderDisabledListingAction(
                 t('download'),
-                'Available after you generate the listing proof.'
+                t('listingAfterProof')
               )}
               {this.renderDisabledListingAction(
                 t('submit'),
-                'Available after you generate the listing proof.'
+                t('listingAfterProof')
               )}
             </div>
           )}

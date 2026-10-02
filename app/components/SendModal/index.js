@@ -270,7 +270,7 @@ class SendModal extends Component {
             </div>
             <div className="send__network-fee__form">
               <div className="send__network-fee__select">
-                <div>{selectedGasOption}</div>
+                <div>{t({[SLOW]: 'feeSpeedSlow', [STANDARD]: 'feeSpeedStandard', [FAST]: 'feeSpeedFast'}[selectedGasOption])}</div>
                 <select
                   onChange={e => this.setState({
                     selectedGasOption: e.target.value,
@@ -278,9 +278,9 @@ class SendModal extends Component {
                   })}
                   value={selectedGasOption}
                 >
-                  <option value={SLOW}>Slow</option>
-                  <option value={STANDARD}>Standard</option>
-                  <option value={FAST}>Fast</option>
+                  <option value={SLOW}>{t('feeSpeedSlow')}</option>
+                  <option value={STANDARD}>{t('feeSpeedStandard')}</option>
+                  <option value={FAST}>{t('feeSpeedFast')}</option>
                 </select>
               </div>
               <div className="send__network-fee__fee-amount">
@@ -473,19 +473,20 @@ class SendModal extends Component {
   }
 
   renderAssetTabs() {
+    const {t} = this.context;
     return (
       <div className="send__asset-tabs">
         <button
           className={this.state.assetMode === 'hns' ? 'send__asset-tab send__asset-tab--active' : 'send__asset-tab'}
           onClick={() => this.setAssetMode('hns')}
         >
-          Send HNS
+          {t('sendHnsTab')}
         </button>
         <button
           className={this.state.assetMode === 'name' ? 'send__asset-tab send__asset-tab--active' : 'send__asset-tab'}
           onClick={() => this.setAssetMode('name')}
         >
-          Send Name
+          {t('sendNameTab')}
         </button>
       </div>
     );
