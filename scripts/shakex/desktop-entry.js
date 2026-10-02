@@ -7,6 +7,7 @@ const React = require('react');
 const {createRoot} = require('react-dom/client');
 const {Provider} = require('react-redux');
 const {MemoryRouter} = require('react-router-dom');
+const ShakeX = require('../../app/addons/shakex').default;
 const {Records} = require('../../app/components/Records');
 const {Resource} = require('hsd/lib/dns/resource');
 const {I18nContext} = require('../../app/utils/i18n');
@@ -30,13 +31,22 @@ const props = {
   sendUpdate: async (name, next, beforeSend) => {if (beforeSend) await beforeSend(); sends++; return null;},
   openProposalFile: async () => ({canceled: true}), readProposalFile: async () => '',
 };
-createRoot(document.getElementById('root')).render(
+const root = createRoot(document.getElementById('root'));
+root.render(
   <MemoryRouter><Provider store={store}><I18nContext.Provider value={{t: key => key}}>
     <h1>ShakeX listing review — isolated fixture</h1>
     <Records {...props} ref={ref => {instance = ref;}} />
   </I18nContext.Provider></Provider></MemoryRouter>
 );
 window.fixture = {
+  browse(mode) {
+    window.fetch = async () => {
+      if (mode === 'loading') return new Promise(() => {});
+      if (mode === 'error') throw new Error('fixture offline');
+      return {ok: true, text: async () => JSON.stringify({listings: mode === 'empty' ? [] : [{name:'xn--ls8h', prices:[{unit:'HNS',amount:'123.000001'}], contacts:[{type:'text',value:'X @alice'}]}]})};
+    };
+    root.render(<MemoryRouter><ShakeX key={mode} /></MemoryRouter>);
+  },
   edit() {
     const inputs = document.querySelectorAll('.shakex-listing-form input');
     Simulate.change(inputs[0], {target: {value: '5000'}});

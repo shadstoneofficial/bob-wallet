@@ -251,3 +251,24 @@ test('ShakeX listing rejects dirty drafts and pending transfers', async t => {
   t.equal(valid.sendCalls(), 1, 'explicit submit uses existing wallet action');
   t.end();
 });
+
+
+for (const mode of [
+  {label: 'watch-only', watchOnly: true, type: 'pubkeyhash'},
+  {label: 'hardware-backed watch-only', watchOnly: true, type: 'pubkeyhash', hardware: true},
+  {label: 'multisig', watchOnly: false, type: 'multisig', m: 2, n: 3},
+]) {
+  test(`ShakeX ${mode.label} fixture stages only for owner and delegates explicit submit`, async t => {
+    const subject = makeRecords({...mode});
+    await subject.component.onStageSale({price: '5000', contact: 'X @alice'});
+    t.equal(subject.sendCalls(), 0, 'staging does not sign or submit');
+    t.equal(subject.component.state.importReview.kind, 'shakex');
+    await subject.component.sendUpdate();
+    t.equal(subject.sendCalls(), 1, 'explicit submit delegates to the existing host action');
+    const denied = makeRecords({...mode, domain: {isOwner: false}});
+    await denied.component.onStageSale({contact: 'X @alice'});
+    t.equal(denied.loadCalls(), 0, 'non-owner cannot stage');
+    t.equal(denied.sendCalls(), 0);
+    t.end();
+  });
+}

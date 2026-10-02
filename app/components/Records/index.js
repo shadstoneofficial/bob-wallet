@@ -572,6 +572,7 @@ export class Records extends Component {
         <Table
           className={cn('records-table', {
             'records-table--pending': pendingData,
+            'records-table--shakex': editable && domain.isOwner,
           })}
         >
           {this.renderHeaders()}
