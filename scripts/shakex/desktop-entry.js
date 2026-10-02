@@ -34,7 +34,7 @@ const props = {
   deeplinkParams: {}, editable: true, transferring: false, currentHeight: 100,
   clearDeeplinkParams() {}, showSuccess() {}, refreshCanonicalNameInfo: async () => {},
   loadCanonicalNameInfo: async () => ({info: {data: canonical}}),
-  sendUpdate: async (name, next, beforeSend) => {if (beforeSend) await beforeSend(); sends++; return null;},
+  sendUpdate: async (name, next, beforeSend, assertActive) => {if (beforeSend) await beforeSend(); if (assertActive) assertActive(); sends++; return null;},
   openProposalFile: async () => ({canceled: true}), readProposalFile: async () => '',
 };
 const root = createRoot(document.getElementById('root'));

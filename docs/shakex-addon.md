@@ -6,7 +6,7 @@ ShakeX is Marioo's independent Handshake sale directory. This patch adds read-on
 
 Prepared on `codex/shakex-addon` from `origin/master` commit `7781df159fbb7bd4426e5e0ac877b7fdd195d4ca` (Bob 2.3.13). Original implementation was uncommitted on local master `116e0e80af1dfdf51e0c555ea9f017af306314ca` (2.3.9), mixed with unrelated wallet/auction changes. Only ShakeX files and its Records integration were copied into this worktree. The original checkout was left intact.
 
-The earlier 393-assertion report concerned that older mixed checkout. It is not evidence for current master. After integrating master `1164a20ef80b0eabfd5de589db042ff8724b268b` (Chinese PR #9 and Foundation PR #14), the combined suite passes 704 assertions, including post-unlock rejection and placeholder-safety scenarios. Current wallet mutation coordinator, storage preflight, pending-auction handling and request-lifecycle protections remain inherited from master.
+The earlier 393-assertion report concerned that older mixed checkout. It is not evidence for current master. After integrating master `1164a20ef80b0eabfd5de589db042ff8724b268b` (Chinese PR #9 and Foundation PR #14), the combined suite passes 745 assertions, including post-unlock rejection and placeholder-safety scenarios. Current wallet mutation coordinator, storage preflight, pending-auction handling and request-lifecycle protections remain inherited from master.
 
 ## User flow
 
@@ -15,6 +15,27 @@ Open Add Ons → ShakeX → Load listings. Data loads only on request from the p
 For publication, choose Manage my listings → Domain Manager → owned name → Records. Enter an optional HNS price and a required text contact; Review listing changes stages the full before/after resource. Review removal removes only single-string FORSALE1 records. Existing sale fields are replaced, including other currency/contact fields; the preview makes this visible. NS, DS, hns.bio and unrelated TXT records are preserved. Ambiguous multi-string sale records require manual editing rather than silent removal.
 
 Submit is a separate Bob action. The complete resource is checked before submission and again after the unlock prompt. Wallet/request-generation changes abort before wallet submission. Pending transfers/updates and dirty drafts block staging. Normal node validation remains necessary: no preflight can guarantee the chain remains unchanged afterward.
+
+## Async lifecycle safeguards
+
+Mounted state, per-operation identity and a monotonic context revision invalidate
+staging, refresh, activation import and submit continuations when the user leaves
+Records or changes the wallet, wallet generation, name or network. Context changes
+reset busy/error/review state. Late success/error/finally callbacks cannot overwrite
+a newer draft, clear its busy state or display a success toast in another wallet.
+Switching away and back does not revive the original operation.
+
+The host name-update action keeps the post-unlock canonical review and runs a
+synchronous context assertion immediately before `walletClient.sendUpdate`, after
+`namesDb.storeName` completes. The sequencing helper `submitNameUpdate` is exercised
+with a deferred storage dependency. It does not check after sending in order to
+cancel a transaction: already-sent operations still finish their host bookkeeping;
+only stale component UI completions are ignored.
+
+Regression cases cover deferred canonical lookup and unlock followed by unmount,
+wallet switch or switch-back; failed staging while a newer wallet draft is loading;
+post-send completion after navigation; activation dialog context changes; and
+unmount during the final local-storage await. The combined suite passes 745 assertions.
 
 ## Registered Add-On Foundation manifest
 
@@ -72,7 +93,7 @@ The Electron fixture now covers 600px review layout and loading/empty/error/popu
 
 Watch-only, hardware-backed watch-only and 2-of-3 multisig metadata fixtures verify that ownership gates staging, review alone never submits, and explicit Submit delegates to the existing Bob host action. These are UI eligibility fixtures with a mocked host, not device/cosigner signing tests. Bob currently routes non-multisig watch-only accounts through its Ledger path and multisig inputs through its multisig coordinator. The addon does not introduce a signer or promise generic watch-only signing. Physical-device availability, cancellation and actual cosigner completion still require installed-app testing.
 
-Localization is implemented for English and Simplified Chinese after integrating PR #9's merged master. All existing test imports and locale keys are retained. The [localization integration notes](shakex-localization-handoff.md) cover 83 added entries, literal placeholder substitution, locale-aware timestamps, unchanged wire values and the combined 704-assertion result. Both languages pass the 600px Electron fixtures; screenshots were inspected. The fixture now uses global Bob styles and blocks external font requests. The resource-size badge stays on one line and the Records header grows to fit translated text. Native-speaker feedback is deferred until the next build by user direction.
+Localization is implemented for English and Simplified Chinese after integrating PR #9's merged master. All existing test imports and locale keys are retained. The [localization integration notes](shakex-localization-handoff.md) cover 83 added entries, literal placeholder substitution, locale-aware timestamps, unchanged wire values and the combined 745-assertion result. Both languages pass the 600px Electron fixtures; screenshots were inspected. The fixture now uses global Bob styles and blocks external font requests. The resource-size badge stays on one line and the Records header grows to fit translated text. Native-speaker feedback is deferred until the next build by user direction.
 
 ## Remaining release validation
 

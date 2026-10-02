@@ -48,6 +48,7 @@ function makeRecords(overrides = {}) {
     const value = typeof update === 'function' ? update(component.state, component.props) : update;
     component.state = {...component.state, ...value};
   };
+  component.componentDidMount();
   return {component, sendCalls: () => sendCalls, loadCalls: () => loadCalls};
 }
 
@@ -272,3 +273,136 @@ for (const mode of [
     t.end();
   });
 }
+
+function deferred() {
+  let resolve, reject;
+  const promise = new Promise((yes, no) => {resolve = yes; reject = no;});
+  return {promise, resolve, reject};
+}
+
+function changeContext(component, changes) {
+  component.props = {...component.props, ...changes};
+  component.state = {...component.state, ...Records.getDerivedStateFromProps(component.props, component.state)};
+}
+
+for (const fails of [false, true]) {
+  test(`ShakeX staging ignores ${fails ? 'failed' : 'successful'} lookup after unmount`, async t => {
+    const lookup = deferred();
+    const subject = mountRecords({loadCanonicalNameInfo: () => lookup.promise});
+    const component = subject.wrapper.instance();
+    const pending = component.onStageSale({contact: 'X @alice'});
+    subject.wrapper.unmount();
+    let updates = 0;
+    component.setState = () => updates++;
+    if (fails) lookup.reject(new Error('old lookup failed')); else lookup.resolve({info: {data: '00'}});
+    await pending;
+    t.equal(updates, 0, 'no stale success/error/finally updates');
+    t.end();
+  });
+}
+
+test('ShakeX old staging error cannot clear a new wallet draft operation', async t => {
+  const oldLookup = deferred(), newLookup = deferred();
+  let calls = 0;
+  const {component} = makeRecords({walletId: 'a', loadCanonicalNameInfo: () => (++calls === 1 ? oldLookup.promise : newLookup.promise)});
+  const oldStage = component.onStageSale({contact: 'old'});
+  component.state = {...component.state, isUpdating: true, isRefreshingRecords: true, errorMessage: 'old error'};
+  changeContext(component, {walletId: 'b', walletGeneration: 2});
+  t.equal(component.state.isImporting, false);
+  t.equal(component.state.isUpdating, false);
+  t.equal(component.state.isRefreshingRecords, false);
+  t.equal(component.state.errorMessage, '');
+  const newStage = component.onStageSale({contact: 'new'});
+  oldLookup.reject(new Error('old lookup failed'));
+  await oldStage;
+  t.equal(component.state.isImporting, true, 'old finally does not clear newer busy state');
+  t.equal(component.state.errorMessage, '', 'old error is suppressed');
+  newLookup.resolve({info: {data: '00'}});
+  await newStage;
+  t.equal(component.state.importReview.afterResource.records[0].txt[0], 'v=FORSALE1;ftxt=new');
+  t.equal(component.state.isImporting, false);
+  t.end();
+});
+
+for (const boundary of ['canonical', 'unlock']) {
+  for (const transition of ['unmount', 'wallet-switch', 'switch-back']) {
+    test(`ShakeX submit blocks ${boundary} continuation after ${transition}`, async t => {
+      const gate = deferred(), entered = deferred();
+      let broadcasts = 0, calls = 0;
+      const {component} = makeRecords({walletId: 'a', walletGeneration: 1,
+        async sendUpdate(name, resource, review, assertActive) {
+          calls++;
+          entered.resolve();
+          await gate.promise;
+          await review();
+          assertActive();
+          broadcasts++;
+          return null;
+        },
+      });
+      await component.onStageSale({contact: 'alice'});
+      if (boundary === 'canonical') component.props.loadCanonicalNameInfo = () => {entered.resolve(); return gate.promise;};
+      const pending = component.sendUpdate();
+      await entered.promise;
+      if (transition === 'unmount') component.componentWillUnmount();
+      else {
+        changeContext(component, {walletId: 'b', walletGeneration: 2});
+        if (transition === 'switch-back') changeContext(component, {walletId: 'a', walletGeneration: 1});
+      }
+      let updates = 0;
+      component.setState = () => updates++;
+      gate.resolve({info: {data: '00'}});
+      await pending;
+      t.equal(broadcasts, 0, 'no wallet broadcast');
+      t.equal(calls, boundary === 'canonical' ? 0 : 1, 'host entered only after canonical preflight');
+      t.equal(updates, 0, 'stale completion/error does not touch current UI');
+      t.end();
+    });
+  }
+}
+
+for (const transition of ['unmount', 'wallet-switch']) {
+  test(`ShakeX already-sent completion is ignored after ${transition}`, async t => {
+    const result = deferred(), sent = deferred();
+    let broadcasts = 0, success = 0;
+    const {component} = makeRecords({walletId: 'a',
+      showSuccess: () => success++,
+      async sendUpdate(name, resource, review, assertActive) {
+        await review();
+        assertActive();
+        broadcasts++;
+        sent.resolve();
+        return result.promise;
+      },
+    });
+    await component.onStageSale({contact: 'alice'});
+    const pending = component.sendUpdate();
+    await sent.promise;
+    if (transition === 'unmount') component.componentWillUnmount();
+    else changeContext(component, {walletId: 'b', walletGeneration: 2});
+    let updates = 0;
+    component.setState = () => updates++;
+    result.resolve({hash: 'already sent'});
+    await pending;
+    t.equal(broadcasts, 1, 'already-sent transaction is not aborted or retried');
+    t.equal(updates, 0, 'new UI state is untouched');
+    t.equal(success, 0, 'no success toast in a stale context');
+    t.end();
+  });
+}
+
+test('activation import ignores a file dialog result after context changes', async t => {
+  const dialog = deferred();
+  let reads = 0;
+  const {component} = makeRecords({walletId: 'a', openProposalFile: () => dialog.promise,
+    readProposalFile: async () => {reads++; return Buffer.from(JSON.stringify(fixture));},
+  });
+  const pending = component.onImportProposal();
+  changeContext(component, {walletId: 'b'});
+  dialog.resolve({filePaths: ['/authorized/proposal.json']});
+  await pending;
+  t.equal(reads, 0);
+  t.equal(component.state.importReview, null);
+  t.equal(component.state.isImporting, false);
+  t.end();
+});
