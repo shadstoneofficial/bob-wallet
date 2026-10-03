@@ -85,6 +85,33 @@ function isWithin(parent, child) {
   return relative && !relative.startsWith('..') && !path.isAbsolute(relative);
 }
 
+function resolvePhysicalPath(target) {
+  let existing = path.resolve(target);
+  const suffix = [];
+  while (!fs.existsSync(existing)) {
+    const parent = path.dirname(existing);
+    if (parent === existing) break;
+    suffix.unshift(path.basename(existing));
+    existing = parent;
+  }
+  const physical = fs.realpathSync.native(existing);
+  return path.join(physical, ...suffix);
+}
+
+function assertTreeHasNoSymlinks(root) {
+  if (!fs.existsSync(root)) return;
+  const pending = [root];
+  while (pending.length) {
+    const current = pending.pop();
+    const stat = fs.lstatSync(current);
+    if (stat.isSymbolicLink()) {
+      throw new Error(`Acceptance profile cannot contain symbolic links: ${current}`);
+    }
+    if (!stat.isDirectory()) continue;
+    for (const entry of fs.readdirSync(current)) pending.push(path.join(current, entry));
+  }
+}
+
 function loadAcceptanceConfig(env, {appDataPath}) {
   if (env.BOB_PACKAGED_ACCEPTANCE_TEST !== 'true') return null;
 
@@ -96,11 +123,12 @@ function loadAcceptanceConfig(env, {appDataPath}) {
   if (!token || token.length < 32) throw new Error('Acceptance activation token is missing.');
 
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-  const profileRoot = path.resolve(manifest.profileRoot || '');
-  const expectedUserData = path.resolve(manifest.userData || '');
-  const statusPath = path.resolve(manifest.statusPath || '');
-  const eventLogPath = path.resolve(manifest.eventLogPath || '');
-  const productionUserData = path.resolve(appDataPath, 'Bob LearnHNS');
+  const profileRoot = resolvePhysicalPath(manifest.profileRoot || '');
+  const expectedUserData = resolvePhysicalPath(manifest.userData || '');
+  const statusPath = resolvePhysicalPath(manifest.statusPath || '');
+  const eventLogPath = resolvePhysicalPath(manifest.eventLogPath || '');
+  const physicalManifestPath = resolvePhysicalPath(manifestPath);
+  const productionUserData = resolvePhysicalPath(path.resolve(appDataPath, 'Bob LearnHNS'));
 
   if (manifest.version !== 1 || manifest.purpose !== 'bob-packaged-acceptance') {
     throw new Error('Invalid packaged acceptance manifest.');
@@ -108,12 +136,16 @@ function loadAcceptanceConfig(env, {appDataPath}) {
   if (!constantTimeEqual(token, manifest.activationToken)) {
     throw new Error('Packaged acceptance activation token does not match the manifest.');
   }
-  if (path.resolve(userData) !== expectedUserData || !isWithin(profileRoot, expectedUserData)) {
+  if (resolvePhysicalPath(userData) !== expectedUserData || !isWithin(profileRoot, expectedUserData)) {
     throw new Error('Acceptance userData is outside its isolated profile root.');
+  }
+  if (!isWithin(profileRoot, physicalManifestPath)) {
+    throw new Error('Acceptance manifest must stay inside the isolated profile root.');
   }
   if (expectedUserData === productionUserData || isWithin(productionUserData, expectedUserData)) {
     throw new Error('Acceptance mode refuses the production Bob profile.');
   }
+  assertTreeHasNoSymlinks(profileRoot);
   if (!isWithin(profileRoot, statusPath) || !isWithin(profileRoot, eventLogPath)) {
     throw new Error('Acceptance status and event files must stay inside the isolated profile root.');
   }
@@ -136,8 +168,14 @@ function loadAcceptanceConfig(env, {appDataPath}) {
     userData: expectedUserData,
     statusPath,
     eventLogPath,
-    manifestPath: path.resolve(manifestPath),
+    manifestPath: physicalManifestPath,
   };
+}
+
+function validatePackagedTestModes(env) {
+  if (env.BOB_PACKAGED_SMOKE_TEST === 'true' && env.BOB_PACKAGED_ACCEPTANCE_TEST === 'true') {
+    throw new Error('Packaged smoke and acceptance modes cannot run together.');
+  }
 }
 
 function writeJsonAtomic(filePath, value) {
@@ -158,10 +196,13 @@ function withTimeout(promise, timeoutMs, label) {
 module.exports = {
   ACCEPTANCE_SCENARIOS,
   EVENT_PREFIX,
+  assertTreeHasNoSymlinks,
   createBackendErrorMonitor,
   isBackendFailure,
   loadAcceptanceConfig,
+  resolvePhysicalPath,
   serializeError,
+  validatePackagedTestModes,
   withTimeout,
   writeJsonAtomic,
 };

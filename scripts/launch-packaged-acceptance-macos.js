@@ -3,6 +3,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const {spawn} = require('child_process');
+const {resolvePhysicalPath} = require('../app/background/packagedAcceptance/runtime');
 
 const CASES = [
   ['packagedStartup', 'READY', 'Launch, renderer, local regtest services and structured error monitoring.'],
@@ -41,8 +42,8 @@ function writeJson(filePath, value) {
 
 function assertSafeProfileRoot(profileRoot) {
   if (!profileRoot || !path.isAbsolute(profileRoot)) throw new Error('Profile root must be absolute.');
-  const resolved = path.resolve(profileRoot);
-  const production = path.join(os.homedir(), 'Library', 'Application Support', 'Bob LearnHNS');
+  const resolved = resolvePhysicalPath(profileRoot);
+  const production = resolvePhysicalPath(path.join(os.homedir(), 'Library', 'Application Support', 'Bob LearnHNS'));
   const relative = path.relative(production, resolved);
   if (resolved === production || (relative && !relative.startsWith('..') && !path.isAbsolute(relative))) {
     throw new Error('Refusing to use the production Bob LearnHNS profile.');
@@ -85,6 +86,13 @@ function loadProfile(profileRoot) {
   if (manifest.purpose !== 'bob-packaged-acceptance' || path.resolve(manifest.profileRoot) !== profileRoot) {
     throw new Error('Acceptance profile manifest does not match this directory.');
   }
+  const allowed = new Set(['manifest.json', 'acceptance-matrix.json', 'user-data']);
+  for (const entry of fs.readdirSync(profileRoot, {withFileTypes: true})) {
+    if (entry.isSymbolicLink()) throw new Error('Acceptance profile root cannot contain symbolic links.');
+    if (allowed.has(entry.name)) continue;
+    if (/^(runtime-status|backend-events)-\d+-\d+\.(json|jsonl)$/.test(entry.name)) continue;
+    throw new Error(`Unexpected content in acceptance profile root: ${entry.name}`);
+  }
   return manifest;
 }
 
@@ -109,9 +117,13 @@ async function main() {
   console.log('Network: regtest; transaction fixtures: disabled; generated disposable wallets only.');
   for (const [id, status] of CASES) console.log(`${status.padEnd(10)} ${id}`);
 
+  const childEnv = {...process.env};
+  for (const name of ['BOB_PACKAGED_SMOKE_TEST', 'BOB_SMOKE_USER_DATA', 'BOB_SMOKE_REPORT', 'BOB_SMOKE_PROFILE']) {
+    delete childEnv[name];
+  }
   const child = spawn(executable, [], {
     env: {
-      ...process.env,
+      ...childEnv,
       BOB_LEARNHNS_FORK: 'true',
       BOB_PACKAGED_ACCEPTANCE_TEST: 'true',
       BOB_ACCEPTANCE_USER_DATA: manifest.userData,

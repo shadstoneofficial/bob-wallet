@@ -70,8 +70,11 @@ Interactive acceptance cannot select the ordinary profile accidentally:
 - activation requires the opt-in environment flag, a 32-byte token matching a mode-0600 manifest, and the dedicated launcher acknowledgement;
 - `userData`, status and event files must resolve below the manifest's isolated profile root;
 - both launcher and runtime reject `~/Library/Application Support/Bob LearnHNS` and descendants;
+- filesystem-real containment and a recursive symlink check prevent aliases back into normal application data;
 - the app applies the isolated `userData` path before loading any backend service; and
-- the configured network is local regtest with transaction fixtures and external transaction networking disabled.
+- the configured network is pinned to local regtest/P2P, Custom RPC and network-setting changes are rejected, and renderer IPC cannot invoke seed import, signing, transaction construction or broadcast methods;
+- node-level raw transaction, claim and airdrop broadcasts are blocked below the renderer boundary; and
+- the launcher removes inherited smoke-mode variables while the runtime rejects simultaneous smoke and acceptance modes.
 
 Current integration blockers are acceptance coverage, not merge conflicts:
 

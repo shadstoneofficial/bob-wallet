@@ -3558,7 +3558,11 @@ const methods = {
 };
 
 export async function start(server) {
-  server.withService(sName, methods);
+  const {wrapAcceptanceWalletMethods} = require('../packagedAcceptance/policy');
+  server.withService(sName, wrapAcceptanceWalletMethods(
+    methods,
+    process.env.BOB_PACKAGED_ACCEPTANCE_TEST === 'true'
+  ));
 }
 
 

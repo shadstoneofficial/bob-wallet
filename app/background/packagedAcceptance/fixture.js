@@ -1,10 +1,22 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const {resolvePhysicalPath} = require('./runtime');
 
-async function configureLocalRegtest(services, profileName) {
+async function configureLocalRegtest(services, profileName, {profileRoot} = {}) {
   const hsdDir = path.join(services.db.getUserDir ? await services.db.getUserDir() : '', profileName);
+  if (fs.existsSync(hsdDir) && fs.lstatSync(hsdDir).isSymbolicLink()) {
+    throw new Error('Packaged fixture hsd directory cannot be a symbolic link.');
+  }
   fs.mkdirSync(hsdDir, {recursive: true});
+  if (profileRoot) {
+    const physicalRoot = resolvePhysicalPath(profileRoot);
+    const physicalHsd = resolvePhysicalPath(hsdDir);
+    const relative = path.relative(physicalRoot, physicalHsd);
+    if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
+      throw new Error('Packaged fixture hsd directory escaped its isolated profile.');
+    }
+  }
 
   await services.db.put('connection_type', 'P2P');
   await services.db.put('network', 'regtest');

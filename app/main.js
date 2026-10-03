@@ -10,6 +10,7 @@ import path from 'path';
 const {
   createBackendErrorMonitor,
   loadAcceptanceConfig,
+  validatePackagedTestModes,
   withTimeout,
   writeJsonAtomic,
 } = require('./background/packagedAcceptance/runtime');
@@ -17,6 +18,7 @@ const {
   configureLocalRegtest,
   seedDisposableMultiwallet,
 } = require('./background/packagedAcceptance/fixture');
+const {installAcceptanceBackendPolicy} = require('./background/packagedAcceptance/policy');
 
 const DEEPLINK_PROTOCOLS = new Set(['bob:', 'bob-learnhns:']);
 const isPackagedSmokeTest = process.env.BOB_PACKAGED_SMOKE_TEST === 'true';
@@ -43,6 +45,7 @@ const isLearnHnsForkBuild = process.env.BOB_LEARNHNS_TEST === 'true'
 
 let packagedAcceptanceConfig = null;
 try {
+  validatePackagedTestModes(process.env);
   packagedAcceptanceConfig = loadAcceptanceConfig(process.env, {
     appDataPath: app.getPath('appData'),
   });
@@ -221,7 +224,9 @@ if (isPrimaryInstance) {
       await configureLocalRegtest(services, 'existing-hsd-profile');
     }
     if (packagedAcceptanceConfig) {
-      await configureLocalRegtest(services, 'acceptance-hsd-profile');
+      await configureLocalRegtest(services, 'acceptance-hsd-profile', {
+        profileRoot: packagedAcceptanceConfig.profileRoot,
+      });
     }
   }
 
@@ -315,6 +320,7 @@ if (isPrimaryInstance) {
       hnsInvestments: require('./background/hnsInvestments/service'),
       shakedex: require('./background/shakedex/service.js'),
     };
+    installAcceptanceBackendPolicy(services, packagedAcceptanceConfig);
 
     const server = services.ipc.start();
     services.logger.start(server);
