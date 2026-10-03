@@ -96,13 +96,17 @@ function wrapBlockedMethods(methods, blockedNames, serviceName, active) {
   ]));
 }
 
-function isApprovedAcceptanceDbWrite(key, value, {expectedHsdPrefix} = {}) {
+function isApprovedAcceptanceDbWrite(key, value, {
+  expectedHsdPrefix,
+  expectedNodeMode = 'spv',
+} = {}) {
   switch (key) {
     case 'connection_type':
       return value === 'P2P';
     case 'network':
       return value === 'regtest';
     case 'nodeSpvMode':
+      return value === (expectedNodeMode === 'full' ? '0' : '1');
     case 'nodeNoDns1':
       return value === '1';
     case 'hsdPrefixDir':

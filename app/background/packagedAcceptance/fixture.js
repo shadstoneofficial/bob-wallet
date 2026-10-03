@@ -2,8 +2,12 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const {resolvePhysicalPath} = require('./runtime');
+const {
+  buildControlledScenarioPlan,
+  executeControlledSourceFixture,
+} = require('./scenarios');
 
-async function configureLocalRegtest(services, profileName, {profileRoot} = {}) {
+async function configureLocalRegtest(services, profileName, {profileRoot, nodeMode = 'spv'} = {}) {
   const hsdDir = path.join(services.db.getUserDir ? await services.db.getUserDir() : '', profileName);
   if (fs.existsSync(hsdDir) && fs.lstatSync(hsdDir).isSymbolicLink()) {
     throw new Error('Packaged fixture hsd directory cannot be a symbolic link.');
@@ -20,12 +24,12 @@ async function configureLocalRegtest(services, profileName, {profileRoot} = {}) 
 
   await services.db.put('connection_type', 'P2P');
   await services.db.put('network', 'regtest');
-  await services.db.put('nodeSpvMode', '1');
+  await services.db.put('nodeSpvMode', nodeMode === 'spv' ? '1' : '0');
   await services.db.put('nodeNoDns1', '1');
   await services.db.put('nodeApiKey', crypto.randomBytes(32).toString('hex'));
   await services.db.put('walletApiKey', crypto.randomBytes(32).toString('hex'));
   await services.db.put('hsdPrefixDir', hsdDir);
-  await services.db.put('regtest-hsd-4.0.0-migrate-spv', true);
+  if (nodeMode === 'spv') await services.db.put('regtest-hsd-4.0.0-migrate-spv', true);
   return hsdDir;
 }
 
@@ -51,6 +55,8 @@ async function seedDisposableMultiwallet(services, config) {
     created.push(walletId);
   }
   walletService.setWallet(wanted[0]);
+  const scenarioPlan = buildControlledScenarioPlan(config.scenario);
+  const sourceFixture = await executeControlledSourceFixture(scenarioPlan);
   return {
     scenario: config.scenario,
     walletIds: wanted,
@@ -58,6 +64,9 @@ async function seedDisposableMultiwallet(services, config) {
     generatedDisposableKeysOnly: true,
     network: 'regtest',
     transactionFixturesEnabled: false,
+    nodeMode: config.nodeMode,
+    scenarioPlan,
+    sourceFixture,
   };
 }
 

@@ -53,6 +53,7 @@ const SPV_HELPER_API_BASE_URL = 'nodeSpvHelperApiBaseUrl';
 const LEARNHNS_TEST_PORT_OFFSET = 1000;
 const TRANSACTION_TIMEOUT_MS = 120000;
 const IS_PACKAGED_ACCEPTANCE = process.env.BOB_PACKAGED_ACCEPTANCE_TEST === 'true';
+const ACCEPTANCE_NODE_MODE = process.env.BOB_ACCEPTANCE_NODE_MODE || 'spv';
 
 export class NodeService extends EventEmitter {
   constructor({
@@ -102,7 +103,7 @@ export class NodeService extends EventEmitter {
   }
 
   async getSpvMode() {
-    if (IS_PACKAGED_ACCEPTANCE) return true;
+    if (IS_PACKAGED_ACCEPTANCE) return ACCEPTANCE_NODE_MODE === 'spv';
     const spv = await get(SPV_MODE);
     if (spv !== null) {
       return spv === '1';

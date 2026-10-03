@@ -79,6 +79,9 @@ export async function start(server) {
   server.withService(sName, wrapAcceptanceDbMethods(
     methods,
     process.env.BOB_PACKAGED_ACCEPTANCE_TEST === 'true',
-    {expectedHsdPrefix: path.join(app.getPath('userData'), 'acceptance-hsd-profile')},
+    {
+      expectedHsdPrefix: path.join(app.getPath('userData'), 'acceptance-hsd-profile'),
+      expectedNodeMode: process.env.BOB_ACCEPTANCE_NODE_MODE || 'spv',
+    },
   ));
 }

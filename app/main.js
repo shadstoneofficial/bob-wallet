@@ -50,6 +50,9 @@ try {
   packagedAcceptanceConfig = loadAcceptanceConfig(process.env, {
     appDataPath: app.getPath('appData'),
   });
+  if (packagedAcceptanceConfig) {
+    process.env.BOB_ACCEPTANCE_NODE_MODE = packagedAcceptanceConfig.nodeMode;
+  }
 } catch (error) {
   earlyStartupError = error;
 }
@@ -227,6 +230,7 @@ if (isPrimaryInstance) {
     if (packagedAcceptanceConfig) {
       await configureLocalRegtest(services, 'acceptance-hsd-profile', {
         profileRoot: packagedAcceptanceConfig.profileRoot,
+        nodeMode: packagedAcceptanceConfig.nodeMode,
       });
     }
   }

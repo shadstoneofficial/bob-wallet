@@ -5,22 +5,26 @@ const path = require('path');
 const {spawn} = require('child_process');
 const {resolvePhysicalPath} = require('../app/background/packagedAcceptance/runtime');
 const {sanitizeAcceptanceEnvironment} = require('../app/background/packagedAcceptance/policy');
+const {
+  SCENARIO_DEFINITIONS,
+  getScenarioDefinition,
+} = require('../app/background/packagedAcceptance/scenarios');
 
 const CASES = [
   ['packagedStartup', 'READY', 'Launch, renderer, local regtest services and structured error monitoring.'],
   ['persistentRestart', 'READY', 'Quit and reopen the same disposable profile.'],
   ['multiwalletSwitching', 'READY', 'Two generated, encrypted disposable wallets.'],
   ['localeSelectionPersistence', 'READY', 'Manual English/Simplified Chinese selection and restart.'],
-  ['auctionRealErrorRetry', 'NOT TESTED', 'No exact packaged auction-error fixture yet.'],
-  ['basket20NameDelayedConstruction', 'NOT TESTED', 'Transaction construction is disabled in this profile.'],
-  ['basketAmbiguousOutcomeLock', 'NOT TESTED', 'Transaction broadcast is disabled in this profile.'],
+  ['auctionRealErrorRetry', 'SOURCE FIXTURE READY', 'Inert pre-signing failure; packaged UI remains NOT TESTED.'],
+  ['basket20NameDelayedConstruction', 'SOURCE FIXTURE READY', 'Inert 20-name plan; packaged UI remains NOT TESTED.'],
+  ['basketAmbiguousOutcomeLock', 'SOURCE FIXTURE READY', 'Inert one-call boundary; packaged UI remains NOT TESTED.'],
   ['shakeXReviewAndDnsPreservation', 'NOT TESTED', 'No controlled packaged ShakeX listing fixture yet.'],
-  ['sequentialRestore', 'NOT TESTED', 'Backend restore interface is owned by the separate sync investigation.'],
-  ['overlappingRestore', 'NOT TESTED', 'Backend restore interface is owned by the separate sync investigation.'],
+  ['sequentialRestore', 'SOURCE FIXTURE READY', 'Generated history plan; reviewed backend replay target remains NOT TESTED.'],
+  ['overlappingRestore', 'SOURCE FIXTURE READY', 'Generated five-request plan; reviewed backend replay target remains NOT TESTED.'],
 ];
 
 function usage() {
-  console.error('Usage: node scripts/launch-packaged-acceptance-macos.js <Bob LearnHNS.app> --profile-root <absolute-path> (--initialize|--reuse) --accept-disposable-profile');
+  console.error(`Usage: node scripts/launch-packaged-acceptance-macos.js <Bob LearnHNS.app> --profile-root <absolute-path> (--initialize [--scenario ${Object.keys(SCENARIO_DEFINITIONS).join('|')}]|--reuse) --accept-disposable-profile`);
   process.exit(2);
 }
 
@@ -29,6 +33,7 @@ function parseArgs(argv) {
   for (let index = 1; index < argv.length; index++) {
     const value = argv[index];
     if (value === '--profile-root') result.profileRoot = argv[++index];
+    else if (value === '--scenario') result.scenario = argv[++index];
     else if (value === '--initialize') result.initialize = true;
     else if (value === '--reuse') result.reuse = true;
     else if (value === '--accept-disposable-profile') result.accepted = true;
@@ -52,7 +57,9 @@ function assertSafeProfileRoot(profileRoot) {
   return resolved;
 }
 
-function initializeProfile(profileRoot) {
+function initializeProfile(profileRoot, scenario = 'multiwallet') {
+  const definition = getScenarioDefinition(scenario);
+  if (!definition) throw new Error(`Unsupported packaged acceptance scenario: ${scenario}.`);
   if (fs.existsSync(profileRoot) && fs.readdirSync(profileRoot).length) {
     throw new Error('Profile root is not empty. Use --reuse only for a previously initialized acceptance profile.');
   }
@@ -62,7 +69,8 @@ function initializeProfile(profileRoot) {
   const manifest = {
     version: 1,
     purpose: 'bob-packaged-acceptance',
-    scenario: 'multiwallet',
+    scenario,
+    nodeMode: definition.nodeMode,
     profileRoot,
     userData,
     network: 'regtest',
@@ -87,6 +95,9 @@ function loadProfile(profileRoot) {
   if (manifest.purpose !== 'bob-packaged-acceptance' || path.resolve(manifest.profileRoot) !== profileRoot) {
     throw new Error('Acceptance profile manifest does not match this directory.');
   }
+  if (!getScenarioDefinition(manifest.scenario)) {
+    throw new Error(`Unsupported packaged acceptance scenario: ${manifest.scenario || '<missing>'}.`);
+  }
   const allowed = new Set(['manifest.json', 'acceptance-matrix.json', 'user-data']);
   for (const entry of fs.readdirSync(profileRoot, {withFileTypes: true})) {
     if (entry.isSymbolicLink()) throw new Error('Acceptance profile root cannot contain symbolic links.');
@@ -106,7 +117,12 @@ async function main() {
   const executable = path.join(appPath, 'Contents', 'MacOS', 'Bob LearnHNS');
   if (!fs.existsSync(executable)) throw new Error(`Packaged executable not found: ${executable}`);
   const profileRoot = assertSafeProfileRoot(args.profileRoot);
-  const manifest = args.initialize ? initializeProfile(profileRoot) : loadProfile(profileRoot);
+  const manifest = args.initialize
+    ? initializeProfile(profileRoot, args.scenario)
+    : loadProfile(profileRoot);
+  if (args.reuse && args.scenario && args.scenario !== manifest.scenario) {
+    throw new Error('A reused acceptance profile cannot change scenarios.');
+  }
   const manifestPath = path.join(profileRoot, 'manifest.json');
   const runId = `${Date.now()}-${process.pid}`;
   manifest.statusPath = path.join(profileRoot, `runtime-status-${runId}.json`);
@@ -115,11 +131,12 @@ async function main() {
   writeJson(manifestPath, manifest);
 
   console.log(`Launching isolated packaged acceptance profile: ${profileRoot}`);
-  console.log('Network: regtest; transaction fixtures: disabled; generated disposable wallets only.');
+  console.log(`Scenario: ${manifest.scenario}; node mode: ${manifest.nodeMode}.`);
+  console.log('Network: regtest; signing and live transaction fixtures: disabled; generated disposable wallets only.');
   for (const [id, status] of CASES) console.log(`${status.padEnd(10)} ${id}`);
 
   const childEnv = sanitizeAcceptanceEnvironment(process.env);
-  for (const name of ['BOB_PACKAGED_SMOKE_TEST', 'BOB_SMOKE_USER_DATA', 'BOB_SMOKE_REPORT', 'BOB_SMOKE_PROFILE']) {
+  for (const name of ['BOB_PACKAGED_SMOKE_TEST', 'BOB_SMOKE_USER_DATA', 'BOB_SMOKE_REPORT', 'BOB_SMOKE_PROFILE', 'BOB_ACCEPTANCE_NODE_MODE']) {
     delete childEnv[name];
   }
   const child = spawn(executable, [], {

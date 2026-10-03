@@ -3,7 +3,8 @@ const fs = require('fs');
 const path = require('path');
 
 const EVENT_PREFIX = 'BOB_PACKAGED_TEST_EVENT ';
-const ACCEPTANCE_SCENARIOS = new Set(['multiwallet']);
+const {SCENARIO_DEFINITIONS, getScenarioDefinition} = require('./scenarios');
+const ACCEPTANCE_SCENARIOS = new Set(Object.keys(SCENARIO_DEFINITIONS));
 const BACKEND_ERROR_LABELS = [
   'hsd error',
   'walletdb error',
@@ -154,6 +155,10 @@ function loadAcceptanceConfig(env, {appDataPath}) {
   }
   if (!ACCEPTANCE_SCENARIOS.has(manifest.scenario)) {
     throw new Error(`Unsupported packaged acceptance scenario: ${manifest.scenario || '<missing>'}.`);
+  }
+  const scenarioDefinition = getScenarioDefinition(manifest.scenario);
+  if (manifest.nodeMode !== scenarioDefinition.nodeMode) {
+    throw new Error(`Packaged acceptance scenario ${manifest.scenario} requires ${scenarioDefinition.nodeMode} node mode.`);
   }
   if (manifest.network !== 'regtest' || manifest.transactionMode !== 'disabled') {
     throw new Error('Packaged acceptance requires regtest with transaction fixtures disabled.');

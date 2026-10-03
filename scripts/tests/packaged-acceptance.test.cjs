@@ -25,6 +25,13 @@ const {
 const {
   initializeAcceptanceAfterWindow,
 } = require('../../app/background/packagedAcceptance/startup');
+const {
+  BASKET_NAMES,
+  SCENARIO_DEFINITIONS,
+  buildControlledScenarioPlan,
+  createGeneratedRestoreHistory,
+  executeControlledSourceFixture,
+} = require('../../app/background/packagedAcceptance/scenarios');
 
 function acceptanceManifest(root) {
   const userData = path.join(root, 'user-data');
@@ -33,6 +40,7 @@ function acceptanceManifest(root) {
     version: 1,
     purpose: 'bob-packaged-acceptance',
     scenario: 'multiwallet',
+    nodeMode: 'spv',
     profileRoot: root,
     userData,
     network: 'regtest',
@@ -69,10 +77,10 @@ test('runtime rejects simultaneous packaged smoke and acceptance modes', () => {
   }), /cannot run together/);
 });
 
-test('acceptance manifest rejects unsupported and networked transaction fixtures', () => {
+test('acceptance manifest rejects networked transaction fixtures', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bob-acceptance-reject-'));
   const {manifest, manifestPath} = acceptanceManifest(root);
-  manifest.scenario = 'basket-ambiguous-broadcast';
+  manifest.scenario = 'basket-ambiguous';
   manifest.transactionMode = 'enabled';
   manifest.externalTransactionNetwork = true;
   fs.writeFileSync(manifestPath, JSON.stringify(manifest));
@@ -81,7 +89,26 @@ test('acceptance manifest rejects unsupported and networked transaction fixtures
     BOB_ACCEPTANCE_USER_DATA: manifest.userData,
     BOB_ACCEPTANCE_MANIFEST: manifestPath,
     BOB_ACCEPTANCE_TOKEN: manifest.activationToken,
-  }, {appDataPath: root}), /Unsupported packaged acceptance scenario/);
+  }, {appDataPath: root}), /requires regtest with transaction fixtures disabled/);
+});
+
+test('acceptance manifest rejects unknown scenarios and mismatched node modes', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bob-acceptance-scenario-'));
+  const {manifest, manifestPath} = acceptanceManifest(root);
+  manifest.scenario = 'caller-controlled-scenario';
+  fs.writeFileSync(manifestPath, JSON.stringify(manifest));
+  const environment = {
+    BOB_PACKAGED_ACCEPTANCE_TEST: 'true',
+    BOB_ACCEPTANCE_USER_DATA: manifest.userData,
+    BOB_ACCEPTANCE_MANIFEST: manifestPath,
+    BOB_ACCEPTANCE_TOKEN: manifest.activationToken,
+  };
+  assert.throws(() => loadAcceptanceConfig(environment, {appDataPath: root}), /Unsupported packaged acceptance scenario/);
+
+  manifest.scenario = 'restore-full';
+  manifest.nodeMode = 'spv';
+  fs.writeFileSync(manifestPath, JSON.stringify(manifest));
+  assert.throws(() => loadAcceptanceConfig(environment, {appDataPath: root}), /requires full node mode/);
 });
 
 test('acceptance manifest refuses the production Bob profile', () => {
@@ -285,6 +312,17 @@ test('acceptance DB IPC cannot mutate critical node or profile settings', async 
   assert.deepEqual(deletes, []);
 });
 
+test('full-node acceptance policy permits only the fixed full-node value', async () => {
+  const writes = [];
+  const wrapped = wrapAcceptanceDbMethods({
+    put: async (key, value) => writes.push([key, value]),
+    del: async () => {},
+  }, true, {expectedNodeMode: 'full'});
+  await wrapped.put('nodeSpvMode', '0');
+  await assert.rejects(wrapped.put('nodeSpvMode', '1'), {code: 'ERR_PACKAGED_ACCEPTANCE_POLICY'});
+  assert.deepEqual(writes, [['nodeSpvMode', '0']]);
+});
+
 test('acceptance node directory rejects symlink replacement', {skip: process.platform === 'win32'}, () => {
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'bob-acceptance-user-data-'));
   const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), 'bob-real-profile-'));
@@ -380,4 +418,89 @@ test('renderer startup reaches fake node and wallet IPC only with approved regte
   } finally {
     Module._load = originalLoad;
   }
+});
+
+test('controlled scenarios are fixed, regtest-only, and contain no signing or broadcast capability', () => {
+  assert.deepEqual(Object.keys(SCENARIO_DEFINITIONS).sort(), [
+    'auction-retry',
+    'basket-20-delayed',
+    'basket-ambiguous',
+    'multiwallet',
+    'restore-full',
+    'restore-spv',
+  ]);
+  for (const scenario of Object.keys(SCENARIO_DEFINITIONS)) {
+    const plan = buildControlledScenarioPlan(scenario);
+    assert.equal(plan.network, 'regtest');
+    assert.equal(plan.externalTransactionNetwork, false);
+    assert.equal(plan.signingAllowed, false);
+    assert.equal(plan.broadcastAllowed, false);
+  }
+  assert.equal(BASKET_NAMES.length, 20);
+  assert.equal(new Set(BASKET_NAMES).size, 20);
+});
+
+test('generated restore history is deterministic and contains no recovery material', () => {
+  const first = createGeneratedRestoreHistory('restore-spv');
+  const second = createGeneratedRestoreHistory('restore-spv');
+  assert.deepEqual(first, second);
+  assert.equal(first.entries.length, 12);
+  assert.equal(first.containsRecoveryMaterial, false);
+  assert.equal(JSON.stringify(first).includes('seed'), false);
+  assert.equal(JSON.stringify(first).includes('mnemonic'), false);
+  assert.match(first.digest, /^[a-f0-9]{64}$/);
+});
+
+test('restore source fixture orchestrates sequential, overlap, failure, and retry without a real wallet', async () => {
+  const calls = [];
+  const plan = buildControlledScenarioPlan('restore-full');
+  const result = await executeControlledSourceFixture(plan, {
+    async restoreReplay(request) {
+      calls.push({walletId: request.walletId, mode: request.mode, attempt: request.attempt || null});
+      assert.equal(request.history.digest, plan.generatedHistory.digest);
+      if (request.mode === 'inject-first-failure' && request.attempt === 1) {
+        throw new Error('injected source-fixture failure');
+      }
+      return {ok: true};
+    },
+  });
+  assert.equal(calls.length, 9);
+  assert.equal(result.status, 'SOURCE FIXTURE READY');
+  assert.equal(result.sequentialResults, 2);
+  assert.equal(result.overlappingResults, 5);
+  assert.equal(result.firstFailureObserved, true);
+  assert.equal(result.retrySucceeded, true);
+  assert.equal(result.packagedBackendStatus, 'NOT TESTED');
+});
+
+test('restore plan stays pending without the reviewed PR 18 replay capability', async () => {
+  const result = await executeControlledSourceFixture(buildControlledScenarioPlan('restore-spv'));
+  assert.deepEqual(result, {
+    status: 'PENDING',
+    reason: 'reviewed-wallet-replay-target-unavailable',
+    generatedHistoryDigest: buildControlledScenarioPlan('restore-spv').generatedHistory.digest,
+  });
+});
+
+test('auction and basket source fixtures are inert and retain fail-closed evidence', async () => {
+  const retry = await executeControlledSourceFixture(buildControlledScenarioPlan('auction-retry'));
+  assert.equal(retry.retainedError.code, 'ERR_ACCEPTANCE_PRE_SIGN');
+  assert.equal(retry.reviewAttempts, 2);
+  assert.equal(retry.retryAvailable, true);
+  assert.equal(retry.signingCalls, 0);
+  assert.equal(retry.broadcastCalls, 0);
+
+  const delayed = await executeControlledSourceFixture(buildControlledScenarioPlan('basket-20-delayed'));
+  assert.equal(delayed.namesPreserved, 20);
+  assert.equal(delayed.constructionCalls, 1);
+  assert.equal(delayed.cancellationStopsContinuation, true);
+  assert.equal(delayed.signingCalls, 0);
+  assert.equal(delayed.broadcastCalls, 0);
+
+  const ambiguous = await executeControlledSourceFixture(buildControlledScenarioPlan('basket-ambiguous'));
+  assert.equal(ambiguous.boundaryCalls, 1);
+  assert.equal(ambiguous.outcome, 'unknown');
+  assert.equal(ambiguous.retryLocked, true);
+  assert.equal(ambiguous.signingCalls, 0);
+  assert.equal(ambiguous.liveBroadcastCalls, 0);
 });

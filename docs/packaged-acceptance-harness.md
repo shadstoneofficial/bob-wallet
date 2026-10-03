@@ -23,6 +23,7 @@ node scripts/launch-packaged-acceptance-macos.js \
   "/Applications/Bob LearnHNS.app" \
   --profile-root "/tmp/bob-v2.3.x-arthur-acceptance" \
   --initialize \
+  --scenario multiwallet \
   --accept-disposable-profile
 ```
 
@@ -36,7 +37,9 @@ node scripts/launch-packaged-acceptance-macos.js \
   --accept-disposable-profile
 ```
 
-The launcher requires an absolute profile root, refuses the normal `~/Library/Application Support/Bob LearnHNS` profile, sets `userData` before services initialize, uses local regtest P2P/SPV with DNS peers disabled, generates new API keys and two disposable encrypted wallets, and enables no transaction fixture. It adds no RPC or file IPC. The local activation token and disposable wallet passphrase remain in the mode-0600 manifest and are never production credentials.
+The launcher requires an absolute profile root, refuses the normal `~/Library/Application Support/Bob LearnHNS` profile, sets `userData` before services initialize, uses local regtest P2P with DNS peers disabled, generates new API keys and two disposable encrypted wallets, and enables no signing or live transaction fixture. It adds no RPC or file IPC. The local activation token and disposable wallet passphrase remain in the mode-0600 manifest and are never production credentials.
+
+Initialization accepts only these built-in scenario IDs: `multiwallet`, `restore-spv`, `restore-full`, `auction-retry`, `basket-20-delayed`, and `basket-ambiguous`. The scenario fixes its node mode; callers cannot choose a different network, seed, history, name list, transaction payload, or filesystem path. Reuse cannot change scenarios.
 
 The main process opens the renderer before waiting for the disposable WalletDB fixture. This ordering is required because the renderer starts the local node and wallet plugin; waiting for WalletDB first would deadlock a clean launch. A regression test withholds wallet readiness until the window exists.
 
@@ -52,16 +55,16 @@ Each launch receives its own status and backend-event files, so a current result
 | Same disposable profile restart | Ready |
 | Generated multiwallet switching | Ready |
 | English/Simplified Chinese selection and persistence | Ready for manual packaged review |
-| Auction real-error Retry | **NOT TESTED**: no exact packaged auction-error fixture |
-| 20-name basket delayed construction | **NOT TESTED**: transaction fixture disabled |
-| Ambiguous basket outcome and duplicate lock | **NOT TESTED**: transaction fixture disabled |
+| Auction real-error Retry | Source fixture ready: fixed pre-signing failure and retained Retry evidence; packaged UI **NOT TESTED** |
+| 20-name basket delayed construction | Source fixture ready: fixed 20-name inert plan and cancellation evidence; packaged UI **NOT TESTED** |
+| Ambiguous basket outcome and duplicate lock | Source fixture ready: one inert unknown-outcome boundary and retry lock; packaged UI **NOT TESTED** |
 | ShakeX review and DNS preservation | **NOT TESTED**: no controlled packaged listing fixture |
-| Sequential restore | **NOT TESTED**: backend interface pending sync investigation |
-| Overlapping restore | **NOT TESTED**: backend interface pending sync investigation |
+| Sequential restore | Generated-history plan and source orchestration ready; reviewed PR #18 replay target and packaged backend **NOT TESTED** |
+| Overlapping restore | Generated five-request plan and source orchestration ready; reviewed PR #18 replay target and packaged backend **NOT TESTED** |
 
-Source tests for the unsupported rows remain useful regression evidence but are not packaged acceptance. The backend startup/scan cause and restore implementation belong to the separate restore/rescan investigation; this harness does not ignore the `Pool is not connected!` assertion or claim to fix it.
+Source fixture evidence is not packaged acceptance. The backend startup/scan cause and restore implementation belong to the separate restore/rescan investigation; this harness does not ignore the `Pool is not connected!` assertion or claim to fix it.
 
-The harness branch is now integrated with merged `master` at `5c224d0`, including the logged-out language dropdown from PR #16. ShakeX display work from PR #15 and restore/rescan work from PR #18 remain separate until their owners complete review. A later acceptance build must use a reviewed merge base containing every intended product change. Arthur's add-on acceptance remains pending; this harness is not a product acceptance pass.
+The harness branch is now integrated with merged `master` at `5c224d0`, including the logged-out language dropdown from PR #16. ShakeX display work from PR #15 and restore/rescan work from PR #18 remain separate until their owners complete review. A later acceptance build must use a reviewed merge base containing every intended product change. Arthur reported that add-on browsing passed in installed v2.3.13; that result does not cover these proposed controlled fixture scenarios, and this harness is not a product acceptance pass.
 
 ## Integration with the restore/rescan lifecycle work
 
@@ -85,9 +88,9 @@ Interactive acceptance cannot select the ordinary profile accidentally:
 
 Current integration blockers are acceptance coverage, not merge conflicts:
 
-1. The packaged profile is hard-coded to SPV. PR #18 also needs a full-node packaged quit/restart run.
-2. The current fixture creates two fresh wallets; it does not create recoverable histories or issue overlapping restore/rescan requests.
-3. Transaction fixtures are intentionally disabled, so auction Retry and delayed/ambiguous basket paths cannot yet be claimed as packaged tests.
+1. `restore-spv` and `restore-full` now pin their respective local node modes, but neither has completed a packaged quit/restart run.
+2. The restore plans generate deterministic history summaries without seeds or private material and exercise a fake replay capability in source tests. They do not yet invoke PR #18's reviewed replay target or prove recovered balances/journal cleanup.
+3. Auction and basket source fixtures are intentionally inert and make zero signing/live-broadcast calls, so those paths cannot yet be claimed as packaged UI tests.
 4. ShakeX has no fixed listing/resource fixture, so review and DNS-record preservation remain source-test evidence only.
 5. Custom RPC, filesystem durability across power loss and an OS-level crash are outside both harnesses.
 
@@ -95,10 +98,10 @@ Current integration blockers are acceptance coverage, not merge conflicts:
 
 Keep every extension behind the same signed manifest allowlist. Do not add general RPC, file-read IPC or arbitrary method invocation.
 
-1. **Restore lifecycle:** add fixed `restore-spv` and `restore-full` scenario IDs plus an allowlisted `nodeMode`. Inside the disposable regtest profile, generate source wallets and local history, save only their disposable recovery material in the mode-0600 fixture manifest, then drive two/five overlap, sequential restore, injected first-scan failure, quit and reuse through one test-only main-process scenario runner. It should emit structured checkpoints and counters to the existing status file. It must never accept a caller-supplied path, key or network. Reuse PR #18's journal/status observations and require recovered balances, zero pending journal entries after success, and clean bounded teardown.
-2. **Auction Retry:** add one fixed `auction-retry` scenario that supplies a known regtest name and injects one pre-signing backend failure through a narrow service adapter. Assert the UI retains the real error and enables one safe Retry. Keep signing and broadcast functions replaced by fail-closed counters.
-3. **Twenty-name delayed basket:** add one fixed 20-name regtest dataset and a deterministic construction gate. Assert all names survive while construction is delayed, cancellation prevents continuation, and exactly one simulated construction occurs. No raw transaction may reach a node client.
-4. **Ambiguous basket outcome:** use a fixed simulated broadcast boundary that records one attempted call and returns an unknown outcome. Assert Retry stays locked after navigation/restart and the call count remains one. This fixture must operate on inert bytes and must not construct, sign or relay an HNS transaction.
+1. **Restore lifecycle:** source plans now exist for fixed `restore-spv` and `restore-full` scenarios, deterministic generated history without recovery material, sequential targets, five overlap requests, and an injected first failure/retry. Next, connect only a reviewed PR #18 replay capability, emit its journal/status checkpoints, and require recovered balances, zero pending journal entries, quit/reuse, and clean teardown in the packaged app.
+2. **Auction Retry:** the fixed `auction-retry` source fixture now retains one pre-signing error and reports zero signing/broadcast calls. Next, route that narrow failure adapter through the real packaged UI and assert the visible error plus one safe Retry.
+3. **Twenty-name delayed basket:** the fixed 20-name inert source fixture now preserves all names, records one simulated construction, and proves cancellation stops continuation. Next, connect its deterministic gate to the packaged UI without allowing a raw transaction to reach a node client.
+4. **Ambiguous basket outcome:** the fixed inert boundary now records one unknown-outcome call and a retry lock with zero signing/live broadcast. Next, persist that lock through packaged navigation/restart and verify the boundary count remains one.
 5. **ShakeX preservation:** provide one fixed local resource containing ordinary DNS records and one ShakeX sale record through an allowlisted in-memory adapter. Assert review output changes only the intended sale record and preserves every unrelated DNS record; submission remains disabled.
 
-Each scenario needs a source-level regression first, then a disposable packaged run on the reviewed combined commit. Unsupported rows stay **NOT TESTED** until those exact interfaces exist and pass. No paid packaging or signing should begin merely because PR #17 and PR #18 merge cleanly.
+Each scenario now has a source-level plan or remains explicitly unsupported, and still needs a disposable packaged run on the reviewed combined commit. Packaged rows stay **NOT TESTED** until those exact interfaces exist and pass. No paid packaging or signing should begin merely because PR #17 and PR #18 merge cleanly.
