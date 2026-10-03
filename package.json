@@ -20,6 +20,7 @@
     "start-renderer-dev": "cross-env NODE_ENV=development webpack-dev-server --config configs/webpack.config.renderer.dev.babel.js",
     "postinstall": "electron-builder install-app-deps && node scripts/force-goosig-mini-gmp.js",
     "clean": "./scripts/clean.sh",
+    "test:sync": "node scripts/sync/run.cjs",
     "pretest": "webpack --config ./configs/webpack.config.test.babel.js",
     "test": "tape -r jsdom-global/register ./test-dist/test.js && npm run test:packaged-harness",
     "test:packaged-harness": "node --test scripts/tests/packaged-acceptance.test.cjs",

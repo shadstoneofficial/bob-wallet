@@ -13,6 +13,7 @@ import { ConnectionTypes, getConnection, getCustomRPC } from '../connections/ser
 import FullNode from 'hsd/lib/node/fullnode';
 import SPVNode from 'hsd/lib/node/spvnode';
 import plugin from 'hsd/lib/wallet/plugin';
+import {installLocalRescan} from '../wallet/localRescan';
 import { prefixHash } from '../../db/names';
 import { del, get, put } from '../db/service';
 import {dispatchToMainWindow} from "../../mainWindow";
@@ -376,6 +377,7 @@ export class NodeService extends EventEmitter {
     this.hsd = new Node(nodeOptions);
 
     this.hsd.use(plugin);
+    installLocalRescan(this.hsd.get('walletdb').wdb, this.hsd);
 
     const reportStorageError = error => {
       if (!storageHealth.reportError(error, {source: 'hsd'})) {
@@ -406,6 +408,7 @@ export class NodeService extends EventEmitter {
     await this.hsd.open();
     this.emit('start local', this.hsd.get('walletdb'), walletApiKey);
     await this.hsd.connect();
+    await this.hsd.get('walletdb').wdb.resumeLocalSync?.();
     await this.hsd.startSync();
 
     const migrateFlag = `${this.networkName}-hsd-4.0.0-migrate${spv ? '-spv' : ''}`;
