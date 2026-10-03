@@ -58,13 +58,13 @@ Each launch receives its own status and backend-event files, so a current result
 | Auction real-error Retry | Source product path ready: real `AuctionBasket.onSubmit` -> `sendBidMany` -> `submitBidManyLifecycle`, fixed pre-signing failure, visible error and Retry; packaged UI **NOT TESTED** |
 | 20-name basket delayed construction | Source product path ready: real 20-name UI/action/coordinator path, back-navigation cancellation and basket preservation; packaged UI **NOT TESTED** |
 | Ambiguous basket outcome and duplicate lock | Source product path ready: real inert boundary, Redux duplicate lock, draft/navigation reuse and visible error; packaged UI **NOT TESTED** |
-| ShakeX review and DNS preservation | **NOT TESTED**: no controlled packaged listing fixture |
-| Sequential restore | Generated-history plan and source orchestration ready; reviewed PR #18 replay target and packaged backend **NOT TESTED** |
-| Overlapping restore | Generated five-request plan and source orchestration ready; reviewed PR #18 replay target and packaged backend **NOT TESTED** |
+| ShakeX review and DNS preservation | Real `ListingForm` review/edit/removal and browsing/search use fixed local data; NS, DS and ordinary TXT preservation passes in source DOM tests; packaged UI **NOT TESTED** |
+| Sequential restore | App fixture initialization invokes PR #18's real `installLocalRescan` with generated hsd regtest coinbase histories; five balances recovered in full-node and SPV source fixtures; packaged backend **NOT TESTED** |
+| Overlapping restore | Five full-node scans complete; five concurrent SPV requests are correctly rejected during replay. Native journal, injected failure/recovery and partial WalletDB reopen pass; packaged backend **NOT TESTED** |
 
 Source product-path evidence is not packaged acceptance. The low-level wallet methods are fixed inert adapters, and no signing or live broadcast method is available. A mutation regression proves the delayed-basket scenario fails when the component cancellation guard is removed. The backend startup/scan cause and restore implementation belong to the separate restore/rescan investigation; this harness does not ignore the `Pool is not connected!` assertion or claim to fix it.
 
-The harness branch is now integrated with merged `master` at `5c224d0`, including the logged-out language dropdown from PR #16. ShakeX display work from PR #15 and restore/rescan work from PR #18 remain separate until their owners complete review. A later acceptance build must use a reviewed merge base containing every intended product change. Arthur reported that add-on browsing passed in installed v2.3.13; that result does not cover these proposed controlled fixture scenarios, and this harness is not a product acceptance pass.
+The source-only integration combines reviewed harness head `279d271eb30d47b8f22b1359b6b648e0f66b820a` with reviewed restore head `00dbbab268aeeb579da5ab03938ffc2b13df9bcc` in local merge `147b79dd055590b753df4931d64b28d273909d6a`, followed by the runtime work described below. The GitHub PRs and `master` have not been merged or modified. ShakeX display PR #15 remains outside this integration. A later acceptance build must use the exact reviewed final source commit. Arthur's installed v2.3.13 add-on browsing result does not cover these controlled fixture scenarios.
 
 ## Integration with the restore/rescan lifecycle work
 
@@ -89,19 +89,35 @@ Interactive acceptance cannot select the ordinary profile accidentally:
 Current integration blockers are acceptance coverage, not merge conflicts:
 
 1. `restore-spv` and `restore-full` now pin their respective local node modes, but neither has completed a packaged quit/restart run.
-2. The restore plans generate deterministic history summaries without seeds or private material and exercise a fake replay capability in source tests. They do not yet invoke PR #18's reviewed replay target or prove recovered balances/journal cleanup.
+2. Restore initialization now invokes the reviewed adapter against separate in-memory Chain/WalletDB/NodeClient objects and real generated regtest coinbases. This proves source recovery and journal behavior, not the embedded packaged node, process crash durability, or an existing profile.
 3. Auction and basket source fixtures now drive the real component, Redux action and submission coordinator with fixed inert low-level adapters. They make zero signing/live-broadcast calls, but still cannot be claimed as packaged UI tests.
-4. ShakeX has no fixed listing/resource fixture, so review and DNS-record preservation remain source-test evidence only.
+4. ShakeX has fixed listing/resource data and real source DOM review/removal/search coverage; installed packaged UI review remains untested.
 5. Custom RPC, filesystem durability across power loss and an OS-level crash are outside both harnesses.
 
 ## Minimal controlled fixture path
 
 Keep every extension behind the same token-validated, fixed-scenario manifest allowlist. The manifest is mode-0600 local state; it is not cryptographically signed. Do not add general RPC, file-read IPC or arbitrary method invocation.
 
-1. **Restore lifecycle:** source plans now exist for fixed `restore-spv` and `restore-full` scenarios, deterministic generated history without recovery material, sequential targets, five overlap requests, and an injected first failure/retry. Next, connect only a reviewed PR #18 replay capability, emit its journal/status checkpoints, and require recovered balances, zero pending journal entries, quit/reuse, and clean teardown in the packaged app.
+1. **Restore lifecycle:** fixed `restore-spv` and `restore-full` initialization runs real generated-history replay through PR #18's adapter, emits journal/status checkpoints and recovered balances, and requires zero pending journal entries. Full-node injected scan failure and SPV injected reset failure preserve their journals and recover after WalletDB close/reopen. SPV also reopens at partial height 5 with target 20 unchanged. Next, verify embedded packaged-node quit/reuse and clean teardown on the reviewed build.
 2. **Auction Retry:** the fixed `auction-retry` source fixture drives the real component, action and coordinator, retains the visible pre-signing error, invokes Retry once and reaches no broadcast boundary. Next, run the same allowlisted adapter through the packaged UI.
 3. **Twenty-name delayed basket:** the fixed 20-name source fixture drives real product cancellation, preserves every row, invokes low-level cancellation and proves late preparation cannot continue. A mutation that removes the component guard makes the fixture fail. Next, run it through the packaged UI without enabling raw signing or broadcast.
 4. **Ambiguous basket outcome:** the fixed inert boundary drives the real coordinator once, then verifies the Redux duplicate lock and persisted draft safety state across component/navigation reuse. Next, verify the same one-call lock across packaged quit/reuse.
-5. **ShakeX preservation:** provide one fixed local resource containing ordinary DNS records and one ShakeX sale record through an allowlisted in-memory adapter. Assert review output changes only the intended sale record and preserves every unrelated DNS record; submission remains disabled.
+5. **ShakeX preservation:** one fixed resource contains NS, DS, ordinary TXT and a sale TXT record. Actual form review/edit/removal preserves unrelated records. Actual browsing/search uses the fixed local IPC catalog and never fetches ShakeX; submission and external links are disabled. Next, verify the same interfaces in the packaged build.
 
 Each scenario now has a source-level plan or remains explicitly unsupported, and still needs a disposable packaged run on the reviewed combined commit. Packaged rows stay **NOT TESTED** until those exact interfaces exist and pass. No paid packaging or signing should begin merely because PR #17 and PR #18 merge cleanly.
+
+## Persistent runtime integration
+
+Validated acceptance startup installs only a read-only `Acceptance.describe` IPC method. Private fixture initialization cannot be invoked through renderer IPC. Three existing Wallet endpoints receive fixed inert implementations; every other raw signing/import/broadcast deny remains in place. Exact fixed names and amounts (`1000000`/`2000000`, number or canonical base-unit string) are required. A prepared attempt must match before the inert ambiguous boundary can run.
+
+The ambiguity state is persisted before the error is returned under a protected disposable DB key. Renderer writes/deletes to that key are rejected. A real bdb test uses two separate source Node processes to prove profile reuse retains the one-boundary lock. Effective cancellation is idempotent when both the component and coordinator cancel the same attempt; request and effective-cancellation counters are reported separately.
+
+Fixtures are on the explicit `/acceptance-fixtures` route, not an unconditional replacement for App. Login, the actual language picker, disposable-wallet selection, Settings, history, Addons and auction routes remain reachable. Backend errors take priority over every route. Acceptance login skips seed-export verification only for these generated fixtures; ordinary wallet verification remains unchanged, and raw `revealSeed` stays denied. Acceptance startup skips update/HIP2 network initialization while preserving normal local node startup and activity handling.
+
+### Evidence boundaries
+
+- Source DOM tests drive real `AuctionBasket`, Redux actions, coordinator, IPC client/server and the inert backend. They cover failure/Retry, Back/unmount cancellation, 20 preserved rows, navigation/remount locks, actual ShakeX form changes/removal and browsing/search.
+- Routing regressions mount actual connected App, AccountLogin, AppHeader and LanguagePicker; destination pages and wallet actions are mocked. They prove route/error visibility, not complete Settings or wallet backend acceptance.
+- Restore initialization drives real reviewed hsd replay, locks, metadata writes, balances and WalletDB reopen. Its Chain and WalletDB data are in memory; filesystem fsync and OS/process-crash durability are not claimed.
+- The ambiguity journal's separate two-process bdb test is disk-backed, but does not establish restore WalletDB disk durability.
+- No installer, signed app, packaged UI, real wallet, existing Bob profile, live transaction, PR merge, tag or release is covered or authorized by these source tests.

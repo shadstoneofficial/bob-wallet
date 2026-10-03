@@ -331,6 +331,9 @@ if (isPrimaryInstance) {
     services.logger.start(server);
     await services.db.start(server);
     await preparePackagedFixture(services);
+    require('./background/packagedAcceptance/productRuntime').installProductRuntime(
+      packagedAcceptanceConfig, services.db, server,
+    );
     await services.node.start(server);
     await services.storage.start(server);
     await services.wallet.start(server);

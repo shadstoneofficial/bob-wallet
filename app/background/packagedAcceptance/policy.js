@@ -63,6 +63,7 @@ const BLOCKED_WALLET_METHODS = new Set([
 ]);
 
 const PROTECTED_DB_KEYS = new Set([
+  'acceptance-fixed-product-state-v1',
   'connection_type',
   'network',
   'hsdPrefixDir',
@@ -81,9 +82,11 @@ function blocked(operation) {
 
 function wrapAcceptanceWalletMethods(methods, active) {
   if (!active) return methods;
+  const fixture = require('./productRuntime').getProductRuntime();
   return Object.fromEntries(Object.entries(methods).map(([name, method]) => [
     name,
-    BLOCKED_WALLET_METHODS.has(name) ? async () => blocked(`Wallet.${name}`) : method,
+    fixture?.walletMethods[name]
+      || (BLOCKED_WALLET_METHODS.has(name) ? async () => blocked(`Wallet.${name}`) : method),
   ]));
 }
 
@@ -188,6 +191,13 @@ function installAcceptanceBackendPolicy(services, config) {
     const connection = await node.connectionProvider();
     if (connection.type !== 'P2P') blocked(`Node connection ${connection.type}`);
     return originalStart(networkName);
+  };
+  const originalNameInfo = node.getNameInfo;
+  node.getNameInfo = async name => {
+    const fixture = require('./productRuntime').getProductRuntime();
+    return fixture?.nodeMethods.getNameInfo
+      ? fixture.nodeMethods.getNameInfo(name)
+      : originalNameInfo.call(node, name);
   };
 
   for (const method of [

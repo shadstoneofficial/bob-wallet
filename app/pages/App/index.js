@@ -1,5 +1,5 @@
 import React, { Component } from 'react';
-import { Redirect, Route, Switch, withRouter } from 'react-router-dom';
+import { Link, Redirect, Route, Switch, withRouter } from 'react-router-dom';
 import { connect } from 'react-redux';
 import PropTypes from 'prop-types';
 import c from 'classnames';
@@ -50,6 +50,7 @@ import Multisig from "../Multisig";
 import {I18nContext} from "../../utils/i18n";
 import {EXPLORERS} from "../../constants/explorers";
 import StorageErrorBanner from '../../components/StorageErrorBanner';
+import InteractiveFixture from '../../background/packagedAcceptance/InteractiveFixture';
 // Stable identity prevents locale/context updates from remounting the login form.
 const LoginScreen = () => <AccountLogin className="app__login" />;
 
@@ -99,6 +100,12 @@ class App extends Component {
     this.props.fetchLocale();
     this.props.fetchTheme();
     this.props.fetchShowUsdValue();
+    if (require('electron').app?.isAcceptance === true) {
+      await this.props.startNode();
+      this.props.watchActivity();
+      this.setState({isLoading: false});
+      return;
+    }
     this.props.checkForUpdates();
     await this.props.startNode();
     await this.props.initHip2();
@@ -146,11 +153,18 @@ class App extends Component {
     }
 
     return (
-      <div className="app">
+      <div className={c('app', {'app--acceptance': require('electron').app?.isAcceptance === true})}>
         {/*<WalletSync />*/}
         <IdleModal />
         <PassphraseModal />
         <StorageErrorBanner />
+        {require('electron').app?.isAcceptance === true && <nav className="app__acceptance-nav" aria-label="Isolated acceptance navigation">
+          <Link to="/acceptance-fixtures">Fixed fixtures</Link>{' | '}
+          <Link to="/login">Wallet login</Link>{' | '}
+          <Link to="/settings">Settings</Link>{' | '}
+          <Link to="/account">Wallet history</Link>{' | '}
+          <Link to="/addons">Addons</Link>
+        </nav>}
         {this.renderContent()}
       </div>
     );
@@ -166,6 +180,9 @@ class App extends Component {
         <MultisigModal />
         <Notification />
         <Switch>
+          {require('electron').app?.isAcceptance === true && <Route
+            path="/acceptance-fixtures" component={InteractiveFixture}
+          />}
           <Route
             path="/login"
             render={this.uninitializedWrapper(LoginScreen, true, true)}

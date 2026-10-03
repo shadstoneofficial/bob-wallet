@@ -197,7 +197,9 @@ export const lockWallet = () => async (dispatch) => {
 
 export const verifyPhrase = (passphrase) => async (dispatch, getState) => {
   const {watchOnly} = getState().wallet;
-  if (watchOnly) {
+  // Acceptance wallets are generated locally; never export a seed to verify
+  // their UI login. Ordinary wallets retain their existing verification path.
+  if (watchOnly || require('electron').app?.isAcceptance === true) {
     dispatch({
       type: SET_PHRASE_MISMATCH,
       payload: false,

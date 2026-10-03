@@ -56,7 +56,12 @@ async function seedDisposableMultiwallet(services, config) {
   }
   walletService.setWallet(wanted[0]);
   const scenarioPlan = buildControlledScenarioPlan(config.scenario);
-  const sourceFixture = await executeControlledSourceFixture(scenarioPlan);
+  const runtime = require('./productRuntime').getProductRuntime();
+  const sourceFixture = runtime && scenarioPlan.fixtureType === 'restore-history'
+    ? await runtime.initializeRestore()
+    : runtime && scenarioPlan.evidenceClass === 'source-product-path'
+    ? {status: 'INTERACTIVE FIXTURE IMPLEMENTED', snapshot: await runtime.describe(), packagedUiStatus: 'NOT TESTED'}
+    : await executeControlledSourceFixture(scenarioPlan);
   return {
     scenario: config.scenario,
     walletIds: wanted,
