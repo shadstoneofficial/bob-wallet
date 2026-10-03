@@ -130,3 +130,12 @@ Thai: Liquidity จะเปิดนอก Bob โดย Bob จะไม่ส
 Russian: Восстановление кошелька не завершено. Перезапустите Bob, чтобы продолжить.
 
 Thai: การกู้คืนกระเป๋าเงินยังไม่เสร็จสมบูรณ์ เริ่ม Bob ใหม่เพื่อดำเนินการต่อ
+
+### PR #13 read-only status wording
+
+Separate AI check of the incoming five keys: Russian and Thai both say **development only**, check readiness of **Bob's local resolver**, and explicitly say the feature **cannot change system DNS**. Ready means ready for read-only checks, not enabled system DNS. Ineligible is kept as an eligibility statement, not a claim of a failed resolver. The button requests a resolver test, not activation. Exact translations are in `pending-locale-tails.json`; PR #13 implementation remains outside this localization branch.
+
+Back-translations of `systemDnsDevelopmentDescription`:
+
+- Russian: “Checks the readiness of Bob's local resolver. This function cannot change system DNS settings.”
+- Thai: “Checks whether Bob's local resolver is ready, and cannot change the system DNS.”
