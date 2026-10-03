@@ -29,6 +29,7 @@ const routes = new Set(['../Overview', '../Account', '../Settings', '../Auction'
   '../Watching', '../Expiring', '../AuctionBasket', '../OpenBasket', '../SearchTLD', '../Exchange',
   '../SignMessage', '../VerifyMessage', '../../addons/shakex', '../Messages', '../Multisig']);
 Module._load = function(request, parent, isMain) {
+  const parentPath = String(parent?.filename || '').replace(/\\/g, '/');
   if (request === 'electron') return {app: {isAcceptance: active}};
   if (request.endsWith('/utils/i18n')) return {I18nContext: context,
     languageDropdownItems: languages, predefinedLanguageItems: languages, normalizeLocale: locale => locale || 'en-US'};
@@ -44,7 +45,7 @@ Module._load = function(request, parent, isMain) {
   if (request.endsWith('/utils/walletClient')) return {lock: async () => {}};
   if (request.endsWith('/background/connections/client')) return {clientStub: () => ({getConnection: async () => ({type: 'P2P'})})};
   if (request.endsWith('/background/connections/service')) return {ConnectionTypes: {Custom: 'Custom'}};
-  if (parent?.filename.endsWith('/pages/App/index.js')) {
+  if (parentPath.endsWith('/pages/App/index.js')) {
     if (routes.has(request)) return marker(request);
     if (request === '../../background/packagedAcceptance/InteractiveFixture') return marker('Fixed fixtures');
     if (request === '../../components/SplashScreen') return ({error}) => React.createElement('p', {role: 'alert'}, error || 'Loading');
@@ -52,12 +53,20 @@ Module._load = function(request, parent, isMain) {
     if (request === '../../components/MultisigModal') return {MultisigModal: () => null};
     if (request.startsWith('../../components/') || request.endsWith('/PassphraseModal')) return () => null;
   }
-  if (parent?.filename.endsWith('/pages/AppHeader/index.js')
+  if (parentPath.endsWith('/pages/AppHeader/index.js')
       && ['../NetworkPicker', '../../components/SyncStatus'].includes(request)) return () => null;
   return originalLoad.call(this, request, parent, isMain);
 };
 const App = require('../../app/pages/App').default;
 test.after(() => {Module._load = originalLoad;});
+
+test('route fixture mocks handle Windows module paths without loading product assets', () => {
+  const settings = Module._load('../Settings', {filename: 'D:\\fixture\\app\\pages\\App\\index.js'}, false);
+  assert.equal(settings().props['data-page'], '../Settings');
+  const status = Module._load('../../components/SyncStatus',
+    {filename: 'D:\\fixture\\app\\pages\\AppHeader\\index.js'}, false);
+  assert.equal(status(), null);
+});
 
 async function mount(path, error = '') {
   const initial = {node: {error, isRunning: true, isChangingNetworks: false},
