@@ -19,6 +19,11 @@ const WorkerPool = require('hsd/lib/workers/workerpool');
 const {installLocalRescan} = require('../../app/background/wallet/localRescan');
 const {createRecoveryAdmission} = require('../../app/background/wallet/recoveryAdmission');
 const tick = () => new Promise(r => setImmediate(r));
+async function recordJournal(wdb) {
+ const raw=await wdb.db.get(Buffer.from('ff626f622d72657363616e2d7631','hex'));
+ return raw ? JSON.parse(raw.toString('utf8')).requests : [];
+}
+const walletCount = Number(process.argv[process.argv.indexOf('--count') + 1]) || 2;
 (async () => {
  const workers = new WorkerPool({enabled:false});
  const blocks = new BlockStore({memory:true, network:'regtest'});
@@ -41,15 +46,15 @@ const tick = () => new Promise(r => setImmediate(r));
  try {
   await blocks.open(); await full.open(); await spv.open(); await miner.open(); await source.open(); await tick();
   const keys = []; const addresses = []; const history = [];
-  {const w=await source.create(); keys.push(w.master.key.toBase58('regtest')); addresses.push(await w.receiveAddress());}
+  for(let i=0;i<walletCount;i++) {const w=await source.create(); keys.push(w.master.key.toBase58('regtest')); addresses.push(await w.receiveAddress());}
   for (let i=0;i<20;i++) {
-   miner.addresses.length=0; miner.addresses.push(addresses[i%5]);
+   miner.addresses.length=0; miner.addresses.push(addresses[i%walletCount]);
    const job=await miner.cpu.createJob(); job.refresh(); const block=await job.mineAsync();
    await full.add(block); await spv.add(block); history.push(block);
   }
   await wdb.open(); await tick(); await wdb.syncNode();
   assert.equal(wdb.height,20);
-  await wdb.create({id:'restore',master:keys[0]});
+  await wdb.create({id:'restore-0',master:keys[0]});
   const requestId=crypto.randomBytes(16).toString('hex');
   const adapterEnabled=!process.argv.includes('--baseline');
   const admission=createRecoveryAdmission(()=>wdb.bobRescanState);
@@ -98,7 +103,66 @@ const tick = () => new Promise(r => setImmediate(r));
    assert.equal(wdb.bobRescanState.ready,true);
    assert(!restartedAdmission.isBusy(),'another import is admitted only after full replay');
   }
-  assert((await (await wdb.get('restore')).getBalance()).confirmed>0);
+  assert((await (await wdb.get('restore-0')).getBalance()).confirmed>0,
+   'the first generated wallet recovered its own mined history');
+  for(let i=1;i<walletCount;i++) {
+   const id=`restore-${i}`;
+   await wdb.create({id,master:keys[i]});
+   const nextRequestId=crypto.randomBytes(16).toString('hex');
+   await wdb.rescan(0,{requestId:nextRequestId});
+   if(adapterEnabled) {
+    assert.equal(wdb.bobRescanState.status,'scanning');
+    assert.equal(wdb.bobRescanState.target,20);
+    assert.equal(wdb.bobRescanState.ready,false);
+    assert.throws(()=>createRecoveryAdmission(()=>wdb.bobRescanState).beginImport(),{code:'WALLET_RECOVERY_BUSY'});
+   }
+   for(const replay of history) await spv.add(replay);
+   if(adapterEnabled) {
+    for(let n=0;n<100 && wdb.bobRescanState.status!=='complete';n++) await tick();
+    assert(wdb.bobRescanState.completedRequestIds.includes(nextRequestId));
+    assert.equal(wdb.bobRescanState.ready,true);
+   }
+   assert((await (await wdb.get(id)).getBalance()).confirmed>0,
+    `${id} recovered its own generated address history`);
+  }
+
+  // Existing profiles from before the journal can also need ordinary SPV
+  // catch-up. Capture target 20 before native syncNode rewinds chain to wallet 5.
+  await wdb.rollback(5);
+  assert.equal((await recordJournal(wdb)).length,0,'ordinary catch-up starts with no Bob recovery journal');
+  await wdb.syncNode();
+  if(adapterEnabled) {
+   assert.equal(wdb.bobRescanState.status,'scanning');
+   assert.equal(wdb.bobRescanState.target,20);
+   assert.equal(wdb.bobRescanState.ready,false);
+   assert.throws(()=>createRecoveryAdmission(()=>wdb.bobRescanState).beginImport(),{code:'WALLET_RECOVERY_BUSY'});
+  }
+  for(const replay of history.slice(5,10)) await spv.add(replay);
+  assert.equal(wdb.height,10,'ordinary profile catch-up is partially replayed');
+  if(adapterEnabled) assert.equal(wdb.bobRescanState.status,'scanning');
+  const catchupDB=wdb.db;
+  const catchupDrain=await wdb.txLock.lock(); catchupDrain();
+  await wdb.close();
+  spv.removeAllListeners('connect'); spv.removeAllListeners('disconnect'); node.removeAllListeners('reset');
+  spv.on('connect',gateConnect);
+  const catchupClient=new NodeClient(node);
+  wdb=new WalletDB({memory:true,network:'regtest',spv:true,workers,client:catchupClient});
+  wdb.db=catchupDB;
+  wdb.on('error',e=>errors.push(e.message)); if(adapterEnabled) installLocalRescan(wdb,node);
+  await wdb.open(); await tick(); await wdb.syncNode();
+  assert.equal(wdb.height,10);
+  if(adapterEnabled) {
+   assert.equal(wdb.bobRescanState.target,20,'unjournaled profile target survives partial-replay restart');
+   assert.equal(wdb.bobRescanState.ready,false);
+   assert.throws(()=>createRecoveryAdmission(()=>wdb.bobRescanState).beginImport(),{code:'WALLET_RECOVERY_BUSY'});
+  }
+  for(const replay of history.slice(10)) await spv.add(replay);
+  assert.equal(wdb.height,20); assert.equal(spv.height,20);
+  if(adapterEnabled) {
+   for(let n=0;n<100 && wdb.bobRescanState.status!=='complete';n++) await tick();
+   assert.equal(wdb.bobRescanState.status,'complete','existing-profile catch-up opens admission at the original tip');
+   assert.equal(wdb.bobRescanState.ready,true);
+  }
   const job = await miner.cpu.createJob(); job.refresh(); const block = await job.mineAsync();
   await full.add(block); history.push(block);
   const adding = spv.add(block); await reached;
@@ -127,7 +191,7 @@ const tick = () => new Promise(r => setImmediate(r));
   for(const replay of history) await spv.add(replay);
   assert.equal(wdb.height,21);
   assert.deepEqual(errors,[]);
-  console.log(JSON.stringify({mode:'SPV',restores:1,restartAt:5,chainHeight:spv.height,walletHeight:wdb.height,replayTarget:20,completedAfterReplay:true,sockets:0}));
+  console.log(JSON.stringify({mode:'SPV',restores:walletCount,restartAt:5,unjournaledRestartAt:10,chainHeight:spv.height,walletHeight:wdb.height,replayTarget:20,completedAfterReplay:true,sockets:0}));
  } catch(error) {console.error("SPV fixture failure:",error); throw error;} finally {
   if(wdb.client.opened) await wdb.close(); if(source.client.opened) await source.close();
   await miner.close(); await spv.close(); await full.close(); await blocks.close(); await workers.close();

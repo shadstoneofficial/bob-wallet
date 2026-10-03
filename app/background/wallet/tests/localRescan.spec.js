@@ -142,6 +142,40 @@ test('SPV rewind stays pending through partial replay and restart until preserve
   t.end();
 });
 
+test('SPV startup journals a legacy profile catch-up target before rewind and restart', async t => {
+  const f = fixture({spv: true});
+  f.chain.height = 20; f.wdb.height = 5;
+  f.chain._reset = async height => {
+    f.calls.push(height);
+    f.chain.height = height;
+    f.wdb.height = height;
+  };
+  await f.wdb.syncNode();
+  const pending = record(f.store).requests[0];
+  t.equal(pending.height, 5, 'legacy catch-up starts at the stored wallet tip');
+  t.equal(pending.target, 20, 'the known chain target is saved before native sync rewinds it');
+  t.equal(pending.rewound, true, 'native SPV sync rewind is recorded durably');
+  t.equal(f.wdb.bobRescanState.status, 'scanning');
+  t.equal(f.wdb.bobRescanState.ready, false, 'ordinary catch-up keeps admission closed');
+  t.throws(() => require('../recoveryAdmission').createRecoveryAdmission(() => f.wdb.bobRescanState).beginImport(),
+    {code: 'WALLET_RECOVERY_BUSY'});
+
+  const saved = new Map([...f.store].map(([k, v]) => [k, Buffer.from(v)]));
+  const restarted = fixture({store: saved, spv: true});
+  restarted.chain.height = 10; restarted.wdb.height = 10;
+  await restarted.wdb.syncNode();
+  t.deepEqual(restarted.calls, [], 'partial-replay restart does not rewind the chain again');
+  t.equal(restarted.wdb.bobRescanState.target, 20);
+  t.equal(restarted.wdb.bobRescanState.ready, false);
+  restarted.chain.height = 20; restarted.wdb.height = 20;
+  restarted.wdb.emit('block connect', {height: 20});
+  await tick();
+  t.deepEqual(record(saved).requests, [], 'legacy catch-up is acknowledged only at its original tip');
+  t.equal(restarted.wdb.bobRescanState.status, 'complete');
+  t.equal(restarted.wdb.bobRescanState.ready, true);
+  t.end();
+});
+
 test('bad heights and journal write failures do not start a scan', async t => {
   const f = fixture();
   for (const height of [-1, 1.5, NaN, 0x100000000]) {

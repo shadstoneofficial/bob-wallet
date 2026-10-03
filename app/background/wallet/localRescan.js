@@ -291,10 +291,33 @@ export function installLocalRescan(wdb, node) {
     ready = false;
     publish('waiting');
     try {
+      // A profile created by an older Bob version has no recovery journal.
+      // Capture its known chain tip before hsd.syncNode() rewinds an SPV chain
+      // to the partial WalletDB tip, so ordinary catch-up remains admission-
+      // closed until the original tip has been replayed.
+      const preSyncWalletHeight = wdb.height;
+      const preSyncChainHeight = chain.height;
+      let requests = await journal(value => value.requests.slice());
+      let catchupRequest = null;
+      if (node.spv && requests.length === 0 && preSyncChainHeight > preSyncWalletHeight) {
+        catchupRequest = await journal(value => {
+          const request = {
+            id: ++value.next,
+            height: preSyncWalletHeight,
+            target: preSyncChainHeight,
+            rewound: false,
+          };
+          value.requests.push(request);
+          return request;
+        });
+        requests = [catchupRequest];
+      }
       const result = await withChainLock({requestIds: []}, async () => {
         if (closing) return;
+        const owner = ownership.getStore();
+        if (catchupRequest) owner.requestIds = [catchupRequest.id];
         await originalSync.call(this);
-        const requests = await journal(value => value.requests.slice());
+        if (catchupRequest && owner.rewindAccepted) catchupRequest.rewound = true;
         for (const request of requests) {
           const restored = {
             ...request,
@@ -325,7 +348,6 @@ export function installLocalRescan(wdb, node) {
           return;
         }
         active = true;
-        const owner = ownership.getStore();
         owner.requestIds = requests.map(r => r.id);
         publish('scanning');
         await originalRescan.call(this, height);

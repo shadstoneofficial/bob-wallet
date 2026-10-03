@@ -63,13 +63,13 @@ Verified results:
 | Stock full-node lock-cycle fixture | Chain 21, wallet 0; both mutexes waiting |
 | Patched full-node same interleaving | Chain 21, wallet 21; both operations complete |
 | Stock SPV lock-cycle fixture | Chain 21, wallet 0; both mutexes waiting |
-| Patched SPV | One restore stays unready through partial replay; WalletDB reconstructed at height 5 without another rewind; exact token completes only after target 20; incoming-block race completes; replay reaches 21 |
+| Patched SPV | Two- and five-wallet sequential restores recover each wallet's own mined history; exact token stays pending through partial replay and restart at height 5; a no-journal legacy profile captures tip 20 before sync rewinds to wallet height 5, restarts at partial height 10, and opens admission only after tip 20; incoming-block race completes; replay reaches 21 |
 | Full-node two/five overlap, five sequential, failed first scan | Every restored wallet finds its history; maximum one active scan |
 | Startup-order fixture | Baseline reports `Pool is not connected!`; adapter defers sync until pool readiness and finishes without errors; memory database, zero sockets |
 | Journal unit fixtures | Queued coverage, earliest-height restart recovery, preliminary sync/journal/ack failures, shutdown and rejected late request |
 | Completion/queue fixtures | Final height alone never marks ready; scan and ack failures after target remain failed; native WalletDB lock release precedes completion; lock callback remains unchanged |
 | Import/action fixtures | Active/queued/failed or unready startup blocks another restore/import; empty wallet creation and normal chain sync remain available; basket waits for its own request token; switch/unmount remains safe |
-| Focused recovery/admission/basket unit fixtures | 117 assertions passed, including SPV target replay, restart midway, second-request rejection, backend switches, and stale-event rejection |
+| Focused recovery/admission/basket unit fixtures | 129 assertions passed, including SPV target replay, journal-free legacy catch-up, restart midway, second-request rejection, backend switches, and stale-event rejection |
 | Locale | 1,278 English/Chinese keys valid; 12 validator regressions passed |
 | Full bundled unit suite and local build | Not run for this review follow-up; packaged acceptance remains open |
 

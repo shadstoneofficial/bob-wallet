@@ -6,7 +6,8 @@ for (const [file, ...args] of [
   ['restore-overlap.cjs'],
   ['restore-overlap.cjs', '--lock-cycle'],
   ['spv-overlap.cjs', '--baseline'],
-  ['spv-overlap.cjs'],
+  ['spv-overlap.cjs', '--count', '2'],
+  ['spv-overlap.cjs', '--count', '5'],
   ['spv-startup.cjs', '--baseline'],
   ['spv-startup.cjs'],
 ]) {
