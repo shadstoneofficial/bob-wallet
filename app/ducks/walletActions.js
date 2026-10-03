@@ -287,37 +287,41 @@ export const waitForWalletSync = (
       walletSync,
       rescanStatus,
       rescanGeneration,
+      activeRescanRequestIds,
+      completedRescanRequestIds,
     } = state.wallet;
     if (rescanStatus === 'failed') {
       throw new Error('Wallet recovery is incomplete. Restart Bob to resume before retrying.');
     }
     const managedRescanPending = rescanStatus === 'waiting' || rescanStatus === 'scanning';
+    const requestId = options.recoveryRequestId;
+    const requestCorrelationAvailable = typeof requestId === 'string'
+      && typeof state.wallet.rescanReady === 'boolean';
+    const matchingRequestActive = requestCorrelationAvailable
+      && activeRescanRequestIds?.includes(requestId);
+    const matchingRequestComplete = requestCorrelationAvailable
+      && completedRescanRequestIds?.includes(requestId);
     const matchingRescanGeneration = Number.isSafeInteger(options.rescanGenerationBefore)
       && rescanGeneration > options.rescanGenerationBefore;
 
-    if (!sawRescan && matchingRescanGeneration) {
-      sawRescan = true;
-    }
+    if (requestCorrelationAvailable) {
+      // Global wallet progress or a different rescan generation cannot satisfy
+      // this request-specific wait.
+      if (matchingRequestComplete) break;
+    } else {
+      if (!sawRescan && matchingRescanGeneration) sawRescan = true;
+      if (!sawRescan && walletSync && rescanHeight !== null) sawRescan = true;
 
-    if (!sawRescan && walletSync && rescanHeight !== null) {
-      sawRescan = true;
-    }
-
-    if (!sawRescan) {
-      // The import RPC was dispatched, but its rescan progress event has not
-      // reached Redux yet. Do not mistake the pre-rescan synchronized state for
-      // completion.
-    } else if (managedRescanPending) {
-      // A queued scan may still show the preceding scan's final height.
-      // Managed completion is emitted from observed blocks, not an RPC reply.
-    } else if (matchingRescanGeneration && rescanStatus === 'complete') {
-      break;
-    } else if (walletSync) {
-      if (rescanHeight === null || walletHeight >= rescanHeight) {
-        break;
+      if (sawRescan && !managedRescanPending) {
+        if (matchingRescanGeneration && rescanStatus === 'complete') {
+          break;
+        }
+        if (walletSync) {
+          if (rescanHeight === null || walletHeight >= rescanHeight) break;
+        } else if (nodeHeight && walletHeight >= nodeHeight) {
+          break;
+        }
       }
-    } else if (nodeHeight && walletHeight >= nodeHeight) {
-      break;
     }
 
     let progress;
@@ -329,7 +333,7 @@ export const waitForWalletSync = (
       progress = 0;
     }
 
-    const progressKey = `${rescanStatus}:${rescanGeneration}:${walletSync}:${walletHeight}:${rescanHeight}:${nodeHeight}:${progress.toFixed(4)}`;
+    const progressKey = `${rescanStatus}:${rescanGeneration}:${matchingRequestActive}:${walletSync}:${walletHeight}:${rescanHeight}:${nodeHeight}:${progress.toFixed(4)}`;
     if (lastProgressKey === progressKey) {
       stall++;
     } else {

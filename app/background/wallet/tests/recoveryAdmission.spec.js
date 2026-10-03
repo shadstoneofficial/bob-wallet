@@ -34,6 +34,18 @@ test('failed recovery blocks another import with an explicit restart instruction
   t.end();
 });
 
+test('startup admission remains closed until the embedded backend reports ready', t => {
+  let state = {status: 'idle', ready: false};
+  const gate = createRecoveryAdmission(() => state);
+  t.throws(() => gate.beginImport(), {code: 'WALLET_RECOVERY_BUSY'},
+    'an idle-looking start-local state cannot admit imports before pool and recovery sync are ready');
+  state = {status: 'idle', ready: true};
+  const admission = gate.beginImport();
+  gate.releaseImport(admission);
+  t.notOk(gate.isBusy(), 'admission opens after backend sync and journal inspection succeed');
+  t.end();
+});
+
 test('transaction-attempt uncertainty remains set until every attempted rescan settles', t => {
   const risk = createRescanRiskTracker();
   const first = risk.track(true);

@@ -44,7 +44,9 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
         `expected the baseline startup assertion; errors=${JSON.stringify(errors)}`);
     } else {
       assert.deepEqual(errors, [], 'WalletDB startup sync is deferred until pool connection');
-      assert.equal(wallet.wdb.bobRescanState.status, 'idle');
+      assert.equal(wallet.wdb.bobRescanState.status, 'waiting');
+      assert.equal(wallet.wdb.bobRescanState.ready, false,
+        'pending startup recovery is not exposed as idle or ready');
       // Match NodeService's post-connect handoff without calling Pool.connect,
       // which would open network listeners in this fixture.
       node.pool.connected = true;

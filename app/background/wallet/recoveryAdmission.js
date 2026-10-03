@@ -6,6 +6,7 @@ export function createRecoveryAdmission(getRescanState) {
 
   const isBusy = () => admissions.size > 0
     || rescans.size > 0
+    || getRescanState()?.ready === false
     || ACTIVE_STATUSES.has(getRescanState()?.status);
 
   return {

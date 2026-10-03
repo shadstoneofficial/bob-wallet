@@ -54,6 +54,9 @@ export function getInitialState() {
     rescanHeight: null,
     rescanStatus: null,
     rescanGeneration: 0,
+    rescanReady: null,
+    activeRescanRequestIds: [],
+    completedRescanRequestIds: [],
     getPassphrase: {get: false},
     wallets: [],
     walletsDetails: {},
@@ -196,7 +199,14 @@ export default function walletReducer(state = getInitialState(), {type, payload}
         rescanGeneration: Number.isSafeInteger(payload.generation)
           ? payload.generation
           : state.rescanGeneration,
-        walletSync: ['waiting', 'scanning', 'failed'].includes(payload.status),
+        rescanReady: typeof payload.ready === 'boolean' ? payload.ready : state.rescanReady,
+        activeRescanRequestIds: Array.isArray(payload.activeRequestIds)
+          ? payload.activeRequestIds.filter(id => typeof id === 'string')
+          : state.activeRescanRequestIds,
+        completedRescanRequestIds: Array.isArray(payload.completedRequestIds)
+          ? payload.completedRequestIds.filter(id => typeof id === 'string')
+          : state.completedRescanRequestIds,
+        walletSync: ['starting', 'waiting', 'scanning', 'failed'].includes(payload.status),
         walletHeight: payload.height,
         rescanHeight: payload.status === 'complete' || payload.status === 'idle' ? null : payload.target,
       };

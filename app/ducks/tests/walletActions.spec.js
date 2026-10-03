@@ -138,6 +138,7 @@ test('queued managed recovery cannot reuse the preceding scan completion height'
 
 test('required rescan generation detects a full scan that finished before the first poll', async t => {
   const state = {node: {chain: {height: 100}}, wallet: {
+    rescanReady: true,
     walletSync: false,
     walletHeight: 100,
     rescanHeight: null,
@@ -164,4 +165,39 @@ test('required rescan generation detects a full scan that finished before the fi
   await waiting;
   clock.restore();
   t.ok(settled, 'a stale completion with the prior generation does not satisfy a required rescan');
+});
+
+test('basket wait requires its own rescan request completion token', async t => {
+  const clock = sinon.useFakeTimers();
+  const requestId = 'a'.repeat(32);
+  const state = {node: {chain: {height: 100}}, wallet: {
+    rescanReady: true,
+    walletSync: false,
+    walletHeight: 100,
+    rescanHeight: null,
+    rescanStatus: 'complete',
+    rescanGeneration: 30,
+    activeRescanRequestIds: [],
+    completedRescanRequestIds: ['b'.repeat(32)],
+  }};
+  let finished = false;
+  const waiting = waitForWalletSync(100, {
+    recoveryRequestId: requestId,
+    requireRescanStart: true,
+    rescanGenerationBefore: 0,
+    pollIntervalMs: 5,
+    timeoutMs: 50,
+  })(() => {}, () => state).then(() => {finished = true;});
+
+  try {
+    await clock.tickAsync(15);
+    t.notOk(finished, 'an unrelated completed request and newer global generation cannot release the basket');
+    state.wallet.completedRescanRequestIds.push(requestId);
+    await clock.tickAsync(5);
+    await waiting;
+    t.ok(finished, 'the matching immutable request token releases the wait');
+  } finally {
+    clock.restore();
+  }
+  t.end();
 });

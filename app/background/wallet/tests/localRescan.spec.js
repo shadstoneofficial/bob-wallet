@@ -6,13 +6,12 @@ import {installLocalRescan} from '../localRescan';
 
 function deferred() {let resolve; const promise = new Promise(r => {resolve = r;}); return {promise, resolve};}
 const tick = () => new Promise(r => setImmediate(r));
-function fixture({store = new Map(), spv = false} = {}) {
+function fixture({store = new Map(), spv = false, poolConnected} = {}) {
   const calls = [];
-  let rescanPostlude = async result => result;
-  let rescanCalls = 0;
   const chain = {locker: new Lock(), db: {scan: async height => calls.push(height)}};
   chain._reset = async height => calls.push(height);
   const node = {chain, spv};
+  if (typeof poolConnected === 'boolean') node.pool = {connected: poolConnected};
   const client = {
     node, filter: {}, emitAsync: async () => {},
     async rescan(height) {
@@ -33,7 +32,7 @@ function fixture({store = new Map(), spv = false} = {}) {
       let result;
       try {result = await client.rescan(height);}
       finally {unlock();}
-      return rescanPostlude(result, ++rescanCalls);
+      return result;
     },
     async close() {},
     async syncNode() {
@@ -42,8 +41,9 @@ function fixture({store = new Map(), spv = false} = {}) {
       finally {unlock();}
     },
   });
+  const originalUnlocker = wdb.txLock.unlocker;
   installLocalRescan(wdb, node);
-  return {wdb, chain, store, calls, setRescanPostlude(fn) {rescanPostlude = fn;}};
+  return {wdb, chain, node, store, calls, originalUnlocker};
 }
 function record(store) {return JSON.parse([...store.values()][0].toString());}
 
@@ -123,6 +123,26 @@ test('bad heights and journal write failures do not start a scan', async t => {
   t.end();
 });
 
+test('deferred startup recovery keeps the backend unready until post-connect sync succeeds', async t => {
+  const f = fixture({poolConnected: false});
+  t.equal(f.wdb.bobRescanState.status, 'waiting');
+  t.equal(f.wdb.bobRescanState.ready, false, 'pool-disconnected startup is explicitly unready');
+  try {
+    await f.wdb.rescan(3);
+    t.fail('must reject before local sync readiness');
+  } catch (error) {
+    t.match(error.message, /not ready/);
+  }
+
+  f.node.pool.connected = true;
+  await f.wdb.resumeLocalSync();
+  t.equal(f.wdb.bobRescanState.status, 'idle');
+  t.equal(f.wdb.bobRescanState.ready, true, 'backend becomes ready only after sync and journal inspection');
+  await f.wdb.rescan(3);
+  t.deepEqual(f.calls, [99, 3]);
+  t.end();
+});
+
 
 test('shutdown preserves accepted waiting recovery and rejects new requests', async t => {
   const f = fixture(); const gate = deferred(); const entered = deferred();
@@ -140,7 +160,7 @@ test('shutdown preserves accepted waiting recovery and rejects new requests', as
   t.end();
 });
 
-test('completion requires durable scan acknowledgement and releases queues before a late RPC reply', async t => {
+test('completion follows durable acknowledgement and native WalletDB lock release', async t => {
   const f = fixture(); f.chain.height = 100; f.wdb.height = 100;
   const gate = deferred(); const entered = deferred();
   f.chain.db.scan = async () => {
@@ -156,26 +176,23 @@ test('completion requires durable scan acknowledgement and releases queues befor
   gate.resolve(); await Promise.all([first, second]);
   t.equal(f.wdb.bobRescanState.status, 'complete');
 
-  const reply = deferred();
   f.chain.db.scan = async height => {
     f.calls.push(height);
     f.wdb.height = 100; f.wdb.emit('block connect', {height: 100});
   };
-  f.setRescanPostlude(async (result, call) => call === 1
-    ? reply.promise.then(() => result)
-    : result);
-  let completedStatus = false;
-  const third = f.wdb.rescan(0);
-  for (let i = 0; i < 20 && f.wdb.bobRescanState.status !== 'complete'; i++) await tick();
+  const firstRequest = 'a'.repeat(32);
+  const third = f.wdb.rescan(0, {requestId: firstRequest});
+  await third;
   t.equal(f.wdb.bobRescanState.status, 'complete', 'scan success and durable journal acknowledgement mark completion');
-  t.notOk(f.wdb.txLock.busy, 'the completed scan released WalletDB before its wrapper reply');
-  const queued = f.wdb.rescan(0);
-  for (let i = 0; i < 20 && f.calls.length < 2; i++) await tick();
-  completedStatus = f.wdb.bobRescanState.status === 'complete';
-  t.ok(completedStatus, 'the second request completes while the first RPC promise remains unresolved');
+  t.ok(f.wdb.bobRescanState.completedRequestIds.includes(firstRequest), 'completion identifies its own request');
+  t.notOk(f.wdb.txLock.busy, 'native WalletDB rescan released its lock before the chain operation settled');
+  t.notOk(f.chain.locker.busy, 'the chain lock is released when the owned backend operation settles');
+  t.equal(f.wdb.txLock.unlocker, f.originalUnlocker, 'adapter leaves the native lock callback untouched');
+  const secondRequest = 'b'.repeat(32);
+  const queued = f.wdb.rescan(0, {requestId: secondRequest});
   await queued;
-  t.deepEqual(f.calls, [0, 0], 'the next queued scan starts before the first RPC reply settles');
-  reply.resolve(); await third;
+  t.deepEqual(f.calls, [0, 0], 'a later operation uses the native lock queue');
+  t.ok(f.wdb.bobRescanState.completedRequestIds.includes(secondRequest), 'each completed request remains correlated');
   t.end();
 });
 

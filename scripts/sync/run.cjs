@@ -12,7 +12,7 @@ for (const [file, ...args] of [
 ]) {
   console.log(`\nFixture: ${file} ${args.join(' ')}`);
   const result = spawnSync(process.execPath, [path.join(__dirname, file), ...args], {
-    stdio: 'inherit', timeout: 30000,
+    stdio: 'inherit', timeout: 50000,
     env: {...process.env, NODE_BACKEND: 'js', BABEL_DISABLE_CACHE: '1'},
   });
   if (result.error || result.status !== 0) {

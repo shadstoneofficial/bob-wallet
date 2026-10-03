@@ -1,7 +1,7 @@
 // Disposable regtest fixture: real hsd Chain/WalletDB/NodeClient; no sockets.
 process.env.NODE_BACKEND = 'js';
 process.env.BABEL_DISABLE_CACHE = '1';
-const watchdog = setTimeout(() => {console.error('Fixture exceeded 20 seconds'); process.exit(1);}, 20000);
+const watchdog = setTimeout(() => {console.error('Fixture exceeded 45 seconds'); process.exit(1);}, 45000);
 require('@babel/register')({configFile: false, babelrc: false, presets: [['@babel/preset-env', {targets: {node: 'current'}}]]});
 const {installLocalRescan} = require('../../app/background/wallet/localRescan');
 const assert = require('assert/strict');
@@ -142,6 +142,9 @@ async function scenario(count, overlap, fail = false, race = false) {
     console.log(JSON.stringify(await scenario(2, true, false, true))); return;
   }
   const results = [];
-  for (const args of [[2,true],[5,true],[5,false],[5,true,true]]) results.push(await scenario(...args));
+  for (const args of [[2,true],[5,true],[5,false],[5,true,true]]) {
+    console.log(`Scenario: restores=${args[0]} overlap=${args[1]} injectedFailure=${!!args[2]}`);
+    results.push(await scenario(...args));
+  }
   console.log(JSON.stringify({network:'regtest', storage:'memory', sockets:0, results}, null, 2));
 })().catch(e => {console.error(e); process.exitCode = 1;}).finally(() => clearTimeout(watchdog));

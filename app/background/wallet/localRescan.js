@@ -21,30 +21,60 @@ export function installLocalRescan(wdb, node) {
   let failed = false;
   let target = null;
   let generation = 0;
-  let startupSyncDeferred = false;
+  let ready = !(node.pool && node.pool.connected === false);
+  let startupSyncDeferred = !ready;
   const unjournaled = new Set();
   const unacknowledged = new Set();
-  const completedOwners = new Set();
-  let lastPublished = 0;
+  const activeRequestIds = new Set();
+  const completedRequestIds = new Set();
+  function rememberCompletedRequest(id) {
+    if (!id) return;
+    completedRequestIds.delete(id);
+    completedRequestIds.add(id);
+    if (completedRequestIds.size > 128) {
+      completedRequestIds.delete(completedRequestIds.values().next().value);
+    }
+  }
   function publish(status) {
-    const state = {status, height: wdb.height, target, generation};
+    const state = {
+      status,
+      height: wdb.height,
+      target,
+      generation,
+      ready,
+      activeRequestIds: [...activeRequestIds],
+      completedRequestIds: [...completedRequestIds],
+    };
     const previous = wdb.bobRescanState;
     wdb.bobRescanState = state;
-    if (previous?.status === status && previous.target === target
-        && Date.now() - lastPublished < 500) return;
-    lastPublished = Date.now();
+    if (previous
+        && previous.status === state.status
+        && previous.height === state.height
+        && previous.target === state.target
+        && previous.generation === state.generation
+        && previous.ready === state.ready
+        && previous.activeRequestIds?.join(',') === state.activeRequestIds.join(',')
+        && previous.completedRequestIds?.join(',') === state.completedRequestIds.join(',')) return;
     wdb.emit('bob rescan', state);
   }
   function advance() {
     if (failed) return;
     if (generation === 0 && unjournaled.size === 0 && unacknowledged.size === 0) return;
-    if (unjournaled.size === 0 && unacknowledged.size === 0 && !active && generation > 0) {
+    if (ready && unjournaled.size === 0 && unacknowledged.size === 0 && !active && generation > 0) {
       publish('complete');
     } else {
       publish(active ? 'scanning' : 'waiting');
     }
   }
-  wdb.bobRescanState = {status: 'idle', height: wdb.height, target: null, generation: 0};
+  wdb.bobRescanState = {
+    status: ready ? 'idle' : 'waiting',
+    height: wdb.height,
+    target: null,
+    generation: 0,
+    ready,
+    activeRequestIds: [],
+    completedRequestIds: [],
+  };
   wdb.on('block connect', advance);
   async function journal(update) {
     const release = await journalLock.lock();
@@ -84,26 +114,10 @@ export function installLocalRescan(wdb, node) {
     if (owner.requestIds?.length) {
       await acknowledge(owner.requestIds);
       for (const id of owner.requestIds) unacknowledged.delete(id);
-      owner.backendComplete = true;
-      if (!wdb.txLock.busy) releaseCompletedOwner(owner);
-      else completedOwners.add(owner);
+      owner.acknowledged = true;
     }
     return result;
   };
-
-  const originalTxUnlocker = wdb.txLock.unlocker;
-  wdb.txLock.unlocker = function(...args) {
-    const result = originalTxUnlocker(...args);
-    for (const owner of [...completedOwners]) releaseCompletedOwner(owner, true);
-    return result;
-  };
-
-  function releaseCompletedOwner(owner, fromUnlock = false) {
-    if (!owner.backendComplete || (!fromUnlock && wdb.txLock.busy)) return;
-    completedOwners.delete(owner);
-    owner.txLockReleased = true;
-    owner.releaseChainLock?.();
-  }
 
   async function withChainLock(owner, operation) {
     const unlock = await chain.locker.lock();
@@ -125,10 +139,15 @@ export function installLocalRescan(wdb, node) {
     }
   }
 
-  wdb.rescan = async function(height) {
+  wdb.rescan = async function(height, options = {}) {
     if (closing) throw new Error('Wallet is stopping; recovery was not started.');
+    if (!ready) throw new Error('Wallet backend is not ready for recovery.');
     if (height == null) height = this.state.startHeight;
     if ((height >>> 0) !== height) throw new Error('WDB: Must pass in a height.');
+    const requestId = options.requestId || null;
+    if (requestId !== null && !/^[a-f0-9]{32}$/.test(requestId)) {
+      throw new Error('WDB: Invalid recovery request identifier.');
+    }
     const ticket = {};
     if (unjournaled.size === 0 && unacknowledged.size === 0) {
       generation++;
@@ -136,6 +155,7 @@ export function installLocalRescan(wdb, node) {
       failed = false;
     }
     unjournaled.add(ticket);
+    if (requestId) activeRequestIds.add(requestId);
     // Persist before waiting for either backend mutex. A crash or failed scan
     // must not silently discard a later wallet's earlier recovery requirement.
     publish(active ? 'scanning' : 'waiting');
@@ -148,17 +168,23 @@ export function installLocalRescan(wdb, node) {
       });
       unjournaled.delete(ticket);
       unacknowledged.add(id);
-      return await withChainLock({requestIds: [id]}, async () => {
+      const owner = {requestIds: [id], requestId};
+      return await withChainLock(owner, async () => {
         if (closing) throw new Error('Wallet is stopping; recovery remains pending for restart.');
         active = true;
         publish('scanning');
         try {
           const result = await originalRescan.call(this, height);
+          if (owner.acknowledged && requestId) {
+            activeRequestIds.delete(requestId);
+            rememberCompletedRequest(requestId);
+          }
           return result;
         } finally {active = false;}
       });
     } catch (error) {
       failed = true;
+      if (requestId) activeRequestIds.delete(requestId);
       publish('failed');
       throw error;
     } finally {
@@ -172,8 +198,12 @@ export function installLocalRescan(wdb, node) {
     if (closing) return;
     if (node.pool && typeof node.pool.connected === 'boolean' && !node.pool.connected) {
       startupSyncDeferred = true;
+      ready = false;
+      publish('waiting');
       return;
     }
+    ready = false;
+    publish('waiting');
     try {
       return await withChainLock({requestIds: []}, async () => {
         if (closing) return;
@@ -182,6 +212,7 @@ export function installLocalRescan(wdb, node) {
         for (const request of requests) unacknowledged.add(request.id);
         if (!requests.length) {
           failed = false;
+          ready = true;
           publish('idle');
           return;
         }
@@ -194,9 +225,11 @@ export function installLocalRescan(wdb, node) {
         owner.requestIds = requests.map(r => r.id);
         publish('scanning');
         await originalRescan.call(this, height);
+        ready = true;
       });
     } catch (error) {
       failed = true;
+      ready = false;
       publish('failed');
       throw error;
     } finally {advance();}

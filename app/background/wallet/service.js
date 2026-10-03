@@ -506,6 +506,11 @@ class WalletService {
         });
       }
 
+      if (this.node.wdb.bobRescanState) {
+        return await this.node.wdb.rescan(height, {
+          requestId: options.recoveryRequestId,
+        });
+      }
       return await this.node.wdb.rescan(height);
     } catch (error) {
       storageHealth.reportError(error, {
@@ -2049,10 +2054,22 @@ class WalletService {
 
       // Start one rescan from the earliest auction height. Completion is observed
       // through durable backend state rather than this IPC request's promise.
-      this.rescan(minHeight == null ? 0 : minHeight, {...options, recoveryAdmission}).catch(error => {
+      this.rescan(minHeight == null ? 0 : minHeight, {
+        ...options,
+        recoveryRequestId: this.node.wdb.bobRescanState
+          ? options.recoveryRequestId
+          : undefined,
+        recoveryAdmission,
+      }).catch(error => {
         console.error('Bulk name import rescan failed:', error);
       });
-      return {rescanStarted: true, height: minHeight == null ? 0 : minHeight};
+      return {
+        rescanStarted: true,
+        height: minHeight == null ? 0 : minHeight,
+        recoveryRequestId: this.node.wdb.bobRescanState
+          ? options.recoveryRequestId || null
+          : null,
+      };
     } catch (error) {
       this.recoveryAdmission.releaseImport(recoveryAdmission);
       throw error;

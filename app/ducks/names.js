@@ -1,4 +1,5 @@
 import { Address } from 'hsd/lib/primitives';
+import {v4 as uuidv4} from 'uuid';
 import nodeClient from '../utils/nodeClient';
 import walletClient from '../utils/walletClient';
 import * as namesDb from '../db/names';
@@ -616,14 +617,18 @@ export async function submitBidManyLifecycle(entries, deps, options = {}) {
       }
 
       setPhase(BID_SUBMISSION_PHASES.RESCANNING, {missing: missing.length});
+      const recoveryRequestId = uuidv4().replace(/-/g, '');
       const importPromise = Promise.resolve().then(() => (
-        deps.importNames(toImport, {transactionAttempted: false})
+        deps.importNames(toImport, {
+          transactionAttempted: false,
+          recoveryRequestId,
+        })
       ));
       // Successful import RPC completion is not a completion signal. Observe
       // Redux rescan progress instead, while still surfacing an early RPC error.
       const importFailure = importPromise.then(() => new Promise(() => {}));
       await prepare(Promise.race([
-        deps.waitForSync({signal, timeoutMs: preparationTimeoutMs}),
+        deps.waitForSync({signal, timeoutMs: preparationTimeoutMs, recoveryRequestId}),
         importFailure,
       ]));
       throwIfCancelled(signal);

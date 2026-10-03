@@ -39,6 +39,8 @@ test('basket rescan completes normally and submission continues exactly once', a
   let auctionChecks = 0;
   let broadcasts = 0;
   let syncWaits = 0;
+  let importedRequestId = null;
+  let waitedRequestId = null;
   const phases = [];
   const result = await submitBidManyLifecycle(entries, lifecycleDeps({
     getAuctionInfo: async () => {
@@ -46,7 +48,14 @@ test('basket rescan completes normally and submission continues exactly once', a
       if (auctionChecks === 1) throw new Error('Auction not found.');
       return {};
     },
-    waitForSync: async () => { syncWaits++; },
+    importNames: async (names, options) => {
+      importedRequestId = options.recoveryRequestId;
+      return {rescanStarted: true};
+    },
+    waitForSync: async options => {
+      syncWaits++;
+      waitedRequestId = options.recoveryRequestId;
+    },
     broadcastPrepared: async () => {
       broadcasts++;
       return {txid: 'normal-rescan-tx'};
@@ -54,6 +63,8 @@ test('basket rescan completes normally and submission continues exactly once', a
   }), {onPhase: phase => phases.push(phase)});
 
   t.equal(syncWaits, 1, 'waits for the one bulk rescan');
+  t.match(importedRequestId, /^[a-f0-9]{32}$/, 'bulk import receives an immutable request token');
+  t.equal(waitedRequestId, importedRequestId, 'readiness waits for that exact import token');
   t.equal(broadcasts, 1, 'broadcasts exactly once');
   t.equal(result.txid, 'normal-rescan-tx', 'returns the transaction ID');
   t.deepEqual(phases, [
