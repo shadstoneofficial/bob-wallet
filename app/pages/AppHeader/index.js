@@ -2,6 +2,8 @@ import React, { Component } from "react";
 import { withRouter } from "react-router-dom";
 import PropTypes from "prop-types";
 import { connect } from "react-redux";
+import LanguagePicker from "../../components/LanguagePicker";
+import "./index.scss";
 import NetworkPicker from "../NetworkPicker";
 import SyncStatus from "../../components/SyncStatus";
 import * as nodeActions from "../../ducks/node";
@@ -10,16 +12,7 @@ import { clientStub as cClientStub } from "../../background/connections/client";
 import {I18nContext} from "../../utils/i18n";
 const connClient = cClientStub(() => require("electron").ipcRenderer);
 
-@withRouter
-@connect(
-  (state) => ({
-    isRunning: state.node.isRunning,
-  }),
-  (dispatch) => ({
-    changeNetwork: (network) => dispatch(nodeActions.changeNetwork(network)),
-  })
-)
-export default class AppHeader extends Component {
+export class AppHeader extends Component {
   static propTypes = {
     isRunning: PropTypes.bool.isRequired,
     isMainMenu: PropTypes.bool.isRequired,
@@ -63,6 +56,8 @@ export default class AppHeader extends Component {
           <SyncStatus />
           {isMainMenu ? this.renderNetworkPicker() : this.renderReturnToMenu()}
 
+          <LanguagePicker />
+
           {/* Settings link */}
           <div
             className="topbar__icon topbar__icon--settings"
@@ -80,7 +75,7 @@ export default class AppHeader extends Component {
   renderReturnToMenu() {
     return (
       <div className="app__cancel" onClick={() => this.props.history.push("/")}>
-        Return to Menu
+        {this.context.t('headerReturnToMenu')}
       </div>
     );
   }
@@ -103,3 +98,8 @@ export default class AppHeader extends Component {
     );
   }
 }
+
+export default withRouter(connect(
+  state => ({isRunning: state.node.isRunning}),
+  dispatch => ({changeNetwork: network => dispatch(nodeActions.changeNetwork(network))}),
+)(AppHeader));

@@ -1276,5 +1276,7 @@
   "recordsValue": "值",
   "recordsStale": "链上资源在审阅后发生更改；请放弃本次审阅并重新准备。",
   "walletRescanWaiting": "正在等待重新扫描钱包历史记录…",
-  "walletRescanFailed": "钱包恢复未完成。请重启 Bob 以继续恢复。"
+  "walletRescanFailed": "钱包恢复未完成。请重启 Bob 以继续恢复。",
+  "headerLanguageSaveError": "无法保存语言设置，请重试。",
+  "headerReturnToMenu": "返回主菜单"
 }
