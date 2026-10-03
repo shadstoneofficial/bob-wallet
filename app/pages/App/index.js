@@ -50,6 +50,9 @@ import Multisig from "../Multisig";
 import {I18nContext} from "../../utils/i18n";
 import {EXPLORERS} from "../../constants/explorers";
 import StorageErrorBanner from '../../components/StorageErrorBanner';
+// Stable identity prevents locale/context updates from remounting the login form.
+const LoginScreen = () => <AccountLogin className="app__login" />;
+
 const connClient = cClientStub(() => require('electron').ipcRenderer);
 const settingClient = sClientStub(() => require('electron').ipcRenderer);
 
@@ -165,7 +168,7 @@ class App extends Component {
         <Switch>
           <Route
             path="/login"
-            render={this.uninitializedWrapper(() => <AccountLogin className="app__login" />, true, true)}
+            render={this.uninitializedWrapper(LoginScreen, true, true)}
           />
           <Route path="/funding-options" render={this.uninitializedWrapper(FundAccessOptions, true)} />
           <Route path="/existing-options" render={this.uninitializedWrapper(ExistingAccountOptions)} />

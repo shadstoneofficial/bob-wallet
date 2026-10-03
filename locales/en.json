@@ -1274,5 +1274,7 @@
   "recordsAfter": "Complete result",
   "recordsType": "Type",
   "recordsValue": "Value",
-  "recordsStale": "Canonical resource changed since review; discard this review and prepare a fresh one."
+  "recordsStale": "Canonical resource changed since review; discard this review and prepare a fresh one.",
+  "headerLanguageSaveError": "Could not save the language. Please try again.",
+  "headerReturnToMenu": "Return to Menu"
 }

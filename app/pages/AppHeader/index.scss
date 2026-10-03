@@ -1,0 +1,44 @@
+.app__header.app__header {
+  height: auto;
+  min-height: 70px;
+  flex-shrink: 0;
+  padding-top: .75rem;
+  padding-bottom: .75rem;
+  gap: 1rem;
+  .app__logo { flex-shrink: 0; }
+  .app__network-picker-wrapper {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: .75rem;
+    min-width: 0;
+    .sync-status { margin: 0; max-width: 100%; overflow-wrap: anywhere; }
+    .network-picker { flex: 0 0 170px; }
+    .topbar__icon--settings { flex-shrink: 0; margin-left: 0 !important; }
+  }
+}
+.app__language-picker {
+  position: relative;
+  flex: 0 0 170px;
+  min-width: 0;
+}
+.app__language-error {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  width: 17rem;
+  max-width: 75vw;
+  padding: .6rem;
+  background: #fff;
+  color: #a11;
+  border: 1px solid currentColor;
+  border-radius: .3rem;
+  z-index: 201;
+  font-size: .8rem;
+}
+@media (max-width: 700px) {
+  .app__header.app__header {
+    padding-left: 1rem;
+    padding-right: 1rem;
+    .app__network-picker-wrapper .sync-status { flex-basis: 100%; justify-content: flex-end; }
+  }
+}
