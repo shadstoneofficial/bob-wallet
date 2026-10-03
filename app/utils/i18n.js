@@ -16,9 +16,17 @@ export default translations;
 
 export const languageDropdownItems = [
   { label: 'English (US)', value: 'en-US' },
-  { label: 'French (FR)', value: 'fr-FR' },
+  { label: 'Français (FR)', value: 'fr-FR' },
   { label: 'Español (ES)', value: 'es-ES' },
   { label: 'Català (CAT)', value: 'ca' },
   { label: '简体中文', value: 'zh-CN' },
   { label: 'Custom JSON', value: 'custom' },
 ];
+
+// Predefined choices are shared by Settings and the logged-out header.
+export const predefinedLanguageItems = languageDropdownItems.filter(item => item.value !== 'custom');
+export function normalizeLocale(locale) {
+  if (predefinedLanguageItems.some(item => item.value === locale)) return locale;
+  if (locale === 'en' || /^en-/i.test(locale || '')) return 'en-US';
+  return 'en-US';
+}

@@ -251,12 +251,13 @@ export default class Settings extends Component {
       try {
         const buf = await fs.promises.readFile(filepath);
         const customLocale = JSON.parse(buf);
-        return this.props.setCustomLocale(customLocale);
+        return await this.props.setCustomLocale(customLocale);
       } catch (e) {
         return this.props.showError(e.message);
       }
     } else {
-      return this.props.setLocale(locale);
+      try { return await this.props.setLocale(locale); }
+      catch (e) { return this.props.showError(this.context.t('headerLanguageSaveError')); }
     }
   };
 

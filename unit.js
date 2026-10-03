@@ -1,3 +1,11 @@
+// Timer-backed MessageChannel for React's browser scheduler in the Node/jsdom
+// test bundle. Native Node ports otherwise keep the process alive after unmount.
+globalThis.MessageChannel = class {
+  constructor() {
+    this.port1 = {onmessage: null};
+    this.port2 = {postMessage: () => setTimeout(() => this.port1.onmessage?.(), 0)};
+  }
+};
 const nodeCrypto = eval('require')('crypto');
 const { configure } = require('enzyme');
 const Adapter = require('@cfaester/enzyme-adapter-react-18');
@@ -85,3 +93,4 @@ require('./app/utils/tests/localeFormatting.spec');
 require("./app/utils/tests/reviewText.spec");
 
 require('./app/pages/Addons/tests/catalog.spec');
+require('./app/components/LanguagePicker/LanguagePicker.spec');
