@@ -15,6 +15,8 @@ export default class Dropdown extends Component {
     currentIndex: PropTypes.number,
     onChange: PropTypes.func,
     reversed: PropTypes.bool,
+    accessibleLabel: PropTypes.string,
+    disabled: PropTypes.bool,
   };
 
   static defaultProps = {
@@ -37,6 +39,26 @@ export default class Dropdown extends Component {
   render() {
     const { items, currentIndex, className } = this.props;
     const { label: currentLabel } = items[currentIndex] || {};
+
+    // Opt-in native control retains the shared value/index callback contract and
+    // visual classes while providing platform keyboard, focus and screen-reader behavior.
+    if (this.props.accessibleLabel) {
+      return <div className={c('dropdown', 'dropdown--native', className, {
+        'dropdown--reversed': this.props.reversed,
+      })}>
+        <div className="dropdown__current-item">
+          <select aria-label={this.props.accessibleLabel} disabled={this.props.disabled}
+            value={currentIndex} onChange={event => {
+              const index = Number(event.target.value);
+              const item = items[index];
+              if (item && !item.disabled) this.props.onChange(item.value || index);
+            }}>
+            {items.map((item, index) => <option key={item.value || index}
+              value={index} disabled={item.disabled}>{item.label}</option>)}
+          </select>
+        </div>
+      </div>;
+    }
 
     return (
       <div

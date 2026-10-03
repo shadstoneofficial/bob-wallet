@@ -1274,5 +1274,7 @@
   "recordsAfter": "完整结果",
   "recordsType": "类型",
   "recordsValue": "值",
-  "recordsStale": "链上资源在审阅后发生更改；请放弃本次审阅并重新准备。"
+  "recordsStale": "链上资源在审阅后发生更改；请放弃本次审阅并重新准备。",
+  "headerLanguageSaveError": "无法保存语言设置，请重试。",
+  "headerReturnToMenu": "返回主菜单"
 }

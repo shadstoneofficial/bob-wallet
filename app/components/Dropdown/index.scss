@@ -112,3 +112,24 @@
     }
   }
 }
+
+.dropdown--native .dropdown__current-item {
+  padding: 0;
+  &::after { pointer-events: none; }
+  select {
+    appearance: none;
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    border: 0;
+    border-radius: inherit;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    padding: .7rem 2rem .7rem 1.25rem;
+    cursor: pointer;
+    &:focus-visible { outline: 2px solid $azure-blue; outline-offset: 3px; }
+    &:disabled { cursor: wait; opacity: .65; }
+    option { color: #111; background: #fff; }
+  }
+}
