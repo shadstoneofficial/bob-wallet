@@ -1210,7 +1210,7 @@
   "shakexLoadTimeout": "The request timed out. Please try again.",
   "shakexLoadError": "Unable to load ShakeX listings. Please try again later or open ShakeX.",
   "shakexShowingPrevious": "Previously loaded listings remain below.",
-  "shakexSearchLabel": "Search names (ASCII / punycode)",
+  "shakexSearchLabel": "Search names (Unicode / emoji / punycode)",
   "shakexSearchPlaceholder": "Search names",
   "shakexListingCountOne": "%s listing. Seller contacts are shown as published, not verified identities.",
   "shakexListingCountMany": "%s listings. Seller contacts are shown as published, not verified identities.",

@@ -1,4 +1,5 @@
 // Run: node app/addons/shakex/ui.spec.cjs
+process.env.NODE_BACKEND = 'js';
 require('@babel/register')({configFile: false, babelrc: false, presets: [['@babel/preset-env', {targets: {node: 'current'}}], '@babel/preset-react']});
 require.extensions['.scss'] = () => {};
 require('jsdom-global')();
@@ -32,6 +33,19 @@ const ShakeX = require('./index').default;
   assert(host.textContent.includes('No names match'));
   await act(async () => Array.from(host.querySelectorAll('button')).find(x => x.textContent === 'Deal guide ↗').click());
   assert.deepEqual(opened, ['https://shakex.fun/deal']);
+  global.fetch = async () => ({ok: true, text: async () => JSON.stringify({listings: [{name: 'xn--ep8h'}, {name: 'xn--k77hya'}, {name: 'xn--ev9h'}]})});
+  await act(async () => host.querySelector('button').click());
+  await act(async () => Simulate.change(host.querySelector('input'), {target: {value: '🐹'}}));
+  assert.equal(host.querySelectorAll('article').length, 1);
+  assert.equal(host.querySelector('h3 bdi').textContent, '🐹');
+  assert.equal(host.querySelector('article').dataset.name, 'xn--ep8h');
+  assert.equal(host.querySelector('.shakex-addon__ascii').textContent, 'xn--ep8h/');
+  await act(async () => Simulate.change(host.querySelector('input'), {target: {value: 'XN--K77HYA'}}));
+  assert.equal(host.querySelector('h3 bdi').textContent, '🇬🇸');
+  assert.equal(host.querySelector('h3').getAttribute('dir'), 'ltr');
+  assert.equal(host.querySelector('h3 bdi').getAttribute('dir'), 'auto');
+  await act(async () => Array.from(host.querySelectorAll('button')).find(x => x.textContent === 'Deal guide ↗').click());
+  assert.deepEqual(opened, ['https://shakex.fun/deal', 'https://shakex.fun/deal'], 'Unicode search never rewrites action destinations');
   global.fetch = async () => {throw new Error('offline');};
   await act(async () => host.querySelector('button').click());
   assert(host.querySelector('[role=alert]').textContent.includes('Previously loaded'));
