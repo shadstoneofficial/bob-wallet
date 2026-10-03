@@ -58,3 +58,37 @@ Each launch receives its own status and backend-event files, so a current result
 Source tests for the unsupported rows remain useful regression evidence but are not packaged acceptance. The backend startup/scan cause and restore implementation belong to the separate restore/rescan investigation; this harness does not ignore the `Pool is not connected!` assertion or claim to fix it.
 
 The logged-out language dropdown (PR #16) and ShakeX display work (PR #15) are separate product changes and are not included in this harness branch. A later acceptance build must use a reviewed merge base containing the intended product changes. Arthur's add-on acceptance remains pending; this harness is not a product acceptance pass.
+
+## Integration with the restore/rescan lifecycle work
+
+PR #18 and this harness are mechanically compatible. Their only shared file is `package.json`; the combined result retains both `test:sync` and `test:packaged-harness`. PR #18 installs its embedded WalletDB lifecycle adapter before the wallet plugin opens. The harness sets the isolated `userData` path and writes the local regtest connection configuration before node and wallet services start, so the adapter operates only on the disposable profile during packaged acceptance.
+
+The harness records recognized hsd, WalletDB, node-client, assertion, startup and shutdown failures from process startup through bounded teardown. Its explicit shutdown calls `NodeService.stop()`, which closes the hsd node and therefore exercises PR #18's WalletDB close adapter. A structured backend error or incomplete teardown makes the smoke/acceptance process exit nonzero. This is detection, not proof that PR #18 fixes `Pool is not connected!`; the combined packaged run must still demonstrate zero structured backend errors.
+
+Interactive acceptance cannot select the ordinary profile accidentally:
+
+- activation requires the opt-in environment flag, a 32-byte token matching a mode-0600 manifest, and the dedicated launcher acknowledgement;
+- `userData`, status and event files must resolve below the manifest's isolated profile root;
+- both launcher and runtime reject `~/Library/Application Support/Bob LearnHNS` and descendants;
+- the app applies the isolated `userData` path before loading any backend service; and
+- the configured network is local regtest with transaction fixtures and external transaction networking disabled.
+
+Current integration blockers are acceptance coverage, not merge conflicts:
+
+1. The packaged profile is hard-coded to SPV. PR #18 also needs a full-node packaged quit/restart run.
+2. The current fixture creates two fresh wallets; it does not create recoverable histories or issue overlapping restore/rescan requests.
+3. Transaction fixtures are intentionally disabled, so auction Retry and delayed/ambiguous basket paths cannot yet be claimed as packaged tests.
+4. ShakeX has no fixed listing/resource fixture, so review and DNS-record preservation remain source-test evidence only.
+5. Custom RPC, filesystem durability across power loss and an OS-level crash are outside both harnesses.
+
+## Minimal controlled fixture path
+
+Keep every extension behind the same signed manifest allowlist. Do not add general RPC, file-read IPC or arbitrary method invocation.
+
+1. **Restore lifecycle:** add fixed `restore-spv` and `restore-full` scenario IDs plus an allowlisted `nodeMode`. Inside the disposable regtest profile, generate source wallets and local history, save only their disposable recovery material in the mode-0600 fixture manifest, then drive two/five overlap, sequential restore, injected first-scan failure, quit and reuse through one test-only main-process scenario runner. It should emit structured checkpoints and counters to the existing status file. It must never accept a caller-supplied path, key or network. Reuse PR #18's journal/status observations and require recovered balances, zero pending journal entries after success, and clean bounded teardown.
+2. **Auction Retry:** add one fixed `auction-retry` scenario that supplies a known regtest name and injects one pre-signing backend failure through a narrow service adapter. Assert the UI retains the real error and enables one safe Retry. Keep signing and broadcast functions replaced by fail-closed counters.
+3. **Twenty-name delayed basket:** add one fixed 20-name regtest dataset and a deterministic construction gate. Assert all names survive while construction is delayed, cancellation prevents continuation, and exactly one simulated construction occurs. No raw transaction may reach a node client.
+4. **Ambiguous basket outcome:** use a fixed simulated broadcast boundary that records one attempted call and returns an unknown outcome. Assert Retry stays locked after navigation/restart and the call count remains one. This fixture must operate on inert bytes and must not construct, sign or relay an HNS transaction.
+5. **ShakeX preservation:** provide one fixed local resource containing ordinary DNS records and one ShakeX sale record through an allowlisted in-memory adapter. Assert review output changes only the intended sale record and preserves every unrelated DNS record; submission remains disabled.
+
+Each scenario needs a source-level regression first, then a disposable packaged run on the reviewed combined commit. Unsupported rows stay **NOT TESTED** until those exact interfaces exist and pass. No paid packaging or signing should begin merely because PR #17 and PR #18 merge cleanly.
