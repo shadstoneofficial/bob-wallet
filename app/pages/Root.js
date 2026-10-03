@@ -2,7 +2,7 @@ import React, { Component } from 'react';
 import {connect, Provider} from 'react-redux';
 import { ConnectedRouter } from '@rithvikvibhu/connected-react-router';
 import App from './App';
-import translations, {I18nContext} from "../utils/i18n";
+import {I18nContext, translateLocale, normalizeLocale} from "../utils/i18n";
 
 export default class Root extends Component {
 
@@ -28,39 +28,27 @@ export default class Root extends Component {
 class Content extends Component {
   componentDidMount() {
     this.applyThemeClass();
+    this.applyLocale();
   }
 
   componentDidUpdate(prevProps) {
+    if (prevProps.locale !== this.props.locale) this.applyLocale();
     if (prevProps.theme !== this.props.theme) {
       this.applyThemeClass();
     }
+  }
+
+  applyLocale() {
+    document.documentElement.lang = normalizeLocale(this.props.locale);
   }
 
   applyThemeClass() {
     document.body.classList.toggle('bob-theme-dark', this.props.theme === 'dark');
   }
 
-  translate = (key, ...values) => {
-    try {
-      const locale = this.props.locale;
-      const customLocale = this.props.customLocale || {};
-      const rootLocale = locale.split('-')[0];
-
-      const localeT = locale === 'custom' ? customLocale : (translations[locale] || {});
-      const rootT = translations[rootLocale] || {};
-
-      const str = localeT[key] || rootT[key] || translations.en[key] || `this.context.t(${key})`;
-      let result = str;
-
-      for (let val of values) {
-        result = result.replace('%s', val);
-      }
-
-      return result;
-    } catch (e) {
-      return `this.context.t(${key})`;
-    }
-  };
+  translate = (key, ...values) => translateLocale(
+    this.props.locale, this.props.customLocale, key, ...values,
+  );
 
   render() {
     return (

@@ -406,3 +406,15 @@ body.bob-theme-dark {
     }
   }
 }
+
+// Catalog labels must fit translated text beside the fixed application sidebar.
+.addons-page--catalog {
+  .addons-page__intro { flex-wrap: wrap; gap: 1rem; }
+  .addons-page__intro > div { flex: 1 1 20rem; min-width: 0; }
+  .addons-page__channel-controls {
+    grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+    input, select, button { min-width: 0; max-width: 100%; }
+  }
+  .addons-page__card-header { flex-wrap: wrap; }
+  .addons-page__card-header span { white-space: normal; }
+}
