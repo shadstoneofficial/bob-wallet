@@ -16,7 +16,8 @@ function loadProductModules() {
         ipcRenderer: {send() {}, on() {}, off() {}},
       };
     }
-    if (request === '../../utils/i18n' && parent?.filename?.includes('/app/pages/AuctionBasket/')) {
+    const parentPath = String(parent?.filename || '').replace(/\\/g, '/');
+    if (request === '../../utils/i18n' && parentPath.includes('/app/pages/AuctionBasket/')) {
       return {I18nContext: {}};
     }
     return originalLoad.call(this, request, parent, isMain);
