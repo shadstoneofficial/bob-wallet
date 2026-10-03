@@ -55,8 +55,11 @@ jobs:
       - name: Validate compiled application modules
         run: node scripts/validate-dist.js
 
-      - name: Validate Simplified Chinese locale
-        run: npm run check-locale -- zh-CN
+      - name: Validate maintained locales
+        run: |
+          npm run check-locale -- zh-CN
+          npm run check-locale -- ru-RU
+          npm run check-locale -- th-TH
 
       - name: Test locale validator
         run: node --test scripts/check-locale.test.js

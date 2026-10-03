@@ -4,9 +4,14 @@ import {Provider} from 'react-redux';
 import {StaticRouter} from 'react-router-dom';
 import {createMemoryHistory} from 'history';
 import reducers from '../../app/ducks';
-import {I18nContext} from '../../app/utils/i18n';
+import {I18nContext, normalizeLocale, translateLocale} from '../../app/utils/i18n';
 import zh from '../../locales/zh-CN.json';
 import en from '../../locales/en.json';
+import ru from '../../locales/ru-RU.json';
+import th from '../../locales/th-TH.json';
+import {AppHeader} from '../../app/pages/AppHeader';
+import Login from '../../app/pages/AcountLogin';
+import {Addons, ADDONS} from '../../app/pages/Addons';
 import '../../app/pages/App/app.scss';
 import '../../app/global.scss';
 import Onboard from '../../app/pages/Onboarding/FundAccessOptions';
@@ -25,7 +30,9 @@ import RevealSeed from '../../app/pages/Settings/RevealSeedModal';
 import {FinalizeWithPaymentModal} from '../../app/pages/MyDomain/FinalizeWithPaymentModal';
 
 const query = new URLSearchParams(location.search);
-const locale = query.get('locale') === 'en' ? en : zh;
+const localeName = normalizeLocale(query.get('locale') || 'zh-CN');
+const locale = {'en-US': en, 'zh-CN': zh, 'ru-RU': ru, 'th-TH': th}[localeName] || en;
+document.documentElement.lang = localeName;
 const shell = query.get('shell') === '1';
 const dark = query.get('theme') === 'dark';
 document.body.classList.toggle('bob-theme-dark', dark);
@@ -53,7 +60,7 @@ Object.assign(state.node, {
   chain: {height: 1000, progress: 1},
   fees: {slow: 100, standard: 200, fast: 300},
 });
-Object.assign(state.app, {locale: 'custom', customLocale: zh});
+Object.assign(state.app, {locale: localeName, customLocale: null, theme: dark ? 'dark' : 'light'});
 state.walletStats.isLoading = false;
 for (const group of [state.walletStats.lockedBalance, state.walletStats.actionableInfo]) {
   for (const value of Object.values(group)) {
@@ -76,10 +83,11 @@ class BasketReview extends AuctionBasket {
     this.state = {
       ...this.state,
       submissionPhase: query.get('phase') || 'idle',
-      submissionFailedStage: query.get('phase') === 'failed' ? 'broadcasting' : '',
-      broadcastUncertain: query.get('phase') === 'failed',
-      retryAllowed: false,
+      submissionFailedStage: query.get('phase') === 'failed' ? (query.get('uncertain') === '0' ? 'signing' : 'broadcasting') : '',
+      broadcastUncertain: query.get('phase') === 'failed' && query.get('uncertain') !== '0',
+      retryAllowed: query.get('phase') === 'failed' && query.get('uncertain') === '0',
       step: 'review',
+      accepted: true,
       rowMeta: {fixture: {state: 'BIDDING', hoursUntilReveal: 12}},
     };
   }
@@ -114,7 +122,36 @@ const common = {
   totalSteps: 3,
   onBack: noop, onNext: noop, onCancel: noop, onClose: noop,
 };
+function LoginReview() {
+  return <div className="app__uninitialized-wrapper">
+    <AppHeader isMainMenu isRunning history={{push: noop}} changeNetwork={noop} />
+    <div className="app__uninitialized app__uninitialized--auto-height"><Login /></div>
+  </div>;
+}
+let RawSend = Send;
+while (RawSend.WrappedComponent) RawSend = RawSend.WrappedComponent;
+class ConfirmReview extends RawSend {
+  constructor(props) {
+    super(props);
+    this.state = {...this.state, amount: '10.000001', to: 'FIXTURE-NOT-A-VALID-ADDRESS', feeAmount: 0.01, txSize: 250};
+  }
+  render() {return this.renderConfirm();}
+}
+function SendConfirmation() {
+  return <ConfirmReview location={{search: ''}} fees={{standard: 200}} network="regtest" explorer={{}} />;
+}
+class AddonsReview extends Addons {
+  constructor(props) {
+    super(props);
+    this.state = {...this.state, pendingExternalAddon: ADDONS.find(a => a.id === 'liquidity-spot'),
+      liquiditySpotChannels: [{host: 'liquidity.spot', label: 'Liquidity'}]};
+  }
+}
+function CatalogReview() {return <AddonsReview location={{pathname: '/addons'}} history={{push: noop}} deeplinkParams={{}} />;}
 const screens = {
+  login: [LoginReview, '/login'],
+  confirm: [SendConfirmation, '/send'],
+  addons: [CatalogReview, '/addons'],
   onboarding: [Onboard, '/funding-options'],
   warning: [ImportWarning, '/import-seed'],
   backup: [Backup, '/new-wallet'],
@@ -134,18 +171,14 @@ const screens = {
 };
 const key = query.get('screen') || 'onboarding';
 const [Screen, route] = screens[key] || screens.onboarding;
-const t = (key, ...args) => {
-  let value = locale[key] || en[key] || key;
-  for (const arg of args) value = value.replace('%s', arg);
-  return value;
-};
+const t = (key, ...args) => translateLocale(localeName, null, key, ...args);
 try {
   // SSR avoids componentDidMount/effects. No React hydration or event handlers.
   document.getElementById('root').innerHTML = renderToStaticMarkup(
     <Provider store={store}>
       <StaticRouter location={route} context={{}}>
-        <I18nContext.Provider value={{t}}>
-          {shell && key !== 'settings' ? (
+        <I18nContext.Provider value={{t, locale: localeName}}>
+          {shell && !['settings', 'login'].includes(key) ? (
             <div className="app">
               <aside className="app__sidebar-wrapper" style={{background: '#f0f2f5', paddingTop: 24}}>
                 <strong>{t('headingExchange')}</strong><p>Fixture / 230px</p>
@@ -162,7 +195,7 @@ try {
   document.getElementById('root').inert = true;
   // Review-only positioning keeps wallet controls inert while exposing overflow.
   requestAnimationFrame(() => {
-    const content = document.querySelector('.app__content');
+    const content = document.querySelector('.app__content') || document.querySelector('.settings__content');
     if (content) content.scrollTop = Number(query.get('offset')) || 0;
     if (query.get('edge') === 'right') {
       document.querySelectorAll('.exchange-table').forEach(table => {
@@ -171,7 +204,7 @@ try {
     }
   });
   document.getElementById('review-nav').innerHTML = Object.keys(screens)
-    .map(screen => `<a href="?screen=${screen}&shell=${shell ? 1 : 0}&locale=${locale === en ? 'en' : 'zh-CN'}&theme=${dark ? 'dark' : 'light'}">${screen}</a>`).join(' | ');
+    .map(screen => `<a href="?screen=${screen}&shell=${shell ? 1 : 0}&locale=${localeName}&theme=${dark ? 'dark' : 'light'}">${screen}</a>`).join(' | ');
 } catch (error) {
   document.getElementById('root').textContent = error.stack;
 }

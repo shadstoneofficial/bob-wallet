@@ -1,0 +1,210 @@
+[
+  {
+    "file": "ru-RU-800-light-review-uncertain.jpg",
+    "buttons": [
+      {
+        "disabled": false,
+        "label": "Вернуться в корзину"
+      },
+      {
+        "disabled": true,
+        "label": "Отправить ставки из корзины"
+      }
+    ]
+  },
+  {
+    "file": "ru-RU-800-light-review-safe.jpg",
+    "buttons": [
+      {
+        "disabled": false,
+        "label": "Вернуться в корзину"
+      },
+      {
+        "disabled": false,
+        "label": "Повторить отправку"
+      }
+    ]
+  },
+  {
+    "file": "ru-RU-800-dark-review-uncertain.jpg",
+    "buttons": [
+      {
+        "disabled": false,
+        "label": "Вернуться в корзину"
+      },
+      {
+        "disabled": true,
+        "label": "Отправить ставки из корзины"
+      }
+    ]
+  },
+  {
+    "file": "ru-RU-800-dark-review-safe.jpg",
+    "buttons": [
+      {
+        "disabled": false,
+        "label": "Вернуться в корзину"
+      },
+      {
+        "disabled": false,
+        "label": "Повторить отправку"
+      }
+    ]
+  },
+  {
+    "file": "th-TH-800-light-review-uncertain.jpg",
+    "buttons": [
+      {
+        "disabled": false,
+        "label": "กลับไปที่ตะกร้า"
+      },
+      {
+        "disabled": true,
+        "label": "ส่งราคาเสนอประมูลในตะกร้า"
+      }
+    ]
+  },
+  {
+    "file": "th-TH-800-light-review-safe.jpg",
+    "buttons": [
+      {
+        "disabled": false,
+        "label": "กลับไปที่ตะกร้า"
+      },
+      {
+        "disabled": false,
+        "label": "ลองส่งอีกครั้ง"
+      }
+    ]
+  },
+  {
+    "file": "th-TH-800-dark-review-uncertain.jpg",
+    "buttons": [
+      {
+        "disabled": false,
+        "label": "กลับไปที่ตะกร้า"
+      },
+      {
+        "disabled": true,
+        "label": "ส่งราคาเสนอประมูลในตะกร้า"
+      }
+    ]
+  },
+  {
+    "file": "th-TH-800-dark-review-safe.jpg",
+    "buttons": [
+      {
+        "disabled": false,
+        "label": "กลับไปที่ตะกร้า"
+      },
+      {
+        "disabled": false,
+        "label": "ลองส่งอีกครั้ง"
+      }
+    ]
+  },
+  {
+    "file": "ru-RU-1280-light-review-uncertain.jpg",
+    "buttons": [
+      {
+        "disabled": false,
+        "label": "Вернуться в корзину"
+      },
+      {
+        "disabled": true,
+        "label": "Отправить ставки из корзины"
+      }
+    ]
+  },
+  {
+    "file": "ru-RU-1280-light-review-safe.jpg",
+    "buttons": [
+      {
+        "disabled": false,
+        "label": "Вернуться в корзину"
+      },
+      {
+        "disabled": false,
+        "label": "Повторить отправку"
+      }
+    ]
+  },
+  {
+    "file": "ru-RU-1280-dark-review-uncertain.jpg",
+    "buttons": [
+      {
+        "disabled": false,
+        "label": "Вернуться в корзину"
+      },
+      {
+        "disabled": true,
+        "label": "Отправить ставки из корзины"
+      }
+    ]
+  },
+  {
+    "file": "ru-RU-1280-dark-review-safe.jpg",
+    "buttons": [
+      {
+        "disabled": false,
+        "label": "Вернуться в корзину"
+      },
+      {
+        "disabled": false,
+        "label": "Повторить отправку"
+      }
+    ]
+  },
+  {
+    "file": "th-TH-1280-light-review-uncertain.jpg",
+    "buttons": [
+      {
+        "disabled": false,
+        "label": "กลับไปที่ตะกร้า"
+      },
+      {
+        "disabled": true,
+        "label": "ส่งราคาเสนอประมูลในตะกร้า"
+      }
+    ]
+  },
+  {
+    "file": "th-TH-1280-light-review-safe.jpg",
+    "buttons": [
+      {
+        "disabled": false,
+        "label": "กลับไปที่ตะกร้า"
+      },
+      {
+        "disabled": false,
+        "label": "ลองส่งอีกครั้ง"
+      }
+    ]
+  },
+  {
+    "file": "th-TH-1280-dark-review-uncertain.jpg",
+    "buttons": [
+      {
+        "disabled": false,
+        "label": "กลับไปที่ตะกร้า"
+      },
+      {
+        "disabled": true,
+        "label": "ส่งราคาเสนอประมูลในตะกร้า"
+      }
+    ]
+  },
+  {
+    "file": "th-TH-1280-dark-review-safe.jpg",
+    "buttons": [
+      {
+        "disabled": false,
+        "label": "กลับไปที่ตะกร้า"
+      },
+      {
+        "disabled": false,
+        "label": "ลองส่งอีกครั้ง"
+      }
+    ]
+  }
+]
