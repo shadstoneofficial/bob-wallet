@@ -7,8 +7,24 @@ import "isomorphic-fetch";
 import {app, dialog} from 'electron';
 import path from 'path';
 
+const {
+  createBackendErrorMonitor,
+  loadAcceptanceConfig,
+  validatePackagedTestModes,
+  withTimeout,
+  writeJsonAtomic,
+} = require('./background/packagedAcceptance/runtime');
+const {
+  configureLocalRegtest,
+  seedDisposableMultiwallet,
+} = require('./background/packagedAcceptance/fixture');
+const {installAcceptanceBackendPolicy} = require('./background/packagedAcceptance/policy');
+const {initializeAcceptanceAfterWindow} = require('./background/packagedAcceptance/startup');
+
 const DEEPLINK_PROTOCOLS = new Set(['bob:', 'bob-learnhns:']);
 const isPackagedSmokeTest = process.env.BOB_PACKAGED_SMOKE_TEST === 'true';
+const isPackagedAcceptanceTest = process.env.BOB_PACKAGED_ACCEPTANCE_TEST === 'true';
+const isPackagedTestMode = isPackagedSmokeTest || isPackagedAcceptanceTest;
 const packagedSmokeProfile = process.env.BOB_SMOKE_PROFILE || '';
 let Sentry = null;
 let earlyStartupError = null;
@@ -28,19 +44,53 @@ const isLearnHnsForkBuild = process.env.BOB_LEARNHNS_TEST === 'true'
   || appRuntimeHints.includes('com.learnhns.Bob')
   || appRuntimeHints.includes('com.learnhns.BobTest');
 
+let packagedAcceptanceConfig = null;
+try {
+  validatePackagedTestModes(process.env);
+  packagedAcceptanceConfig = loadAcceptanceConfig(process.env, {
+    appDataPath: app.getPath('appData'),
+  });
+  if (packagedAcceptanceConfig) {
+    process.env.BOB_ACCEPTANCE_NODE_MODE = packagedAcceptanceConfig.nodeMode;
+  }
+} catch (error) {
+  earlyStartupError = error;
+}
+
+const originalConsoleError = console.error.bind(console);
+const packagedErrorMonitor = isPackagedTestMode
+  ? createBackendErrorMonitor({
+    writeEvent(line) {
+      process.stderr.write(line);
+      if (packagedAcceptanceConfig?.eventLogPath) {
+        require('fs').appendFileSync(packagedAcceptanceConfig.eventLogPath, line, {mode: 0o600});
+      }
+    },
+  })
+  : null;
+if (packagedErrorMonitor) {
+  console.error = (...args) => {
+    packagedErrorMonitor.observeConsoleError(args);
+    originalConsoleError(...args);
+  };
+}
+
 if (isLearnHnsForkBuild) {
   process.env.BOB_LEARNHNS_FORK = 'true';
   process.env.BOB_LEARNHNS_TEST = 'true';
   app.setName('Bob LearnHNS');
   const smokeUserData = process.env.BOB_SMOKE_USER_DATA;
-  app.setPath('userData', isPackagedSmokeTest && smokeUserData && path.isAbsolute(smokeUserData)
+  const isolatedUserData = isPackagedSmokeTest && smokeUserData && path.isAbsolute(smokeUserData)
     ? smokeUserData
-    : path.join(app.getPath('appData'), 'Bob LearnHNS'));
+    : packagedAcceptanceConfig?.userData;
+  app.setPath('userData', isolatedUserData || path.join(app.getPath('appData'), 'Bob LearnHNS'));
 }
 
 try {
-  Sentry = require('@sentry/electron/main');
-  require('./sentry');
+  if (!isPackagedTestMode) {
+    Sentry = require('@sentry/electron/main');
+    require('./sentry');
+  }
 
   if (process.env.NODE_ENV === 'production') {
     require('source-map-support').install();
@@ -63,7 +113,7 @@ function sendDeeplink(url) {
   else pendingStartupDeeplinks.push(url);
 }
 
-if (!isPackagedSmokeTest && isLearnHnsForkBuild) {
+if (!isPackagedTestMode && isLearnHnsForkBuild) {
   if (process.env.NODE_ENV === 'development' && (process.platform === 'win32' || process.platform === 'linux')) {
     app.setAsDefaultProtocolClient('bob-learnhns', process.execPath, [
       path.resolve(path.join(app.getAppPath(), 'dist', 'main.js')),
@@ -75,15 +125,15 @@ if (!isPackagedSmokeTest && isLearnHnsForkBuild) {
   } else {
     app.setAsDefaultProtocolClient('bob-learnhns');
   }
-} else if (!isPackagedSmokeTest && process.env.NODE_ENV === 'development' && (process.platform === 'win32' || process.platform === 'linux')) {
+} else if (!isPackagedTestMode && process.env.NODE_ENV === 'development' && (process.platform === 'win32' || process.platform === 'linux')) {
   app.setAsDefaultProtocolClient('bob', process.execPath, [
     path.resolve(path.join(app.getAppPath(), 'dist', 'main.js')),
   ]);
-} else if (!isPackagedSmokeTest && (process.platform === 'win32' || process.platform === 'linux')) {
+} else if (!isPackagedTestMode && (process.platform === 'win32' || process.platform === 'linux')) {
   app.setAsDefaultProtocolClient('bob', process.execPath, [
     path.resolve(path.join(app.getAppPath(), 'main.js')),
   ]);
-} else if (!isPackagedSmokeTest) {
+} else if (!isPackagedTestMode) {
   app.setAsDefaultProtocolClient('bob');
 }
 
@@ -135,10 +185,13 @@ if (isPrimaryInstance) {
     console.error('Bob startup failed:', error);
     if (Sentry) Sentry.captureException(error);
 
-    if (isPackagedSmokeTest) {
-      const fs = require('fs');
-      const reportPath = process.env.BOB_SMOKE_REPORT;
-      if (reportPath) fs.writeFileSync(reportPath, JSON.stringify({ok: false, error: error.stack || error.message}));
+    if (isPackagedTestMode) {
+      const reportPath = process.env.BOB_SMOKE_REPORT || packagedAcceptanceConfig?.statusPath;
+      writeJsonAtomic(reportPath, {
+        ok: false,
+        error: error.stack || error.message,
+        backendErrors: packagedErrorMonitor?.snapshot() || [],
+      });
       app.exit(1);
       return;
     }
@@ -170,27 +223,44 @@ if (isPrimaryInstance) {
     return false;
   }
 
-  async function preparePackagedSmokeFixture(services) {
-    if (!isPackagedSmokeTest || packagedSmokeProfile !== 'existing-p2p-spv') return;
+  async function preparePackagedFixture(services) {
+    if (isPackagedSmokeTest && packagedSmokeProfile === 'existing-p2p-spv') {
+      await configureLocalRegtest(services, 'existing-hsd-profile');
+    }
+    if (packagedAcceptanceConfig) {
+      await configureLocalRegtest(services, 'acceptance-hsd-profile', {
+        profileRoot: packagedAcceptanceConfig.profileRoot,
+        nodeMode: packagedAcceptanceConfig.nodeMode,
+      });
+    }
+  }
 
-    const fs = require('fs');
-    const hsdDir = path.join(app.getPath('userData'), 'existing-hsd-profile');
-    fs.mkdirSync(hsdDir, {recursive: true});
+  async function finishPackagedSmokeTest(report, services) {
+    packagedErrorMonitor.setPhase('shutdown');
+    let shutdownCompleted = false;
+    try {
+      await withTimeout((async () => {
+        await services.shakedex.closeDB();
+        await services.node.service.stop();
+        await services.db.close();
+        services.ipc.defaultServer?.stop();
+      })(), 20000, 'Packaged test shutdown');
+      await new Promise(resolve => setTimeout(resolve, 500));
+      shutdownCompleted = true;
+    } catch (error) {
+      console.error('Packaged test shutdown failed:', error);
+    }
 
-    await services.db.put('connection_type', 'P2P');
-    await services.db.put('network', 'regtest');
-    await services.db.put('nodeSpvMode', '1');
-    await services.db.put('nodeNoDns1', '1');
-    await services.db.put('nodeApiKey', 'packaged-smoke-node-api-key');
-    await services.db.put('walletApiKey', 'packaged-smoke-wallet-api-key');
-    await services.db.put('hsdPrefixDir', hsdDir);
-    await services.db.put('regtest-hsd-4.0.0-migrate-spv', true);
+    report.shutdownCompleted = shutdownCompleted;
+    report.backendErrors = packagedErrorMonitor.snapshot();
+    report.ok = report.ok && shutdownCompleted && report.backendErrors.length === 0;
+    writeJsonAtomic(process.env.BOB_SMOKE_REPORT, report);
+    app.exit(report.ok ? 0 : 1);
   }
 
   async function runPackagedSmokeTest(firstWindow, services) {
     if (!isPackagedSmokeTest) return;
-    const fs = require('fs');
-    const reportPath = process.env.BOB_SMOKE_REPORT;
+    packagedErrorMonitor.setPhase('running');
     const firstReady = await runtimeModules.waitForMainWindowReady(0, 60000);
     const firstRendererPid = firstReady.window.webContents.getOSProcessId();
     const expectsExistingP2PSpv = packagedSmokeProfile === 'existing-p2p-spv';
@@ -222,8 +292,7 @@ if (isPrimaryInstance) {
       existingP2PSpvFixture: !expectsExistingP2PSpv || localNodeStarted,
       localTransactionClientAbsent: !expectsExistingP2PSpv || nodeService.transactionClient === null,
     };
-    if (reportPath) fs.writeFileSync(reportPath, JSON.stringify(report));
-    app.quit();
+    await finishPackagedSmokeTest(report, services);
   }
 
   async function startApplication() {
@@ -256,11 +325,12 @@ if (isPrimaryInstance) {
       hnsInvestments: require('./background/hnsInvestments/service'),
       shakedex: require('./background/shakedex/service.js'),
     };
+    installAcceptanceBackendPolicy(services, packagedAcceptanceConfig);
 
     const server = services.ipc.start();
     services.logger.start(server);
     await services.db.start(server);
-    await preparePackagedSmokeFixture(services);
+    await preparePackagedFixture(services);
     await services.node.start(server);
     await services.storage.start(server);
     await services.wallet.start(server);
@@ -272,7 +342,6 @@ if (isPrimaryInstance) {
     await services.ledger.start(server);
     await services.hnsInvestments.start(server);
     await services.shakedex.start(server);
-
     app.on('window-all-closed', () => {
       // Respect the macOS convention of having the application in memory even
       // after all windows have been closed
@@ -289,12 +358,48 @@ if (isPrimaryInstance) {
 
     let didFireQuitHandlers = false;
 
+    async function finishPackagedAcceptanceShutdown() {
+      packagedErrorMonitor.setPhase('shutdown');
+      let shutdownCompleted = false;
+      try {
+        await withTimeout((async () => {
+          await services.shakedex.closeDB();
+          await services.node.service.stop();
+          await services.db.close();
+          services.ipc.defaultServer?.stop();
+        })(), 20000, 'Packaged acceptance shutdown');
+        await new Promise(resolve => setTimeout(resolve, 500));
+        shutdownCompleted = true;
+      } catch (error) {
+        console.error('Packaged test shutdown failed:', error);
+      }
+
+      const backendErrors = packagedErrorMonitor.snapshot();
+      writeJsonAtomic(packagedAcceptanceConfig.statusPath, {
+        ok: shutdownCompleted && backendErrors.length === 0,
+        ready: false,
+        shutdownCompleted,
+        userData: packagedAcceptanceConfig.userData,
+        backendErrors,
+      });
+      app.exit(shutdownCompleted && backendErrors.length === 0 ? 0 : 1);
+    }
+
     function quit(event) {
       if (didFireQuitHandlers) {
         return;
       }
       event.preventDefault();
       didFireQuitHandlers = true;
+
+      if (isPackagedAcceptanceTest) {
+        finishPackagedAcceptanceShutdown()
+          .catch(error => {
+            console.error('Packaged test shutdown failed:', error);
+            app.exit(1);
+          });
+        return;
+      }
 
       services.shakedex.closeDB()
         .catch((e) => console.error('Error in shutdown:', e))
@@ -303,9 +408,25 @@ if (isPrimaryInstance) {
         .then(() => app.quit());
     }
 
-    app.on('before-quit', quit);
+    if (!isPackagedSmokeTest) app.on('before-quit', quit);
 
-    const firstWindow = runtimeModules.showMainWindow();
+    let firstWindow;
+    if (packagedAcceptanceConfig) {
+      packagedErrorMonitor.setPhase('interactive');
+      firstWindow = await initializeAcceptanceAfterWindow({
+        showMainWindow: runtimeModules.showMainWindow,
+        seedFixture: () => seedDisposableMultiwallet(services, packagedAcceptanceConfig),
+        publishReady: fixture => writeJsonAtomic(packagedAcceptanceConfig.statusPath, {
+          ok: packagedErrorMonitor.snapshot().length === 0,
+          ready: true,
+          fixture,
+          userData: packagedAcceptanceConfig.userData,
+          backendErrors: packagedErrorMonitor.snapshot(),
+        }),
+      });
+    } else {
+      firstWindow = runtimeModules.showMainWindow();
+    }
 
     while (pendingStartupDeeplinks.length) {
       runtimeModules.sendDeeplinkToMainWindow(pendingStartupDeeplinks.shift());
@@ -319,7 +440,11 @@ if (isPrimaryInstance) {
 
   app.on('ready', () => {
     startApplication()
-      .then(() => process.removeListener('unhandledRejection', handleUnhandledStartupRejection))
+      .then(() => {
+        if (!isPackagedTestMode) {
+          process.removeListener('unhandledRejection', handleUnhandledStartupRejection);
+        }
+      })
       .catch(showStartupErrorAndQuit);
   });
 } else {
