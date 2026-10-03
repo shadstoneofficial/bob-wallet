@@ -281,7 +281,11 @@ export const waitForWalletSync = (
     }
 
     const nodeHeight = state.node.chain.height;
-    const {walletHeight, rescanHeight, walletSync} = state.wallet;
+    const {walletHeight, rescanHeight, walletSync, rescanStatus} = state.wallet;
+    if (rescanStatus === 'failed') {
+      throw new Error('Wallet recovery is incomplete. Restart Bob to resume before retrying.');
+    }
+    const managedRescanPending = rescanStatus === 'waiting' || rescanStatus === 'scanning';
 
     if (!sawRescan && walletSync && rescanHeight !== null) {
       sawRescan = true;
@@ -291,6 +295,9 @@ export const waitForWalletSync = (
       // The import RPC was dispatched, but its rescan progress event has not
       // reached Redux yet. Do not mistake the pre-rescan synchronized state for
       // completion.
+    } else if (managedRescanPending) {
+      // A queued scan may still show the preceding scan's final height.
+      // Managed completion is emitted from observed blocks, not an RPC reply.
     } else if (walletSync) {
       if (rescanHeight === null || walletHeight >= rescanHeight) {
         break;
@@ -308,7 +315,7 @@ export const waitForWalletSync = (
       progress = 0;
     }
 
-    const progressKey = `${walletSync}:${walletHeight}:${rescanHeight}:${nodeHeight}:${progress.toFixed(4)}`;
+    const progressKey = `${rescanStatus}:${walletSync}:${walletHeight}:${rescanHeight}:${nodeHeight}:${progress.toFixed(4)}`;
     if (lastProgressKey === progressKey) {
       stall++;
     } else {

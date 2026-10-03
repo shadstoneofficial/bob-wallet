@@ -114,3 +114,24 @@ test('wallet OPEN covenants resolve history names without hosted RPC growth', as
   lookupStub.restore();
   t.end();
 });
+
+test('queued managed recovery cannot reuse the preceding scan completion height', async t => {
+  const clock = sinon.useFakeTimers();
+  try {
+    const state = {node: {chain: {height: 100}}, wallet: {
+      walletSync: true, walletHeight: 100, rescanHeight: 100, rescanStatus: 'waiting',
+    }};
+    let finished = false;
+    const wait = waitForWalletSync(10, {pollIntervalMs: 5})(() => {}, () => state).then(() => {finished = true;});
+    await clock.tickAsync(5); t.notOk(finished, 'waiting is not completion even at target height');
+    state.wallet.rescanStatus = 'scanning';
+    await clock.tickAsync(5); t.notOk(finished, 'scan start is not completion before observed progress');
+    state.wallet.rescanStatus = 'complete'; state.wallet.walletSync = false;
+    await clock.tickAsync(5); await wait;
+    t.ok(finished, 'observed backend completion releases wait without an RPC promise');
+    state.wallet.rescanStatus = 'failed';
+    try {await waitForWalletSync()(() => {}, () => state); t.fail('must reject');}
+    catch(e) {t.match(e.message, /recovery is incomplete/);}
+  } finally {clock.restore();}
+  t.end();
+});

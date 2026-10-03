@@ -12,6 +12,7 @@ export const SET_PENDING_TRANSACTIONS_WARNING = 'app/wallet/setPendingTransactio
 export const START_SYNC_WALLET = 'app/wallet/startSyncWallet';
 export const STOP_SYNC_WALLET = 'app/wallet/stopSyncWallet';
 export const SYNC_WALLET_PROGRESS = 'app/wallet/syncWalletProgress';
+export const SET_RESCAN_STATE = 'app/wallet/setRescanState';
 export const SET_RESCAN_HEIGHT = 'app/wallet/setRescanHeight';
 export const GET_PASSPHRASE = 'app/wallet/getPassphrase';
 export const SET_API_KEY = 'app/wallet/setApiKey';
@@ -51,6 +52,7 @@ export function getInitialState() {
     walletSync: false,
     walletHeight: 0,
     rescanHeight: null,
+    rescanStatus: null,
     getPassphrase: {get: false},
     wallets: [],
     walletsDetails: {},
@@ -185,6 +187,14 @@ export default function walletReducer(state = getInitialState(), {type, payload}
       return {
         ...state,
         walletHeight: payload,
+      };
+    case SET_RESCAN_STATE:
+      return {
+        ...state,
+        rescanStatus: payload.status,
+        walletSync: ['waiting', 'scanning', 'failed'].includes(payload.status),
+        walletHeight: payload.height,
+        rescanHeight: payload.status === 'complete' || payload.status === 'idle' ? null : payload.target,
       };
     case SET_RESCAN_HEIGHT:
       return {

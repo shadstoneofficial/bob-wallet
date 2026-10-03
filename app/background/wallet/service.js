@@ -17,6 +17,7 @@ import {
   SYNC_WALLET_PROGRESS,
   SET_WALLET_NETWORK,
   SET_RESCAN_HEIGHT,
+  SET_RESCAN_STATE,
   SET_FIND_NONCE_PROGRESS,
   SET_BASKET_SUBMISSION_PROGRESS,
 } from '../../ducks/walletReducer';
@@ -121,6 +122,7 @@ class WalletService {
     if (this.node) {
       // The app was restarted but the nodes are already running,
       // just re-dispatch to redux store.
+      if (this.node.wdb.bobRescanState) this.onRescanState(this.node.wdb.bobRescanState);
       dispatchToMainWindow({
         type: SET_WALLET_NETWORK,
         payload: this.networkName,
@@ -137,6 +139,8 @@ class WalletService {
     assert(this.conn.type === ConnectionTypes.P2P);
 
     this.node = plugin;
+    this.node.wdb.on('bob rescan', this.onRescanState);
+    if (this.node.wdb.bobRescanState) this.onRescanState(this.node.wdb.bobRescanState);
     this.network = plugin.network;
     this.networkName = this.network.type;
     this.walletApiKey = apiKey;
@@ -281,7 +285,15 @@ class WalletService {
 
   };
 
+  onRescanState = state => {
+    dispatchToMainWindow({type: SET_RESCAN_STATE, payload: state});
+  };
+
   _onNodeStop = async () => {
+    if (this.node?.wdb.bobRescanState) {
+      this.node.wdb.removeListener('bob rescan', this.onRescanState);
+      this.onRescanState({status: 'idle', height: 0, target: null});
+    }
     // Wallet as plugin is closed by the full node closing,
     // otherwise we close manually.
     if (this.conn.type === ConnectionTypes.Custom)
@@ -472,20 +484,22 @@ class WalletService {
       transactionAttempted,
     });
 
-    this.heightBeforeRescan = this.lastKnownChainHeight;
-    this.lastKnownChainHeight = height;
+    if (!this.node.wdb.bobRescanState) {
+      this.heightBeforeRescan = this.lastKnownChainHeight;
+      this.lastKnownChainHeight = height;
+
+      dispatchToMainWindow({type: START_SYNC_WALLET});
+      dispatchToMainWindow({
+        type: SYNC_WALLET_PROGRESS,
+        payload: height,
+      });
+      dispatchToMainWindow({
+        type: SET_RESCAN_HEIGHT,
+        payload: this.heightBeforeRescan,
+      });
+    }
+
     this.rescanMaySubmitTransaction = transactionAttempted;
-
-    dispatchToMainWindow({type: START_SYNC_WALLET});
-    dispatchToMainWindow({
-      type: SYNC_WALLET_PROGRESS,
-      payload: height,
-    });
-    dispatchToMainWindow({
-      type: SET_RESCAN_HEIGHT,
-      payload: this.heightBeforeRescan,
-    });
-
     try {
       return await this.node.wdb.rescan(height);
     } catch (error) {

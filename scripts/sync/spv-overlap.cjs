@@ -1,0 +1,106 @@
+// Real SPV chain reset and WalletDB replay with generated coinbase history.
+process.env.NODE_BACKEND = 'js';
+const watchdog = setTimeout(() => {console.error('Fixture exceeded 20 seconds'); process.exit(1);}, 20000);
+process.env.BABEL_DISABLE_CACHE = '1';
+require('@babel/register')({configFile: false, babelrc: false, presets: [['@babel/preset-env', {targets: {node: 'current'}}]]});
+const assert = require('assert/strict');
+const net = require('net');
+const dgram = require('dgram');
+net.Socket.prototype.connect = net.Server.prototype.listen = () => {throw new Error('Sockets forbidden');};
+dgram.createSocket = () => {throw new Error('Sockets forbidden');};
+const EventEmitter = require('events');
+const BlockStore = require('hsd/lib/blockstore/level');
+const Chain = require('hsd/lib/blockchain/chain');
+const Miner = require('hsd/lib/mining/miner');
+const WalletDB = require('hsd/lib/wallet/walletdb');
+const NodeClient = require('hsd/lib/wallet/nodeclient');
+const WorkerPool = require('hsd/lib/workers/workerpool');
+const {installLocalRescan} = require('../../app/background/wallet/localRescan');
+const tick = () => new Promise(r => setImmediate(r));
+(async () => {
+ const workers = new WorkerPool({enabled:false});
+ const blocks = new BlockStore({memory:true, network:'regtest'});
+ const full = new Chain({memory:true, network:'regtest', blocks, workers});
+ const spv = new Chain({memory:true, network:'regtest', spv:true, workers});
+ const miner = new Miner({chain:full, workers});
+ const source = new WalletDB({memory:true, network:'regtest', workers});
+ const node = new EventEmitter();
+ Object.assign(node, {chain:spv, spv:true, network:spv.network, pool:{setFilter(){}, queueFilterLoad(){}}});
+ spv.on('reset', tip => node.emit('reset', tip));
+ let reachConnect; let releaseConnect;
+ const reached = new Promise(r => {reachConnect = r;});
+ const released = new Promise(r => {releaseConnect = r;});
+ const gateConnect = async entry => {if (entry.height === 21) {reachConnect(); await released;}};
+ spv.on('connect', gateConnect);
+ const client = new NodeClient(node);
+ let wdb = new WalletDB({memory:true, network:'regtest', spv:true, workers, client});
+ if (!process.argv.includes('--baseline')) installLocalRescan(wdb,node);
+ const errors = []; wdb.on('error', e => errors.push(e.message));
+ try {
+  await blocks.open(); await full.open(); await spv.open(); await miner.open(); await source.open(); await tick();
+  const keys = []; const addresses = []; const history = [];
+  for (let i=0;i<5;i++) {const w=await source.create(); keys.push(w.master.key.toBase58('regtest')); addresses.push(await w.receiveAddress());}
+  for (let i=0;i<20;i++) {
+   miner.addresses.length=0; miner.addresses.push(addresses[i%5]);
+   const job=await miner.cpu.createJob(); job.refresh(); const block=await job.mineAsync();
+   await full.add(block); await spv.add(block); history.push(block);
+  }
+  await wdb.open(); await tick(); await wdb.syncNode();
+  assert.equal(wdb.height,20);
+  for (let i=0;i<5;i++) {
+   await wdb.create({id:`restore-${i}`,master:keys[i]});
+   // Each later restore arrives while earlier recovery is still downloading.
+   await wdb.rescan(0); assert.equal(spv.height,0); assert.equal(wdb.height,0);
+   for (const block of history.slice(0,5)) await spv.add(block);
+   assert.equal(wdb.height,5);
+  }
+  // Exercise a process-equivalent WalletDB reconstruction at partial replay.
+  const persistedDB=wdb.db;
+  await tick();
+  const drain = await wdb.txLock.lock(); drain();
+  await wdb.close();
+  spv.removeAllListeners('connect'); spv.removeAllListeners('disconnect'); node.removeAllListeners('reset');
+  spv.on('connect', gateConnect);
+  const restartClient=new NodeClient(node);
+  wdb=new WalletDB({memory:true,network:'regtest',spv:true,workers,client:restartClient});
+  wdb.db=persistedDB;
+  wdb.on('error',e=>errors.push(e.message)); if (!process.argv.includes('--baseline')) installLocalRescan(wdb,node);
+  await wdb.open(); await tick(); await wdb.syncNode();
+  assert.equal(wdb.height,5);
+  for (const block of history.slice(5)) await spv.add(block);
+  assert.equal(wdb.height,20); assert.equal(spv.height,20);
+  for(let i=0;i<5;i++) assert((await (await wdb.get(`restore-${i}`)).getBalance()).confirmed>0);
+  const job = await miner.cpu.createJob(); job.refresh(); const block = await job.mineAsync();
+  await full.add(block); history.push(block);
+  const adding = spv.add(block); await reached;
+  let reachedLock;
+  const queued = new Promise(r => {reachedLock = r;});
+  const originalLock = spv.locker.lock;
+  spv.locker.lock = function(...args) {
+    const result = originalLock.apply(this,args);
+    if (this.jobs.length) reachedLock();
+    return result;
+  };
+  const scanning = wdb.rescan(0);
+  await queued;
+  spv.locker.lock = originalLock;
+  assert.equal(spv.locker.jobs.length,1);
+  releaseConnect();
+  if(process.argv.includes('--baseline')) {
+   for(let i=0;i<10;i++) await tick();
+   assert.equal(spv.locker.busy,true); assert.equal(wdb.txLock.busy,true);
+   assert.equal(spv.locker.jobs.length,1); assert.equal(wdb.txLock.jobs.length,1);
+   console.log(JSON.stringify({mode:'SPV',confirmedLockCycle:true,chainHeight:spv.height,walletHeight:wdb.height}));
+   process.exit(0);
+  }
+  await Promise.all([adding,scanning]);
+  assert.equal(spv.height,0); assert.equal(wdb.height,0);
+  for(const replay of history) await spv.add(replay);
+  assert.equal(wdb.height,21);
+  assert.deepEqual(errors,[]);
+  console.log(JSON.stringify({mode:'SPV',restores:5,restartAt:5,chainHeight:spv.height,walletHeight:wdb.height,allHistoriesRecovered:true,sockets:0}));
+ } catch(error) {console.error("SPV fixture failure:",error); throw error;} finally {
+  if(wdb.client.opened) await wdb.close(); if(source.client.opened) await source.close();
+  await miner.close(); await spv.close(); await full.close(); await blocks.close(); await workers.close();
+ }
+})().catch(e=>{console.error(e);process.exitCode=1;}).finally(()=>clearTimeout(watchdog));

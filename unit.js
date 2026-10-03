@@ -85,3 +85,5 @@ require('./app/utils/tests/localeFormatting.spec');
 require("./app/utils/tests/reviewText.spec");
 
 require('./app/pages/Addons/tests/catalog.spec');
+
+require('./app/background/wallet/tests/localRescan.spec');
