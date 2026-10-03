@@ -89,11 +89,16 @@ function activateRestoreRecord(record) {
   return {...clone(record), phase: 'active'};
 }
 
+function beginRestore(record) {
+  validateRestoreRecord(record);
+  return {...clone(record), phase: 'restoring'};
+}
+
 function validateRestoreRecord(record) {
   if (!record || record.schemaVersion !== SCHEMA_VERSION) {
     throw resolverError('EBACKUPSCHEMA', 'The DNS backup schema is unsupported.');
   }
-  if (!['pending', 'active'].includes(record.phase)) {
+  if (!['pending', 'active', 'restoring'].includes(record.phase)) {
     throw resolverError('EBACKUP', 'The DNS backup phase is invalid.');
   }
   if (typeof record.installId !== 'string' || !record.installId
@@ -110,7 +115,7 @@ function validateRestoreRecord(record) {
 module.exports = {
   SCHEMA_VERSION,
   activateRestoreRecord,
+  beginRestore,
   createRestoreRecord,
   validateRestoreRecord,
 };
-

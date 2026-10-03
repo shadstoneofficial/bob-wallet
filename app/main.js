@@ -255,6 +255,7 @@ if (isPrimaryInstance) {
       ledger: require('./background/ledger/service'),
       hnsInvestments: require('./background/hnsInvestments/service'),
       shakedex: require('./background/shakedex/service.js'),
+      systemDns: require('./background/systemDns/service'),
     };
 
     const server = services.ipc.start();
@@ -272,6 +273,7 @@ if (isPrimaryInstance) {
     await services.ledger.start(server);
     await services.hnsInvestments.start(server);
     await services.shakedex.start(server);
+    await services.systemDns.start(server);
 
     app.on('window-all-closed', () => {
       // Respect the macOS convention of having the application in memory even

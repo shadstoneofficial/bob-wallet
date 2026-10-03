@@ -22,8 +22,12 @@ import {
   getSafeLiquidityIntentUrl,
 } from '../../utils/urlPolicy';
 import {createBuiltInCatalog} from '../../addons/manifests';
+import {clientStub as systemDnsClientStub} from '../../background/systemDns/client';
 
 const settingClient = settingClientStub(() => require('electron').ipcRenderer);
+const systemDnsClient = systemDnsClientStub(() => require('electron').ipcRenderer);
+const systemDnsDevelopmentEnabled = process.env.NODE_ENV !== 'production'
+  && process.env.BOB_SYSTEM_DNS_DEV === 'true';
 
 export const ADDONS = createBuiltInCatalog([
   {
@@ -35,6 +39,13 @@ export const ADDONS = createBuiltInCatalog([
     description: 'Community name listings by Marioo. Browse asking prices, seller contacts and the Bob paid-transfer guide.',
     action: 'Open',
   },
+  ...(systemDnsDevelopmentEnabled ? [{
+    manifestId: 'bob-system-dns',
+    statusKey: 'systemDnsDevelopmentStatus',
+    descriptionKey: 'systemDnsDevelopmentDescription',
+    status: 'Development only',
+    description: 'Checks whether Bob\'s local resolver is ready. It cannot change system DNS.',
+  }] : []),
   {
     manifestId: 'shakedex-marketplace',
     status: 'Available',
@@ -105,6 +116,10 @@ class Addons extends Component {
     liquidityChannel: null,
     liquidityChannelLoading: false,
     liquidityChannelError: '',
+    systemDnsStatus: null,
+    systemDnsChecks: null,
+    systemDnsLoading: false,
+    systemDnsError: '',
   };
 
   componentDidMount() {
@@ -120,7 +135,29 @@ class Addons extends Component {
     });
     this.loadLiquidityChannel(storedHost);
     this.loadLiquiditySwapIntent(this.props.deeplinkParams?.liquiditySwapIntentUrl);
+    if (systemDnsDevelopmentEnabled) this.loadSystemDnsStatus();
   }
+
+  loadSystemDnsStatus = async () => {
+    this.setState({systemDnsLoading: true, systemDnsError: ''});
+    try {
+      const systemDnsStatus = await systemDnsClient.getStatus();
+      this.setState({systemDnsStatus, systemDnsLoading: false});
+    } catch (error) {
+      this.setState({systemDnsLoading: false, systemDnsError: error.message || String(error)});
+    }
+  };
+
+  testSystemDns = async () => {
+    this.setState({systemDnsLoading: true, systemDnsError: '', systemDnsChecks: null});
+    try {
+      const systemDnsChecks = await systemDnsClient.test();
+      this.setState({systemDnsChecks, systemDnsLoading: false});
+      await this.loadSystemDnsStatus();
+    } catch (error) {
+      this.setState({systemDnsLoading: false, systemDnsError: error.message || String(error)});
+    }
+  };
 
   componentDidUpdate(prevProps) {
     const previousIntentUrl = prevProps.deeplinkParams?.liquiditySwapIntentUrl;
@@ -854,6 +891,23 @@ class Addons extends Component {
                 <span>{addon.statusKey ? reviewText(this.context.t, addon.statusKey) : addon.status}</span>
               </div>
               <p>{addon.descriptionKey ? reviewText(this.context.t, addon.descriptionKey) : addon.description}</p>
+              {addon.id === 'bob-system-dns' && (
+                <div className="addons-page__system-dns-status">
+                  <p>
+                    {this.state.systemDnsStatus?.available
+                      ? reviewText(this.context.t, 'systemDnsResolverReady')
+                      : reviewText(this.context.t, 'systemDnsResolverUnavailable')}
+                  </p>
+                  {this.state.systemDnsChecks && (
+                    <p>{Object.entries(this.state.systemDnsChecks)
+                      .map(([name, passed]) => `${name}: ${passed ? 'pass' : 'fail'}`).join(' · ')}</p>
+                  )}
+                  {this.state.systemDnsError && <p>{this.state.systemDnsError}</p>}
+                  <button disabled={this.state.systemDnsLoading} onClick={this.testSystemDns}>
+                    {reviewText(this.context.t, 'systemDnsRunTest')}
+                  </button>
+                </div>
+              )}
               {addon.details && (
                 <ul className="addons-page__details">
                   {addon.details.map(detail => (

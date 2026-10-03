@@ -6,6 +6,7 @@ const {
 } = require('./contract');
 const {
   activateRestoreRecord,
+  beginRestore,
   createRestoreRecord,
   validateRestoreRecord,
 } = require('./restoreRecord');
@@ -106,6 +107,31 @@ class SystemDnsController {
     return context;
   }
 
+  _validateOwnershipRecord(record) {
+    if (record.installId !== this.installId || record.platform !== this.platformName) {
+      throw resolverError('EOWNERINSTANCE', 'The DNS recovery record belongs to another Bob installation or platform.');
+    }
+    return record;
+  }
+
+  async _restoreStoredRecord(stored) {
+    const record = this._validateOwnershipRecord(validateRestoreRecord(stored));
+    const ownership = await this.platform.inspectOwnership(record);
+    if (!ownership || ownership.owned !== true) {
+      throw resolverError(
+        'EOWNERSHIP',
+        'Bob found a DNS recovery record, but current system DNS is no longer Bob-owned.',
+      );
+    }
+    const restoring = beginRestore(record);
+    await this.recordStore.write(restoring);
+    this._update({phase: PHASES.RESTORING_DNS, systemState: 'restoring'});
+    await this.platform.restore(restoring);
+    await this.platform.verifyRestored(restoring);
+    await this.recordStore.clear();
+    await this.bridge.stop();
+  }
+
   async preflight() {
     return this._serialize('checking readiness', async () => {
       try {
@@ -125,6 +151,13 @@ class SystemDnsController {
       let bridgeStarted = false;
       this._update({desiredEnabled: true});
       try {
+        const stale = await this.recordStore.read();
+        if (stale) {
+          this._update({phase: PHASES.RECONCILING, restoreAvailable: true});
+          await this._restoreStoredRecord(stale);
+          this.status = createInitialStatus();
+          this._update({desiredEnabled: true});
+        }
         const context = await this._preflight();
         this._update({phase: PHASES.STARTING_BRIDGE, bridgeState: 'starting'});
         const address = await this.bridge.start({
@@ -214,21 +247,8 @@ class SystemDnsController {
           this.status = createInitialStatus();
           return this.getStatus();
         }
-        const record = validateRestoreRecord(stored);
-        const ownership = await this.platform.inspectOwnership(record);
-        if (!ownership || ownership.owned !== true) {
-          throw resolverError(
-            'EOWNERSHIP',
-            'System DNS changed after Bob enabled it; automatic restoration was stopped for review.',
-          );
-        }
-
-        this._update({phase: PHASES.RESTORING_DNS, systemState: 'restoring'});
-        await this.platform.restore(record);
-        await this.platform.verifyRestored(record);
-        await this.recordStore.clear();
+        await this._restoreStoredRecord(stored);
         this._update({phase: PHASES.STOPPING_BRIDGE});
-        await this.bridge.stop();
         this.status = createInitialStatus();
         return this.getStatus();
       } catch (error) {
@@ -252,19 +272,7 @@ class SystemDnsController {
           this.status = createInitialStatus();
           return this.getStatus();
         }
-        const record = validateRestoreRecord(stored);
-        const ownership = await this.platform.inspectOwnership(record);
-        if (!ownership || ownership.owned !== true) {
-          throw resolverError(
-            'EOWNERSHIP',
-            'A stale Bob DNS backup exists, but current system DNS is no longer Bob-owned.',
-          );
-        }
-
-        await this.platform.restore(record);
-        await this.platform.verifyRestored(record);
-        await this.recordStore.clear();
-        await this.bridge.stop();
+        await this._restoreStoredRecord(stored);
         this.status = createInitialStatus();
         return this.getStatus();
       } catch (error) {
@@ -281,4 +289,3 @@ class SystemDnsController {
 }
 
 module.exports = {SystemDnsController, requirePassingProbe};
-

@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const dgram = require('dgram');
 const net = require('net');
+const wire = require('bns/lib/wire');
 
 const {
   PHASES,
@@ -10,6 +11,7 @@ const {
 const {SystemDnsController} = require('../controller');
 const {createAddonResolverContract} = require('../addonContract');
 const {LoopbackDnsBridge} = require('../loopbackBridge');
+const {parseResponse, query, runHealthChecks} = require('../health');
 
 function dnsPacket(id = 0x1234) {
   const packet = Buffer.alloc(12);
@@ -234,23 +236,58 @@ async function testOwnershipAndStartupRecovery() {
   assert.equal(harness.getStored(), null);
 }
 
+async function testTransactionFaultBoundaries() {
+  for (const phase of ['pending', 'active']) {
+    const harness = createHarness();
+    const write = harness.recordStore.write.bind(harness.recordStore);
+    harness.recordStore.write = async record => {
+      if (record.phase === phase) {
+        const error = new Error(`injected ${phase} journal failure`);
+        error.code = 'EFAULT';
+        throw error;
+      }
+      return write(record);
+    };
+    await assert.rejects(harness.controller.enable(), error => error.code === 'EFAULT');
+    assert(harness.events.includes('bridge:stop'), `${phase} journal failure stops the bridge`);
+    assert.equal(harness.controller.getStatus().phase, PHASES.OFF);
+  }
+
+  const applyFailure = createHarness();
+  applyFailure.platform.apply = async () => {
+    applyFailure.events.push('platform:apply-fault');
+    const error = new Error('injected partial apply');
+    error.code = 'EFAULT';
+    throw error;
+  };
+  await assert.rejects(applyFailure.controller.enable(), error => error.code === 'EFAULT');
+  assert(applyFailure.events.some(event => event.startsWith('platform:rollback:')));
+  assert.equal(applyFailure.getStored(), null);
+
+  const restoreVerificationFailure = createHarness();
+  await restoreVerificationFailure.controller.enable();
+  restoreVerificationFailure.platform.verifyRestored = async () => {
+    const error = new Error('injected restore verification failure');
+    error.code = 'EFAULT';
+    throw error;
+  };
+  await assert.rejects(restoreVerificationFailure.controller.disable(), error => error.code === 'EFAULT');
+  assert.equal(restoreVerificationFailure.controller.getStatus().phase, PHASES.NEEDS_REPAIR);
+  assert(restoreVerificationFailure.getStored(), 'recovery journal survives failed verification');
+}
+
 async function testAddonBoundary() {
   const harness = createHarness();
-  let approvals = 0;
-  let approve = false;
   const request = createAddonResolverContract({
     controller: harness.controller,
-    requestCoreConfirmation: async () => { approvals++; return approve; },
   });
   const status = await request('resolver.getStatus');
   assert.equal(Object.hasOwn(status, 'recursivePort'), false, 'does not expose Bob resolver port');
   assert.equal(Object.hasOwn(status, 'activeInterfaces'), false, 'does not expose network identifiers');
   assert.equal(Object.hasOwn(status.lastError || {}, 'message'), false, 'does not expose internal errors');
-  assert.equal((await request('resolver.requestEnable')).approved, false);
-  assert.equal(harness.events.length, 0, 'denial causes no resolver or platform activity');
-  approve = true;
-  assert.equal((await request('resolver.requestEnable')).approved, true);
-  assert.equal(approvals, 2);
+  await assert.rejects(request('resolver.requestEnable'), error => error.code === 'EADDONMETHOD');
+  await assert.rejects(request('resolver.requestDisable'), error => error.code === 'EADDONMETHOD');
+  assert.equal(harness.events.length, 0, 'unavailable mutation methods cause no activity');
   await assert.rejects(request('resolver.rawHelperCommand'), error => error.code === 'EADDONMETHOD');
 }
 
@@ -303,16 +340,78 @@ async function testUnprivilegedLoopbackBridge() {
   }
 }
 
+async function testDeterministicHealthFixtures() {
+  let tcpQueries = 0;
+  let truncateNextUdp = true;
+  const addFixtureAnswer = message => {
+    const type = wire.typesByVal[message.question[0].type];
+    const records = {
+      A: 'fixture. 60 IN A 192.0.2.1',
+      NS: 'fixture. 60 IN NS ns.fixture.',
+      DS: 'fixture. 60 IN DS 12345 13 2 7a1d4c8f77f0b922dce8d5f9ef90b04c9ad8c410d65ed405b2b1e5f8dd62b168',
+      AAAA: 'fixture. 60 IN AAAA 2001:db8::1',
+    };
+    message.answer.push(wire.Record.fromString(records[type]));
+  };
+  const udp = dgram.createSocket('udp4');
+  udp.on('message', (packet, peer) => {
+    const message = wire.Message.decode(packet);
+    message.flags |= wire.flags.QR | wire.flags.RA | wire.flags.AD;
+    if (truncateNextUdp) message.flags |= wire.flags.TC;
+    else addFixtureAnswer(message);
+    const response = message.encode();
+    truncateNextUdp = false;
+    udp.send(response, peer.port, peer.address);
+  });
+  const address = await listenUdp(udp);
+  const tcp = net.createServer(socket => {
+    tcpQueries++;
+    let data = Buffer.alloc(0);
+    socket.on('data', chunk => {
+      data = Buffer.concat([data, chunk]);
+      if (data.length < 2 || data.length < data.readUInt16BE(0) + 2) return;
+      const message = wire.Message.decode(data.subarray(2));
+      message.flags |= wire.flags.QR | wire.flags.RA | wire.flags.AD;
+      addFixtureAnswer(message);
+      const packet = message.encode();
+      const response = Buffer.alloc(packet.length + 2);
+      response.writeUInt16BE(packet.length, 0);
+      packet.copy(response, 2);
+      socket.end(response);
+    });
+  });
+  await listenTcp(tcp, address.port);
+  try {
+    const truncated = await query({host: '127.0.0.1', port: address.port}, 'example.com.', 'A');
+    assert.equal(truncated.answers, 1);
+    assert.equal(tcpQueries, 1, 'UDP truncation retries over TCP');
+    const checks = await runHealthChecks(
+      {host: '127.0.0.1', port: address.port},
+      {hns: 'fixture.', icann: 'fixture.', dnssec: 'fixture.', tcp: 'fixture.', timeoutMs: 250},
+    );
+    assert.deepEqual(checks, {hns: true, icann: true, dnssec: true, tcp: true});
+    assert.throws(() => parseResponse(Buffer.alloc(3), 1), error => error.code === 'EMALFORMED');
+    await assert.rejects(
+      query({host: '192.0.2.1', port: 53}, 'fixture.', 'A'),
+      error => error.code === 'EPROBEENDPOINT',
+    );
+  } finally {
+    await closeServer(udp);
+    await closeServer(tcp);
+  }
+}
+
 (async () => {
   await testContracts();
   await testControllerSuccessAndExactRestore();
   await testFailedEnableRollsBack();
   await testOwnershipAndStartupRecovery();
+  await testTransactionFaultBoundaries();
   await testAddonBoundary();
   await testUnprivilegedLoopbackBridge();
+  await testDeterministicHealthFixtures();
   console.log('System DNS prototype checks passed: Bob port discovery, SPV/full readiness, Custom RPC rejection, exact restore, rollback, ownership repair, add-on isolation, and unprivileged UDP/TCP forwarding.');
 })().catch(error => {
   console.error(error);
   process.exitCode = 1;
 });
-

@@ -1276,5 +1276,10 @@
   "recordsValue": "Value",
   "recordsStale": "Canonical resource changed since review; discard this review and prepare a fresh one.",
   "headerLanguageSaveError": "Could not save the language. Please try again.",
-  "headerReturnToMenu": "Return to Menu"
+  "headerReturnToMenu": "Return to Menu",
+  "systemDnsDevelopmentStatus": "Development only",
+  "systemDnsDevelopmentDescription": "Checks whether Bob's local resolver is ready. It cannot change system DNS.",
+  "systemDnsResolverReady": "Bob's local resolver is ready for read-only checks.",
+  "systemDnsResolverUnavailable": "Bob's local resolver is not currently eligible.",
+  "systemDnsRunTest": "Run resolver test"
 }

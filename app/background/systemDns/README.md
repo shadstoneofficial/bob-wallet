@@ -2,8 +2,9 @@
 
 This directory is a non-privileged prototype for Bob's proposed **Use Bob to
 resolve Handshake names on this computer** feature. It is deliberately not
-registered in `app/main.js`, does not edit operating-system DNS, and does not
-install a service.
+registered only as a read-only, development-gated service in `app/main.js`,
+does not edit operating-system DNS, and does not install a service. See
+`docs/system-dns-development.md` for the platform decision and rollout matrix.
 
 ## Verified Bob inputs
 
@@ -64,15 +65,15 @@ that future native boundary. Tests supply in-memory adapters only.
 
 ## Add-On-facing contract
 
-Untrusted Add-Ons may receive only:
+The current development Add-On may receive only:
 
 - `resolver.getStatus` — sanitized status, without ports, interface IDs or
   backup contents;
 - `resolver.requestTest` — read-only core preflight;
-- `resolver.requestEnable` — asks trusted Bob UI to confirm; and
-- `resolver.requestDisable` — asks trusted Bob UI to confirm restoration.
 
-Add-Ons never receive the helper handle, restore record, node API key, raw DNS
+Enable/disable are deliberately absent until the signed helper has passed its
+security and failure-recovery review. Add-Ons never receive the helper handle,
+restore record, node API key, raw DNS
 queries, interface configuration, or a way to claim that confirmation already
 happened. The trusted Bob core owns the confirmation prompt and mutation.
 
@@ -105,5 +106,5 @@ Run the isolated checks with:
 
 ```sh
 node app/background/systemDns/tests/prototype.spec.cjs
+node app/background/systemDns/tests/readOnlyService.spec.cjs
 ```
-

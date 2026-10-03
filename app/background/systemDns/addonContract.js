@@ -2,14 +2,12 @@ const {publicStatus, resolverError} = require('./contract');
 
 const ADDON_METHODS = Object.freeze([
   'resolver.getStatus',
-  'resolver.requestEnable',
-  'resolver.requestDisable',
   'resolver.requestTest',
 ]);
 
-function createAddonResolverContract({controller, requestCoreConfirmation}) {
-  if (!controller || typeof requestCoreConfirmation !== 'function') {
-    throw new TypeError('The add-on resolver contract requires core-owned controls.');
+function createAddonResolverContract({controller}) {
+  if (!controller) {
+    throw new TypeError('The add-on resolver contract requires a trusted core controller.');
   }
 
   return async function request(method) {
@@ -25,23 +23,8 @@ function createAddonResolverContract({controller, requestCoreConfirmation}) {
       return publicStatus(await controller.preflight());
     }
 
-    const action = method === 'resolver.requestEnable' ? 'enable' : 'disable';
-    const approved = await requestCoreConfirmation({
-      action,
-      title: action === 'enable'
-        ? 'Use Bob for this computer\'s DNS?'
-        : 'Restore this computer\'s previous DNS settings?',
-    });
-    if (approved !== true) {
-      return {approved: false, status: publicStatus(controller.getStatus())};
-    }
-
-    const result = action === 'enable'
-      ? await controller.enable()
-      : await controller.disable();
-    return {approved: true, status: publicStatus(result)};
+    throw resolverError('EADDONMETHOD', 'This resolver add-on method is not available.');
   };
 }
 
 module.exports = {ADDON_METHODS, createAddonResolverContract};
-
