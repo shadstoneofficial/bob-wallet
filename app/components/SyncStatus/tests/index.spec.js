@@ -79,3 +79,10 @@ test('an incomplete state never displays Synchronizing at 100.00%', t => {
   );
   t.end();
 });
+
+test('waiting and failed recovery cannot masquerade as synchronized', t => {
+  t.equal(getSyncStatusText(baseProps({rescanStatus: 'waiting', isSynchronized: true}), translate), 'walletRescanWaiting');
+  t.equal(getSyncStatusText(baseProps({rescanStatus: 'failed', isSynchronized: true}), translate), 'walletRescanFailed');
+  t.equal(getSyncStatusText(baseProps({rescanHeight: 0}), translate), 'Rescanning... (0%)');
+  t.end();
+});

@@ -1275,6 +1275,8 @@
   "recordsType": "Type",
   "recordsValue": "Value",
   "recordsStale": "Canonical resource changed since review; discard this review and prepare a fresh one.",
+  "walletRescanWaiting": "Waiting to rescan wallet history…",
+  "walletRescanFailed": "Wallet recovery incomplete. Restart Bob to resume.",
   "headerLanguageSaveError": "Could not save the language. Please try again.",
   "headerReturnToMenu": "Return to Menu"
 }

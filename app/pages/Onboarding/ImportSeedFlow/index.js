@@ -208,8 +208,7 @@ class ImportSeedFlow extends Component {
 
     this.setState({isLoading: true});
     try {
-      await walletClient.importSeed(name, passphrase, type, secret, m, n);
-      walletClient.rescan(rescanHeight);
+      await walletClient.importSeed(name, passphrase, type, secret, m, n, rescanHeight);
       await this.props.completeInitialization(name, passphrase);
       await this.props.fetchWallet();
       await this.props.fetchTransactions();

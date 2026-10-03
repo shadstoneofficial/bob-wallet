@@ -48,6 +48,7 @@ export function getSyncStatusText(props, t) {
     walletSync,
     walletHeight,
     rescanHeight,
+    rescanStatus,
     storageBlocked,
   } = props;
 
@@ -55,8 +56,13 @@ export function getSyncStatusText(props, t) {
     return t('storageErrorSyncStatus');
   }
 
+  if (rescanStatus === 'failed') return t('walletRescanFailed');
+  if (rescanStatus === 'waiting') return t('walletRescanWaiting');
+
   if (walletSync) {
-    const percentText = Math.floor((walletHeight * 100) / rescanHeight);
+    const percentText = rescanHeight > 0
+      ? Math.min(99, Math.max(0, Math.floor((walletHeight * 100) / rescanHeight)))
+      : 0;
     return isCustomRPCConnected
       ? `${t('rescanningFromRPC')}... (${percentText}%)`
       : `${t('rescanning')}... (${percentText}%)`;
@@ -105,6 +111,7 @@ export function getSyncStatusText(props, t) {
     walletSync: state.wallet.walletSync,
     walletHeight: state.wallet.walletHeight,
     rescanHeight: state.wallet.rescanHeight,
+    rescanStatus: state.wallet.rescanStatus,
     chainHeight: state.node.chain.height,
     storageBlocked: state.storage.blocked,
   };
