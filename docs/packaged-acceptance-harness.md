@@ -38,6 +38,8 @@ node scripts/launch-packaged-acceptance-macos.js \
 
 The launcher requires an absolute profile root, refuses the normal `~/Library/Application Support/Bob LearnHNS` profile, sets `userData` before services initialize, uses local regtest P2P/SPV with DNS peers disabled, generates new API keys and two disposable encrypted wallets, and enables no transaction fixture. It adds no RPC or file IPC. The local activation token and disposable wallet passphrase remain in the mode-0600 manifest and are never production credentials.
 
+The main process opens the renderer before waiting for the disposable WalletDB fixture. This ordering is required because the renderer starts the local node and wallet plugin; waiting for WalletDB first would deadlock a clean launch. A regression test withholds wallet readiness until the window exists.
+
 Each launch receives its own status and backend-event files, so a current result cannot be confused with an earlier run. Sentry is disabled in packaged test modes, and interactive acceptance shutdown uses the same bounded node/database teardown and structured backend-error gate as the automated smoke test.
 
 ## Honest acceptance matrix
@@ -72,7 +74,10 @@ Interactive acceptance cannot select the ordinary profile accidentally:
 - both launcher and runtime reject `~/Library/Application Support/Bob LearnHNS` and descendants;
 - filesystem-real containment and a recursive symlink check prevent aliases back into normal application data;
 - the app applies the isolated `userData` path before loading any backend service; and
-- the configured network is pinned to local regtest/P2P, Custom RPC and network-setting changes are rejected, and renderer IPC cannot invoke seed import, signing, transaction construction or broadcast methods;
+- the configured network is pinned to local regtest/P2P, and hsd config-file, command-line and environment loading are disabled in acceptance mode;
+- the launcher strips inherited `HSD_*` variables, while backend checks independently force the disposable prefix, SPV, no-DNS and regtest settings for direct launches;
+- critical raw DB IPC writes and deletes are blocked, so the renderer cannot replace the node directory, network, connection type, SPV mode, helper endpoint or API keys before restarting the node;
+- Custom RPC and network-setting changes are rejected, and renderer IPC cannot invoke seed import, signing, transaction construction or broadcast methods;
 - node-level raw transaction, claim and airdrop broadcasts are blocked below the renderer boundary; and
 - the launcher removes inherited smoke-mode variables while the runtime rejects simultaneous smoke and acceptance modes.
 

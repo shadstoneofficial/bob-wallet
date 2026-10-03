@@ -14,10 +14,17 @@ const {
   validateSmokeResult,
 } = require('../lib/packaged-smoke-runner.cjs');
 const {
+  assertAcceptanceHsdDirectory,
+  constrainHsdOptions,
   installAcceptanceBackendPolicy,
+  sanitizeAcceptanceEnvironment,
+  wrapAcceptanceDbMethods,
   wrapBlockedMethods,
   wrapAcceptanceWalletMethods,
 } = require('../../app/background/packagedAcceptance/policy');
+const {
+  initializeAcceptanceAfterWindow,
+} = require('../../app/background/packagedAcceptance/startup');
 
 function acceptanceManifest(root) {
   const userData = path.join(root, 'user-data');
@@ -186,4 +193,95 @@ test('acceptance policy blocks direct Shakedex transaction methods', async () =>
   await assert.rejects(wrapped.fulfillSwap(), {code: 'ERR_PACKAGED_ACCEPTANCE_POLICY'});
   await assert.rejects(wrapped.launchAuction(), {code: 'ERR_PACKAGED_ACCEPTANCE_POLICY'});
   assert.equal(fulfilled, false);
+});
+
+test('acceptance startup opens the renderer before waiting for wallet fixture readiness', async () => {
+  let windowShown = false;
+  let fixturePublished = false;
+  let releaseWallet;
+  const walletReady = new Promise(resolve => { releaseWallet = resolve; });
+  const startup = initializeAcceptanceAfterWindow({
+    showMainWindow() {
+      windowShown = true;
+      return {id: 'acceptance-window'};
+    },
+    async seedFixture() {
+      assert.equal(windowShown, true);
+      await walletReady;
+      return {walletIds: ['acceptance-primary', 'acceptance-secondary']};
+    },
+    async publishReady(fixture) {
+      fixturePublished = true;
+      assert.equal(fixture.walletIds.length, 2);
+    },
+  });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(windowShown, true);
+  assert.equal(fixturePublished, false);
+  releaseWallet();
+  assert.deepEqual(await startup, {id: 'acceptance-window'});
+  assert.equal(fixturePublished, true);
+});
+
+test('acceptance hsd options ignore inherited environment, argv, and config files', () => {
+  const Config = require('bcfg');
+  const isolatedPrefix = path.join(os.tmpdir(), 'bob-isolated-hsd');
+  const options = constrainHsdOptions({
+    config: path.join(os.tmpdir(), 'hostile-hsd.conf'),
+    argv: ['node', 'test', '--network=main', '--prefix=/tmp/argv-profile'],
+    env: {HSD_NETWORK: 'main', HSD_PREFIX: '/tmp/env-profile'},
+    network: 'main',
+    prefix: '/tmp/injected-profile',
+  }, true, isolatedPrefix);
+  const config = new Config('hsd', {
+    suffix: 'network',
+    fallback: 'main',
+    alias: {n: 'network'},
+  });
+  config.inject(options);
+  config.load(options);
+  assert.equal(options.config, false);
+  assert.equal(options.argv, false);
+  assert.equal(options.env, false);
+  assert.equal(config.getSuffix(), 'regtest');
+  assert.equal(config.prefix, path.join(isolatedPrefix, 'regtest'));
+  assert.equal(config.prefix.includes('argv-profile'), false);
+  assert.equal(config.prefix.includes('env-profile'), false);
+});
+
+test('acceptance launcher strips inherited hsd settings', () => {
+  assert.deepEqual(sanitizeAcceptanceEnvironment({
+    PATH: '/bin',
+    HSD_NETWORK: 'main',
+    HSD_PREFIX: '/real-wallet',
+    HSD_API_KEY: 'not-for-acceptance',
+  }), {PATH: '/bin'});
+});
+
+test('acceptance DB IPC cannot mutate critical node or profile settings', async () => {
+  const writes = [];
+  const deletes = [];
+  const wrapped = wrapAcceptanceDbMethods({
+    put: async (key, value) => writes.push([key, value]),
+    del: async key => deletes.push(key),
+    get: async () => null,
+  }, true);
+  await wrapped.put('locale', 'zh');
+  await assert.rejects(wrapped.put('network', 'main'), {code: 'ERR_PACKAGED_ACCEPTANCE_POLICY'});
+  await assert.rejects(wrapped.put('hsdPrefixDir', '/real-wallet'), {code: 'ERR_PACKAGED_ACCEPTANCE_POLICY'});
+  await assert.rejects(wrapped.put('nodeSpvMode', '0'), {code: 'ERR_PACKAGED_ACCEPTANCE_POLICY'});
+  await assert.rejects(wrapped.del('connection_type'), {code: 'ERR_PACKAGED_ACCEPTANCE_POLICY'});
+  assert.deepEqual(writes, [['locale', 'zh']]);
+  assert.deepEqual(deletes, []);
+});
+
+test('acceptance node directory rejects symlink replacement', {skip: process.platform === 'win32'}, () => {
+  const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'bob-acceptance-user-data-'));
+  const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), 'bob-real-profile-'));
+  const hsdDirectory = path.join(userData, 'acceptance-hsd-profile');
+  fs.symlinkSync(elsewhere, hsdDirectory, 'dir');
+  assert.throws(
+    () => assertAcceptanceHsdDirectory(userData, hsdDirectory),
+    {code: 'ERR_PACKAGED_ACCEPTANCE_POLICY'},
+  );
 });

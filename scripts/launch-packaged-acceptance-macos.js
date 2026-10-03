@@ -4,6 +4,7 @@ const os = require('os');
 const path = require('path');
 const {spawn} = require('child_process');
 const {resolvePhysicalPath} = require('../app/background/packagedAcceptance/runtime');
+const {sanitizeAcceptanceEnvironment} = require('../app/background/packagedAcceptance/policy');
 
 const CASES = [
   ['packagedStartup', 'READY', 'Launch, renderer, local regtest services and structured error monitoring.'],
@@ -117,7 +118,7 @@ async function main() {
   console.log('Network: regtest; transaction fixtures: disabled; generated disposable wallets only.');
   for (const [id, status] of CASES) console.log(`${status.padEnd(10)} ${id}`);
 
-  const childEnv = {...process.env};
+  const childEnv = sanitizeAcceptanceEnvironment(process.env);
   for (const name of ['BOB_PACKAGED_SMOKE_TEST', 'BOB_SMOKE_USER_DATA', 'BOB_SMOKE_REPORT', 'BOB_SMOKE_PROFILE']) {
     delete childEnv[name];
   }

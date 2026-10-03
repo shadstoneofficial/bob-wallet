@@ -19,6 +19,7 @@ const {
   seedDisposableMultiwallet,
 } = require('./background/packagedAcceptance/fixture');
 const {installAcceptanceBackendPolicy} = require('./background/packagedAcceptance/policy');
+const {initializeAcceptanceAfterWindow} = require('./background/packagedAcceptance/startup');
 
 const DEEPLINK_PROTOCOLS = new Set(['bob:', 'bob-learnhns:']);
 const isPackagedSmokeTest = process.env.BOB_PACKAGED_SMOKE_TEST === 'true';
@@ -337,18 +338,6 @@ if (isPrimaryInstance) {
     await services.ledger.start(server);
     await services.hnsInvestments.start(server);
     await services.shakedex.start(server);
-    if (packagedAcceptanceConfig) {
-      packagedErrorMonitor.setPhase('interactive');
-      const fixture = await seedDisposableMultiwallet(services, packagedAcceptanceConfig);
-      writeJsonAtomic(packagedAcceptanceConfig.statusPath, {
-        ok: packagedErrorMonitor.snapshot().length === 0,
-        ready: true,
-        fixture,
-        userData: packagedAcceptanceConfig.userData,
-        backendErrors: packagedErrorMonitor.snapshot(),
-      });
-    }
-
     app.on('window-all-closed', () => {
       // Respect the macOS convention of having the application in memory even
       // after all windows have been closed
@@ -417,7 +406,23 @@ if (isPrimaryInstance) {
 
     if (!isPackagedSmokeTest) app.on('before-quit', quit);
 
-    const firstWindow = runtimeModules.showMainWindow();
+    let firstWindow;
+    if (packagedAcceptanceConfig) {
+      packagedErrorMonitor.setPhase('interactive');
+      firstWindow = await initializeAcceptanceAfterWindow({
+        showMainWindow: runtimeModules.showMainWindow,
+        seedFixture: () => seedDisposableMultiwallet(services, packagedAcceptanceConfig),
+        publishReady: fixture => writeJsonAtomic(packagedAcceptanceConfig.statusPath, {
+          ok: packagedErrorMonitor.snapshot().length === 0,
+          ready: true,
+          fixture,
+          userData: packagedAcceptanceConfig.userData,
+          backendErrors: packagedErrorMonitor.snapshot(),
+        }),
+      });
+    } else {
+      firstWindow = runtimeModules.showMainWindow();
+    }
 
     while (pendingStartupDeeplinks.length) {
       runtimeModules.sendDeeplinkToMainWindow(pendingStartupDeeplinks.shift());

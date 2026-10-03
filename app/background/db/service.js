@@ -2,6 +2,8 @@ import { app } from 'electron';
 import bdb from 'bdb';
 import path from 'path';
 
+const {wrapAcceptanceDbMethods} = require('../packagedAcceptance/policy');
+
 let db;
 
 export async function open() {
@@ -74,6 +76,8 @@ const methods = {
 
 export async function start(server) {
   await open();
-  server.withService(sName, methods);
+  server.withService(sName, wrapAcceptanceDbMethods(
+    methods,
+    process.env.BOB_PACKAGED_ACCEPTANCE_TEST === 'true',
+  ));
 }
-
