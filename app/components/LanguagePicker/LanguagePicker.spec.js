@@ -60,6 +60,18 @@ test('language preference hydration, restart, shared writes, fallback and startu
     await Promise.all([store.dispatch(setLocale('ca')), store.dispatch(setLocale('fr-FR'))]);
     t.equal(store.getState().app.locale, 'fr-FR', 'concurrent writes preserve request order');
     t.equal(saved, 'fr-FR', 'persisted and visible language agree');
+    const earlyStore = makeStore();
+    let finishEarlyRead;
+    let reads = 0;
+    settings.getLocale = () => ++reads === 1
+      ? new Promise(resolve => {finishEarlyRead = resolve;}) : Promise.resolve(saved);
+    settings.setLocale = async () => {throw failure;};
+    const earlyHydration = earlyStore.dispatch(fetchLocale());
+    await tick();
+    try {await earlyStore.dispatch(setLocale('ca')); t.fail('must reject');} catch (e) {t.equal(e, failure);}
+    finishEarlyRead('en-US');
+    await earlyHydration;
+    t.equal(earlyStore.getState().app.locale, 'fr-FR', 'failed early choice recovers persisted language');
   } finally {Object.assign(settings, original);}
   t.end();
 });

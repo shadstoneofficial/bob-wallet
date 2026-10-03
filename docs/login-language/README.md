@@ -29,7 +29,7 @@ part of a language change.
 
 ## Verification
 
-- Full `npm test`: **771/771 assertions pass**, process exits successfully.
+- Full `npm test`: **773/773 assertions pass**, process exits successfully.
 - zh-CN parity/token/placeholder/format validation: **1,278/1,278 keys pass**.
 - Locale-validator regression suite: **12/12 pass**.
 - Production renderer compilation, interactive fixture compilation and
@@ -90,3 +90,7 @@ Integration: other active branches may append English/Chinese keys or unit impor
 Retain both sets of additions when integrating; do not overwrite those branches.
 This PR changes only `headerLanguageSaveError` and `headerReturnToMenu` locale keys.
 No merge, signing, tag, public artifact or release is performed here.
+
+Separate follow-up: the More Addons catalog remains partially untranslated.
+Arthur’s reported ShakeX Chinese/English acceptance does not constitute independent
+native-speaker review, and this header PR does not expand catalog localization.

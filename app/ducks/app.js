@@ -95,11 +95,16 @@ export const fetchShowUsdValue = () => async dispatch => {
   });
 };
 
-export const setLocale = locale => dispatch => queueLocaleWrite(async () => {
+export const setLocale = locale => (dispatch, getState) => queueLocaleWrite(async () => {
   const next = normalizeLocale(locale);
   await settingsClient.setLocale(next);
   dispatch({type: SET_CUSTOM_LOCALE, payload: null});
   dispatch({type: SET_LOCALE, payload: next});
+}).catch(async error => {
+  // A failed pre-hydration choice invalidated the original startup read. Recover
+  // the saved preference before reporting failure instead of leaving a fallback.
+  if (!getState().app.locale) await dispatch(fetchLocale());
+  throw error;
 });
 
 export const setCustomLocale = json => dispatch => {
