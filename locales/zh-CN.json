@@ -1276,5 +1276,10 @@
   "recordsValue": "值",
   "recordsStale": "链上资源在审阅后发生更改；请放弃本次审阅并重新准备。",
   "headerLanguageSaveError": "无法保存语言设置，请重试。",
-  "headerReturnToMenu": "返回主菜单"
+  "headerReturnToMenu": "返回主菜单",
+  "systemDnsDevelopmentStatus": "仅限开发版本",
+  "systemDnsDevelopmentDescription": "检查 Bob 的本地解析器是否就绪。此功能无法更改系统 DNS。",
+  "systemDnsResolverReady": "Bob 的本地解析器已准备好进行只读检查。",
+  "systemDnsResolverUnavailable": "Bob 的本地解析器当前不符合使用条件。",
+  "systemDnsRunTest": "运行解析器测试"
 }
