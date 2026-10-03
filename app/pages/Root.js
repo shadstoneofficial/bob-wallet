@@ -2,7 +2,7 @@ import React, { Component } from 'react';
 import {connect, Provider} from 'react-redux';
 import { ConnectedRouter } from '@rithvikvibhu/connected-react-router';
 import App from './App';
-import {I18nContext, translateLocale} from "../utils/i18n";
+import {I18nContext, translateLocale, normalizeLocale} from "../utils/i18n";
 
 export default class Root extends Component {
 
@@ -28,12 +28,18 @@ export default class Root extends Component {
 class Content extends Component {
   componentDidMount() {
     this.applyThemeClass();
+    this.applyLocale();
   }
 
   componentDidUpdate(prevProps) {
+    if (prevProps.locale !== this.props.locale) this.applyLocale();
     if (prevProps.theme !== this.props.theme) {
       this.applyThemeClass();
     }
+  }
+
+  applyLocale() {
+    document.documentElement.lang = normalizeLocale(this.props.locale);
   }
 
   applyThemeClass() {

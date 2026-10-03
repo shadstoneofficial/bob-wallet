@@ -1,0 +1,23 @@
+{
+  "shakexSearchLabel": {
+    "ru-RU": "Поиск имён (Unicode / эмодзи / punycode)",
+    "th-TH": "ค้นหาชื่อ (Unicode / อีโมจิ / punycode)",
+    "en": "Search names (Unicode / emoji / punycode)",
+    "zh-CN": "搜索域名（Unicode / 表情符号 / Punycode）",
+    "sourceHead": "a402006f6a79d29d4317f4bd4dacb255c9453714"
+  },
+  "walletRescanWaiting": {
+    "ru-RU": "Ожидание повторного сканирования истории кошелька…",
+    "th-TH": "กำลังรอสแกนประวัติกระเป๋าเงินใหม่…",
+    "en": "Waiting to rescan wallet history…",
+    "zh-CN": "正在等待重新扫描钱包历史记录…",
+    "sourceHead": "7fa5ccc63e1e5376552ea2250086313a25bb2453"
+  },
+  "walletRescanFailed": {
+    "ru-RU": "Восстановление кошелька не завершено. Перезапустите Bob, чтобы продолжить.",
+    "th-TH": "การกู้คืนกระเป๋าเงินยังไม่เสร็จสมบูรณ์ เริ่ม Bob ใหม่เพื่อดำเนินการต่อ",
+    "en": "Wallet recovery incomplete. Restart Bob to resume.",
+    "zh-CN": "钱包恢复未完成。请重启 Bob 以继续恢复。",
+    "sourceHead": "7fa5ccc63e1e5376552ea2250086313a25bb2453"
+  }
+}

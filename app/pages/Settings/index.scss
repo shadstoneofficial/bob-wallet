@@ -445,3 +445,12 @@
 .locale-dropdown {
   width: 12rem;
 }
+
+// Keep translated Settings labels and controls within narrow windows.
+.settings__content { min-width: 0; }
+.settings__content__section {
+  flex-wrap: wrap;
+  &__info { flex: 1 1 16rem; min-width: 0; }
+  &__footer { flex: 0 1 auto; max-width: 100%; box-sizing: border-box; }
+  &__footer > *, &__cta { max-width: 100%; }
+}
