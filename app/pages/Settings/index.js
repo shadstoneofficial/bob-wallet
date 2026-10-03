@@ -37,7 +37,7 @@ import dbClient from "../../utils/dbClient";
 import {clientStub} from "../../background/node/client";
 import APIKeyModal from "./APIKeyModal";
 import {clientStub as cClientStub} from "../../background/connections/client";
-import {ConnectionTypes} from "../../background/connections/service";
+import {ConnectionTypes} from "../../background/connections/types";
 import Dropdown from "../../components/Dropdown";
 import {I18nContext, langs, languageDropdownItems} from "../../utils/i18n";
 import {setLocale, setCustomLocale, setTheme, setShowUsdValue} from "../../ducks/app";

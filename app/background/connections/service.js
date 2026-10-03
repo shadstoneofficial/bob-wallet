@@ -1,5 +1,7 @@
 import { del, get, put } from '../db/service';
 import crypto from "crypto";
+import {ConnectionTypes} from './types';
+export {ConnectionTypes} from './types';
 
 const CONNECTION_TYPE_KEY = 'connection_type';
 const RPC_API_KEY = 'p2p_api_key';
@@ -12,12 +14,6 @@ const CUSTOM_RPC_URL = 'custom_rpc_url';
 const CUSTOM_RPC_PROTOCOL = 'custom_rpc_protocol';
 
 const Network = require('hsd/lib/protocol/network');
-
-export const ConnectionTypes = {
-  P2P: 'P2P',
-  Custom: 'Custom',
-  TEST: 'TEST',
-};
 
 export async function getAPIKey() {
   const apiKey = await get(RPC_API_KEY);

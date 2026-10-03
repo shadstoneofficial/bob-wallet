@@ -37,7 +37,7 @@ import {MultisigModal} from "../../components/MultisigModal";
 import Notification from "../../components/Notification";
 import {clientStub as cClientStub} from "../../background/connections/client";
 import {clientStub as sClientStub} from "../../background/setting/client";
-import {ConnectionTypes} from "../../background/connections/service";
+import {ConnectionTypes} from "../../background/connections/types";
 import AppHeader from "../AppHeader";
 import Exchange from '../Exchange';
 import SignMessage from "../SignMessage";
