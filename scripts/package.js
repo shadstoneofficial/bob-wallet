@@ -36,12 +36,11 @@ function webpack(cb) {
   exec(`"${webpackBin}" --config "${path.join(rootDir, 'configs', 'webpack.config.renderer.prod.babel.js')}"`, {
     env: {...process.env, NODE_ENV: 'production'},
   }, (err, stdout, stderr) => {
+    if (stdout) console.log(stdout);
+    if (stderr) console.error(stderr);
     if (err) {
       throw err;
     }
-
-    console.log('Webpack output:');
-    console.log(stdout);
     cb();
   });
 }
@@ -50,12 +49,11 @@ function babelizeFromRoot(source, dest, isDir, cb) {
   console.log(`Babelizing ${isDir ? 'directory' : 'file'} ${source} to ${dest}.`);
 
   exec(`"${babelBin}" "${path.join(rootDir, source)}" -${isDir ? 'd' : 'o'} "${path.join(rootDir, dest)}"`, (err, stdout, stderr) => {
+    if (stdout) console.log(stdout);
+    if (stderr) console.error(stderr);
     if (err) {
       throw err;
     }
-
-    console.log('Babel output:');
-    console.log(stdout);
 
     cb();
   });
