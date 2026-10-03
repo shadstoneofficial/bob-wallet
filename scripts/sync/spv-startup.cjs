@@ -45,6 +45,7 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
     } else {
       assert.deepEqual(errors, [], 'WalletDB startup sync is deferred until pool connection');
       assert.equal(wallet.wdb.bobRescanState.status, 'waiting');
+      assert.equal(wallet.wdb.bobRescanState.managed, true);
       assert.equal(wallet.wdb.bobRescanState.ready, false,
         'pending startup recovery is not exposed as idle or ready');
       // Match NodeService's post-connect handoff without calling Pool.connect,
@@ -53,6 +54,8 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
       await wallet.wdb.resumeLocalSync();
       assert.deepEqual(errors, [], 'deferred first sync succeeds after local pool readiness');
       assert.equal(wallet.wdb.bobRescanState.status, 'idle');
+      assert.equal(wallet.wdb.bobRescanState.managed, true);
+      assert.equal(wallet.wdb.bobRescanState.ready, true);
     }
     console.log(JSON.stringify({
       mode: 'SPV',

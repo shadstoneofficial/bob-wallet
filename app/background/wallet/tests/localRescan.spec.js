@@ -8,7 +8,7 @@ function deferred() {let resolve; const promise = new Promise(r => {resolve = r;
 const tick = () => new Promise(r => setImmediate(r));
 function fixture({store = new Map(), spv = false, poolConnected} = {}) {
   const calls = [];
-  const chain = {locker: new Lock(), db: {scan: async height => calls.push(height)}};
+  const chain = Object.assign(new EventEmitter(), {locker: new Lock(), db: {scan: async height => calls.push(height)}});
   chain._reset = async height => calls.push(height);
   const node = {chain, spv};
   if (typeof poolConnected === 'boolean') node.pool = {connected: poolConnected};
@@ -37,7 +37,7 @@ function fixture({store = new Map(), spv = false, poolConnected} = {}) {
     async close() {},
     async syncNode() {
       const unlock = await this.txLock.lock();
-      try {return await client.rescan(99);}
+      try {return;}
       finally {unlock();}
     },
   });
@@ -71,7 +71,7 @@ test('crash reconstruction recovers earliest queued coverage without wallet iden
   const saved = new Map([...f.store].map(([k,v]) => [k, Buffer.from(v)]));
   const restarted = fixture({store: saved});
   await restarted.wdb.syncNode();
-  t.deepEqual(restarted.calls, [99, 2], 'ordinary synchronization followed by earliest unfulfilled scan');
+  t.deepEqual(restarted.calls, [2], 'restart recovers earliest unfulfilled scan');
   t.deepEqual(record(saved).requests, []);
   t.deepEqual(Object.keys(record(saved)).sort(), ['next', 'requests']);
   gate.resolve(); await Promise.all([first, second]);
@@ -86,29 +86,59 @@ test('failure retains recovery record, releases both mutexes, and retries only o
   t.notOk(f.chain.locker.busy); t.notOk(f.wdb.txLock.busy);
   f.chain.db.scan = async height => f.calls.push(height);
   await tick(); t.deepEqual(f.calls, [], 'no automatic retry loop');
-  await f.wdb.syncNode(); t.deepEqual(f.calls, [99, 3]);
+  await f.wdb.syncNode(); t.deepEqual(f.calls, [3]);
   t.deepEqual(record(f.store).requests, []);
   t.end();
 });
 
-test('SPV acknowledgements follow reset completion; future client calls use public locking', async t => {
+test('SPV rewind stays pending through partial replay and restart until preserved target', async t => {
+  const requestId = 'c'.repeat(32);
   const f = fixture({spv: true});
-  const gate = deferred(); const entered = deferred();
-  let later;
+  f.chain.height = 20; f.wdb.height = 20;
   f.chain._reset = async height => {
     f.calls.push(height);
-    if (height === 7) {
-      entered.resolve(); await gate.promise;
-      later = () => f.wdb.client.rescan(8);
-    }
+    f.chain.height = height;
+    f.wdb.height = height;
   };
-  const scan = f.wdb.rescan(7); await entered.promise;
-  t.equal(record(f.store).requests.length, 1);
-  gate.resolve(); await scan;
-  t.deepEqual(record(f.store).requests, []);
-  const unlock = await f.chain.locker.lock();
-  const next = later(); await tick(); t.deepEqual(f.calls, [7], 'direct client call still waits for chain');
-  unlock(); await next; t.deepEqual(f.calls, [7, 8]);
+  let admission = require('../recoveryAdmission').createRecoveryAdmission(() => f.wdb.bobRescanState);
+  f.wdb.on('bob rescan', state => {
+    f.wdb.bobRescanState = state;
+  });
+  const scan = f.wdb.rescan(0, {requestId});
+  try {await f.wdb.rescan(0); t.fail('a concurrent second restore must be rejected immediately');}
+  catch (error) {t.match(error.message, /not ready/);}
+  await scan;
+  t.deepEqual(f.calls, [0], 'SPV performs one rewind');
+  t.equal(record(f.store).requests[0].target, 20, 'replay target is durable');
+  t.equal(record(f.store).requests[0].rewound, true, 'journal records that rewind completed');
+  t.equal(f.wdb.bobRescanState.status, 'scanning');
+  t.equal(f.wdb.bobRescanState.ready, false);
+  t.ok(f.wdb.bobRescanState.activeRequestIds.includes(requestId));
+  t.throws(() => admission.beginImport(), {code: 'WALLET_RECOVERY_BUSY'}, 'imports stay closed during replay');
+  try {await f.wdb.rescan(0); t.fail('second restore must be rejected while replaying');}
+  catch (error) {t.match(error.message, /not ready/);}
+
+  // Recreate the adapter over the same durable journal while replay is at 5.
+  const saved = new Map([...f.store].map(([k, v]) => [k, Buffer.from(v)]));
+  const restarted = fixture({store: saved, spv: true});
+  admission = require('../recoveryAdmission').createRecoveryAdmission(() => restarted.wdb.bobRescanState);
+  restarted.chain.height = 5; restarted.wdb.height = 5;
+  await restarted.wdb.syncNode();
+  t.deepEqual(restarted.calls, [], 'restart resumes replay without resetting the partial tip');
+  t.equal(restarted.wdb.bobRescanState.target, 20, 'partial tip does not replace original target');
+  t.equal(restarted.wdb.bobRescanState.ready, false);
+  restarted.chain.height = 19; restarted.wdb.height = 19;
+  restarted.wdb.emit('block connect', {height: 19});
+  t.equal(record(saved).requests.length, 1, 'request remains pending below target');
+  t.notOk(restarted.wdb.bobRescanState.completedRequestIds.includes(requestId));
+  restarted.chain.height = 20; restarted.wdb.height = 20;
+  restarted.wdb.emit('block connect', {height: 20});
+  await tick();
+  t.deepEqual(record(saved).requests, [], 'durable request is acknowledged at target');
+  t.equal(restarted.wdb.bobRescanState.status, 'complete');
+  t.equal(restarted.wdb.bobRescanState.ready, true);
+  t.ok(restarted.wdb.bobRescanState.completedRequestIds.includes(requestId));
+  t.notOk(admission.isBusy(), 'another import is admitted after target replay completes');
   t.end();
 });
 
@@ -139,7 +169,7 @@ test('deferred startup recovery keeps the backend unready until post-connect syn
   t.equal(f.wdb.bobRescanState.status, 'idle');
   t.equal(f.wdb.bobRescanState.ready, true, 'backend becomes ready only after sync and journal inspection');
   await f.wdb.rescan(3);
-  t.deepEqual(f.calls, [99, 3]);
+  t.deepEqual(f.calls, [3]);
   t.end();
 });
 
@@ -155,7 +185,7 @@ test('shutdown preserves accepted waiting recovery and rejects new requests', as
   t.match((await pending).message, /pending for restart/); await closing;
   t.deepEqual(record(f.store).requests.map(r => r.height), [0]);
   const restarted = fixture({store: f.store}); await restarted.wdb.syncNode();
-  t.deepEqual(restarted.calls, [99, 0]);
+  t.deepEqual(restarted.calls, [0]);
   t.deepEqual(record(f.store).requests, []);
   t.end();
 });

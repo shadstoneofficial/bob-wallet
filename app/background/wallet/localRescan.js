@@ -18,15 +18,17 @@ export function installLocalRescan(wdb, node) {
   const journalLock = new Lock();
   let closing = false;
   let active = false;
+  let replaying = false;
   let failed = false;
   let target = null;
   let generation = 0;
   let ready = !(node.pool && node.pool.connected === false);
   let startupSyncDeferred = !ready;
   const unjournaled = new Set();
-  const unacknowledged = new Set();
+  const unacknowledged = new Map();
   const activeRequestIds = new Set();
   const completedRequestIds = new Set();
+  let completingReplay = false;
   function rememberCompletedRequest(id) {
     if (!id) return;
     completedRequestIds.delete(id);
@@ -38,6 +40,7 @@ export function installLocalRescan(wdb, node) {
   function publish(status) {
     const state = {
       status,
+      managed: true,
       height: wdb.height,
       target,
       generation,
@@ -60,14 +63,15 @@ export function installLocalRescan(wdb, node) {
   function advance() {
     if (failed) return;
     if (generation === 0 && unjournaled.size === 0 && unacknowledged.size === 0) return;
-    if (ready && unjournaled.size === 0 && unacknowledged.size === 0 && !active && generation > 0) {
+    if (ready && unjournaled.size === 0 && unacknowledged.size === 0 && !active && !replaying && generation > 0) {
       publish('complete');
     } else {
-      publish(active ? 'scanning' : 'waiting');
+      publish(active || replaying ? 'scanning' : 'waiting');
     }
   }
   wdb.bobRescanState = {
     status: ready ? 'idle' : 'waiting',
+    managed: true,
     height: wdb.height,
     target: null,
     generation: 0,
@@ -75,14 +79,59 @@ export function installLocalRescan(wdb, node) {
     activeRequestIds: [],
     completedRequestIds: [],
   };
-  wdb.on('block connect', advance);
+  async function completeReachedReplay() {
+    if (!node.spv || !replaying || failed || completingReplay) return;
+    const reached = [...unacknowledged.entries()]
+      .filter(([, request]) => request.target == null
+        ? chain.synced && wdb.height >= chain.height
+        : wdb.height >= request.target && chain.height >= request.target);
+    if (!reached.length) {
+      advance();
+      return;
+    }
+
+    completingReplay = true;
+    try {
+      const ids = reached.map(([id]) => id);
+      await acknowledge(ids);
+      for (const [id, request] of reached) {
+        unacknowledged.delete(id);
+        if (request.requestId) {
+          activeRequestIds.delete(request.requestId);
+          rememberCompletedRequest(request.requestId);
+        }
+      }
+      if (unacknowledged.size === 0 && unjournaled.size === 0) {
+        replaying = false;
+        ready = true;
+        failed = false;
+      }
+      advance();
+    } catch (error) {
+      failed = true;
+      ready = false;
+      publish('failed');
+      if (wdb.listenerCount('error') > 0) wdb.emit('error', error);
+      else console.error('Wallet recovery replay acknowledgement failed:', error);
+    } finally {
+      completingReplay = false;
+    }
+  }
+  wdb.on('block connect', () => {
+    advance();
+    void completeReachedReplay();
+  });
+  chain.on('full', () => { void completeReachedReplay(); });
   async function journal(update) {
     const release = await journalLock.lock();
     try {
       const raw = await wdb.db.get(JOURNAL_KEY);
       const value = raw ? JSON.parse(raw.toString('utf8')) : {next: 0, requests: []};
       if (!Number.isSafeInteger(value.next) || value.next < 0 || !Array.isArray(value.requests)
-          || value.requests.some(r => !Number.isSafeInteger(r.id) || (r.height >>> 0) !== r.height)) {
+          || value.requests.some(r => !Number.isSafeInteger(r.id)
+            || (r.height >>> 0) !== r.height
+            || (r.target != null && (!Number.isSafeInteger(r.target) || r.target < 0))
+            || (r.requestId != null && !/^[a-f0-9]{32}$/.test(r.requestId)))) {
         throw new Error('Invalid pending wallet recovery record.');
       }
       const result = update(value);
@@ -92,6 +141,11 @@ export function installLocalRescan(wdb, node) {
   }
   const acknowledge = ids => journal(value => {
     value.requests = value.requests.filter(r => !ids.includes(r.id));
+  });
+  const markRewound = ids => journal(value => {
+    for (const request of value.requests) {
+      if (ids.includes(request.id)) request.rewound = true;
+    }
   });
   const originalRescan = wdb.rescan;
   const originalClientRescan = client.rescan;
@@ -109,12 +163,20 @@ export function installLocalRescan(wdb, node) {
         this.emitAsync('block rescan', entry, txs));
     }
 
-    // A final height event is only display progress. Mark recovery ready after
-    // the actual backend scan succeeds and its journal acknowledgement is durable.
+    // SPV reset is only a durable rewind. Keep the journal until replay reaches
+    // the preserved target. Full-node scans are acknowledged after native
+    // WalletDB.rescan() releases txLock.
     if (owner.requestIds?.length) {
-      await acknowledge(owner.requestIds);
-      for (const id of owner.requestIds) unacknowledged.delete(id);
-      owner.acknowledged = true;
+      if (node.spv) {
+        await markRewound(owner.requestIds);
+        for (const id of owner.requestIds) {
+          const request = unacknowledged.get(id);
+          if (request) request.rewound = true;
+        }
+        owner.rewindAccepted = true;
+      } else {
+        owner.scanComplete = true;
+      }
     }
     return result;
   };
@@ -148,14 +210,21 @@ export function installLocalRescan(wdb, node) {
     if (requestId !== null && !/^[a-f0-9]{32}$/.test(requestId)) {
       throw new Error('WDB: Invalid recovery request identifier.');
     }
+    const requestTarget = Math.max(target || 0, chain.height || 0, wdb.height || 0);
     const ticket = {};
     if (unjournaled.size === 0 && unacknowledged.size === 0) {
       generation++;
-      target = Math.max(chain.height || 0, wdb.height || 0);
+      target = requestTarget;
       failed = false;
+    } else {
+      target = Math.max(target || 0, requestTarget);
     }
     unjournaled.add(ticket);
     if (requestId) activeRequestIds.add(requestId);
+    // SPV reset starts a replay phase in which another rescan would rewind the
+    // partial tip. Close admission synchronously so a concurrent second call
+    // cannot queue behind the first reset before `ready` is lowered later.
+    if (node.spv) ready = false;
     // Persist before waiting for either backend mutex. A crash or failed scan
     // must not silently discard a later wallet's earlier recovery requirement.
     publish(active ? 'scanning' : 'waiting');
@@ -163,28 +232,45 @@ export function installLocalRescan(wdb, node) {
     try {
       id = await journal(value => {
         const id = ++value.next;
-        value.requests.push({id, height});
+        value.requests.push({
+          id,
+          height,
+          target: requestTarget,
+          rewound: false,
+          ...(requestId ? {requestId} : {}),
+        });
         return id;
       });
       unjournaled.delete(ticket);
-      unacknowledged.add(id);
+      const request = {id, height, target: requestTarget, rewound: false, requestId};
+      unacknowledged.set(id, request);
       const owner = {requestIds: [id], requestId};
-      return await withChainLock(owner, async () => {
+      const result = await withChainLock(owner, async () => {
         if (closing) throw new Error('Wallet is stopping; recovery remains pending for restart.');
         active = true;
         publish('scanning');
         try {
           const result = await originalRescan.call(this, height);
-          if (owner.acknowledged && requestId) {
-            activeRequestIds.delete(requestId);
-            rememberCompletedRequest(requestId);
+          if (node.spv && owner.rewindAccepted) {
+            replaying = true;
+            ready = false;
+            publish('scanning');
+          } else if (owner.scanComplete) {
+            await acknowledge([id]);
+            unacknowledged.delete(id);
+            if (requestId) {
+              activeRequestIds.delete(requestId);
+              rememberCompletedRequest(requestId);
+            }
           }
           return result;
         } finally {active = false;}
       });
+      if (node.spv && owner.rewindAccepted) await completeReachedReplay();
+      return result;
     } catch (error) {
       failed = true;
-      if (requestId) activeRequestIds.delete(requestId);
+      if (requestId && id == null) activeRequestIds.delete(requestId);
       publish('failed');
       throw error;
     } finally {
@@ -205,28 +291,55 @@ export function installLocalRescan(wdb, node) {
     ready = false;
     publish('waiting');
     try {
-      return await withChainLock({requestIds: []}, async () => {
+      const result = await withChainLock({requestIds: []}, async () => {
         if (closing) return;
         await originalSync.call(this);
         const requests = await journal(value => value.requests.slice());
-        for (const request of requests) unacknowledged.add(request.id);
+        for (const request of requests) {
+          const restored = {
+            ...request,
+            target: Number.isSafeInteger(request.target) ? request.target : null,
+            rewound: request.rewound === true,
+            requestId: request.requestId || null,
+          };
+          unacknowledged.set(request.id, restored);
+          if (restored.requestId) activeRequestIds.add(restored.requestId);
+        }
         if (!requests.length) {
           failed = false;
+          replaying = false;
           ready = true;
+          target = null;
           publish('idle');
           return;
         }
         const height = requests.reduce((min, r) => Math.min(min, r.height), 0xffffffff);
-        target = Math.max(chain.height || 0, wdb.height || 0);
+        const requestTargets = requests.map(r => r.target).filter(Number.isSafeInteger);
+        target = requestTargets.length ? Math.max(...requestTargets) : null;
         if (generation === 0) generation = 1;
-        active = true;
         failed = false;
+        if (node.spv && requests.every(request => request.rewound === true)) {
+          replaying = true;
+          ready = false;
+          publish('scanning');
+          return;
+        }
+        active = true;
         const owner = ownership.getStore();
         owner.requestIds = requests.map(r => r.id);
         publish('scanning');
         await originalRescan.call(this, height);
-        ready = true;
+        if (node.spv && owner.rewindAccepted) {
+          replaying = true;
+          ready = false;
+        } else if (owner.scanComplete) {
+          await acknowledge(owner.requestIds);
+          for (const id of owner.requestIds) unacknowledged.delete(id);
+          ready = true;
+        }
       });
+      if (node.spv) await completeReachedReplay();
+      return result;
     } catch (error) {
       failed = true;
       ready = false;

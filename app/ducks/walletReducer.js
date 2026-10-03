@@ -54,6 +54,8 @@ export function getInitialState() {
     rescanHeight: null,
     rescanStatus: null,
     rescanGeneration: 0,
+    rescanBackendGeneration: 0,
+    rescanManaged: null,
     rescanReady: null,
     activeRescanRequestIds: [],
     completedRescanRequestIds: [],
@@ -192,24 +194,36 @@ export default function walletReducer(state = getInitialState(), {type, payload}
         ...state,
         walletHeight: payload,
       };
-    case SET_RESCAN_STATE:
+    case SET_RESCAN_STATE: {
+      const backendGeneration = Number.isSafeInteger(payload.backendGeneration)
+        ? payload.backendGeneration
+        : state.rescanBackendGeneration;
+      if (backendGeneration < state.rescanBackendGeneration) return state;
+      const backendChanged = backendGeneration !== state.rescanBackendGeneration;
       return {
         ...state,
         rescanStatus: payload.status,
         rescanGeneration: Number.isSafeInteger(payload.generation)
           ? payload.generation
-          : state.rescanGeneration,
-        rescanReady: typeof payload.ready === 'boolean' ? payload.ready : state.rescanReady,
+          : backendChanged ? 0 : state.rescanGeneration,
+        rescanBackendGeneration: backendGeneration,
+        rescanManaged: typeof payload.managed === 'boolean'
+          ? payload.managed
+          : backendChanged ? null : state.rescanManaged,
+        rescanReady: Object.prototype.hasOwnProperty.call(payload, 'ready')
+          ? payload.ready
+          : backendChanged ? null : state.rescanReady,
         activeRescanRequestIds: Array.isArray(payload.activeRequestIds)
           ? payload.activeRequestIds.filter(id => typeof id === 'string')
-          : state.activeRescanRequestIds,
+          : backendChanged ? [] : state.activeRescanRequestIds,
         completedRescanRequestIds: Array.isArray(payload.completedRequestIds)
           ? payload.completedRequestIds.filter(id => typeof id === 'string')
-          : state.completedRescanRequestIds,
+          : backendChanged ? [] : state.completedRescanRequestIds,
         walletSync: ['starting', 'waiting', 'scanning', 'failed'].includes(payload.status),
         walletHeight: payload.height,
         rescanHeight: payload.status === 'complete' || payload.status === 'idle' ? null : payload.target,
       };
+    }
     case SET_RESCAN_HEIGHT:
       return {
         ...state,

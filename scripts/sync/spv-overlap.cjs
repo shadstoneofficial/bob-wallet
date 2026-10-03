@@ -4,6 +4,7 @@ const watchdog = setTimeout(() => {console.error('Fixture exceeded 20 seconds');
 process.env.BABEL_DISABLE_CACHE = '1';
 require('@babel/register')({configFile: false, babelrc: false, presets: [['@babel/preset-env', {targets: {node: 'current'}}]]});
 const assert = require('assert/strict');
+const crypto = require('crypto');
 const net = require('net');
 const dgram = require('dgram');
 net.Socket.prototype.connect = net.Server.prototype.listen = () => {throw new Error('Sockets forbidden');};
@@ -16,6 +17,7 @@ const WalletDB = require('hsd/lib/wallet/walletdb');
 const NodeClient = require('hsd/lib/wallet/nodeclient');
 const WorkerPool = require('hsd/lib/workers/workerpool');
 const {installLocalRescan} = require('../../app/background/wallet/localRescan');
+const {createRecoveryAdmission} = require('../../app/background/wallet/recoveryAdmission');
 const tick = () => new Promise(r => setImmediate(r));
 (async () => {
  const workers = new WorkerPool({enabled:false});
@@ -39,7 +41,7 @@ const tick = () => new Promise(r => setImmediate(r));
  try {
   await blocks.open(); await full.open(); await spv.open(); await miner.open(); await source.open(); await tick();
   const keys = []; const addresses = []; const history = [];
-  for (let i=0;i<5;i++) {const w=await source.create(); keys.push(w.master.key.toBase58('regtest')); addresses.push(await w.receiveAddress());}
+  {const w=await source.create(); keys.push(w.master.key.toBase58('regtest')); addresses.push(await w.receiveAddress());}
   for (let i=0;i<20;i++) {
    miner.addresses.length=0; miner.addresses.push(addresses[i%5]);
    const job=await miner.cpu.createJob(); job.refresh(); const block=await job.mineAsync();
@@ -47,12 +49,26 @@ const tick = () => new Promise(r => setImmediate(r));
   }
   await wdb.open(); await tick(); await wdb.syncNode();
   assert.equal(wdb.height,20);
-  for (let i=0;i<5;i++) {
-   await wdb.create({id:`restore-${i}`,master:keys[i]});
-   // Each later restore arrives while earlier recovery is still downloading.
-   await wdb.rescan(0); assert.equal(spv.height,0); assert.equal(wdb.height,0);
-   for (const block of history.slice(0,5)) await spv.add(block);
-   assert.equal(wdb.height,5);
+  await wdb.create({id:'restore',master:keys[0]});
+  const requestId=crypto.randomBytes(16).toString('hex');
+  const adapterEnabled=!process.argv.includes('--baseline');
+  const admission=createRecoveryAdmission(()=>wdb.bobRescanState);
+  await wdb.rescan(0,{requestId});
+  assert.equal(spv.height,0); assert.equal(wdb.height,0);
+  if(adapterEnabled) {
+   assert.equal(wdb.bobRescanState.status,'scanning');
+   assert.equal(wdb.bobRescanState.target,20);
+   assert.equal(wdb.bobRescanState.ready,false);
+   assert(wdb.bobRescanState.activeRequestIds.includes(requestId));
+   assert.throws(()=>admission.beginImport(),{code:'WALLET_RECOVERY_BUSY'});
+   await assert.rejects(wdb.rescan(0),/not ready/,'a second restore cannot start during SPV replay');
+  }
+  for (const block of history.slice(0,5)) await spv.add(block);
+  assert.equal(wdb.height,5);
+  if(adapterEnabled) {
+   assert.equal(wdb.bobRescanState.status,'scanning','partial replay remains pending');
+   assert(!wdb.bobRescanState.completedRequestIds.includes(requestId));
+   assert.throws(()=>admission.beginImport(),{code:'WALLET_RECOVERY_BUSY'});
   }
   // Exercise a process-equivalent WalletDB reconstruction at partial replay.
   const persistedDB=wdb.db;
@@ -67,9 +83,22 @@ const tick = () => new Promise(r => setImmediate(r));
   wdb.on('error',e=>errors.push(e.message)); if (!process.argv.includes('--baseline')) installLocalRescan(wdb,node);
   await wdb.open(); await tick(); await wdb.syncNode();
   assert.equal(wdb.height,5);
+  if(adapterEnabled) {
+   assert.equal(wdb.bobRescanState.target,20,'restart preserves the original replay target');
+   assert.equal(wdb.bobRescanState.ready,false);
+  }
+  const restartedAdmission=createRecoveryAdmission(()=>wdb.bobRescanState);
+  if(adapterEnabled) assert.throws(()=>restartedAdmission.beginImport(),{code:'WALLET_RECOVERY_BUSY'});
   for (const block of history.slice(5)) await spv.add(block);
   assert.equal(wdb.height,20); assert.equal(spv.height,20);
-  for(let i=0;i<5;i++) assert((await (await wdb.get(`restore-${i}`)).getBalance()).confirmed>0);
+  if(adapterEnabled) {
+   for(let i=0;i<100 && wdb.bobRescanState.status!=='complete';i++) await tick();
+   assert.equal(wdb.bobRescanState.status,'complete','replay target publishes completion');
+   assert(wdb.bobRescanState.completedRequestIds.includes(requestId));
+   assert.equal(wdb.bobRescanState.ready,true);
+   assert(!restartedAdmission.isBusy(),'another import is admitted only after full replay');
+  }
+  assert((await (await wdb.get('restore')).getBalance()).confirmed>0);
   const job = await miner.cpu.createJob(); job.refresh(); const block = await job.mineAsync();
   await full.add(block); history.push(block);
   const adding = spv.add(block); await reached;
@@ -98,7 +127,7 @@ const tick = () => new Promise(r => setImmediate(r));
   for(const replay of history) await spv.add(replay);
   assert.equal(wdb.height,21);
   assert.deepEqual(errors,[]);
-  console.log(JSON.stringify({mode:'SPV',restores:5,restartAt:5,chainHeight:spv.height,walletHeight:wdb.height,allHistoriesRecovered:true,sockets:0}));
+  console.log(JSON.stringify({mode:'SPV',restores:1,restartAt:5,chainHeight:spv.height,walletHeight:wdb.height,replayTarget:20,completedAfterReplay:true,sockets:0}));
  } catch(error) {console.error("SPV fixture failure:",error); throw error;} finally {
   if(wdb.client.opened) await wdb.close(); if(source.client.opened) await source.close();
   await miner.close(); await spv.close(); await full.close(); await blocks.close(); await workers.close();

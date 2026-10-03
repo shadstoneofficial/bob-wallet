@@ -97,6 +97,8 @@ class WalletService {
     this.lastProgressUpdate = 0;
     this.lastKnownChainHeight = 0;
     this.heightBeforeRescan = null; // null = not rescanning
+    this.rescanBackendGeneration = 0;
+    this.rescanListener = null;
     this.conn = {type: null};
     this.findNonceStop = false;
     this.recoveryAdmission = createRecoveryAdmission(() => this.node?.wdb?.bobRescanState);
@@ -141,9 +143,15 @@ class WalletService {
     this.conn = await getConnection();
     assert(this.conn.type === ConnectionTypes.P2P);
 
+    this.rescanBackendGeneration++;
     this.node = plugin;
-    this.node.wdb.on('bob rescan', this.onRescanState);
-    if (this.node.wdb.bobRescanState) this.onRescanState(this.node.wdb.bobRescanState);
+    const backendGeneration = this.rescanBackendGeneration;
+    this.rescanListener = state => {
+      if (this.rescanBackendGeneration !== backendGeneration || this.node !== plugin) return;
+      this.onRescanState(state);
+    };
+    this.node.wdb.on('bob rescan', this.rescanListener);
+    if (this.node.wdb.bobRescanState) this.rescanListener(this.node.wdb.bobRescanState);
     this.network = plugin.network;
     this.networkName = this.network.type;
     this.walletApiKey = apiKey;
@@ -209,6 +217,18 @@ class WalletService {
 
     this.conn = await getConnection();
     assert(this.conn.type === ConnectionTypes.Custom);
+
+    this.rescanBackendGeneration++;
+    this.onRescanState({
+      status: 'idle',
+      managed: false,
+      ready: null,
+      height: 0,
+      target: null,
+      generation: 0,
+      activeRequestIds: [],
+      completedRequestIds: [],
+    });
 
     this.network = network;
     this.networkName = network.type;
@@ -290,14 +310,29 @@ class WalletService {
 
   onRescanState = state => {
     if (state.status === 'complete') this.recoveryAdmission.finishRescans();
-    dispatchToMainWindow({type: SET_RESCAN_STATE, payload: state});
+    dispatchToMainWindow({
+      type: SET_RESCAN_STATE,
+      payload: {...state, backendGeneration: this.rescanBackendGeneration},
+    });
   };
 
   _onNodeStop = async () => {
-    if (this.node?.wdb.bobRescanState) {
-      this.node.wdb.removeListener('bob rescan', this.onRescanState);
-      this.onRescanState({status: 'idle', height: 0, target: null});
+    if (this.node && this.rescanListener) {
+      this.node.wdb.removeListener('bob rescan', this.rescanListener);
     }
+    this.rescanListener = null;
+    this.rescanBackendGeneration++;
+    this.recoveryAdmission.resetBackend();
+    this.onRescanState({
+      status: 'idle',
+      managed: false,
+      ready: null,
+      height: 0,
+      target: null,
+      generation: 0,
+      activeRequestIds: [],
+      completedRequestIds: [],
+    });
     // Wallet as plugin is closed by the full node closing,
     // otherwise we close manually.
     if (this.conn.type === ConnectionTypes.Custom)

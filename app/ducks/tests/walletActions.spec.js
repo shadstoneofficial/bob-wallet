@@ -10,6 +10,7 @@ import {
   waitForWalletSync,
 } from '../walletActions';
 import walletReducer, {
+  SET_RESCAN_STATE,
   SET_TRANSACTIONS,
   SET_FETCHING,
 } from '../walletReducer';
@@ -171,13 +172,15 @@ test('basket wait requires its own rescan request completion token', async t => 
   const clock = sinon.useFakeTimers();
   const requestId = 'a'.repeat(32);
   const state = {node: {chain: {height: 100}}, wallet: {
+    rescanManaged: true,
+    rescanBackendGeneration: 4,
     rescanReady: true,
     walletSync: false,
     walletHeight: 100,
     rescanHeight: null,
     rescanStatus: 'complete',
     rescanGeneration: 30,
-    activeRescanRequestIds: [],
+    activeRescanRequestIds: [requestId],
     completedRescanRequestIds: ['b'.repeat(32)],
   }};
   let finished = false;
@@ -191,7 +194,14 @@ test('basket wait requires its own rescan request completion token', async t => 
 
   try {
     await clock.tickAsync(15);
-    t.notOk(finished, 'an unrelated completed request and newer global generation cannot release the basket');
+    t.notOk(finished, 'an active request, unrelated completion and newer global generation cannot release the basket');
+    state.wallet.rescanStatus = 'scanning';
+    state.wallet.completedRescanRequestIds = [];
+    state.wallet.walletHeight = 5;
+    await clock.tickAsync(5);
+    t.notOk(finished, 'partial replay does not release the basket');
+    state.wallet.rescanStatus = 'complete';
+    state.wallet.activeRescanRequestIds = [];
     state.wallet.completedRescanRequestIds.push(requestId);
     await clock.tickAsync(5);
     await waiting;
@@ -199,5 +209,51 @@ test('basket wait requires its own rescan request completion token', async t => 
   } finally {
     clock.restore();
   }
+  t.end();
+});
+
+test('backend switch clears old rescan correlation and aborts a basket wait', async t => {
+  const action = payload => ({type: SET_RESCAN_STATE, payload});
+  let wallet = walletReducer(undefined, action({
+    status: 'complete', managed: true, ready: true, backendGeneration: 8,
+    generation: 12, activeRequestIds: [], completedRequestIds: ['a'.repeat(32)],
+  }));
+  wallet = walletReducer(wallet, action({
+    status: 'idle', managed: false, ready: null, backendGeneration: 9,
+    generation: 0, activeRequestIds: [], completedRequestIds: [],
+  }));
+  t.equal(wallet.rescanBackendGeneration, 9);
+  t.equal(wallet.rescanManaged, false);
+  t.equal(wallet.rescanReady, null);
+  t.equal(wallet.rescanGeneration, 0);
+  t.deepEqual(wallet.completedRescanRequestIds, [], 'Custom RPC cannot retain local completion IDs');
+  const customState = wallet;
+  wallet = walletReducer(wallet, action({
+    status: 'complete', managed: true, ready: true, backendGeneration: 8,
+    generation: 12, activeRequestIds: [], completedRequestIds: ['a'.repeat(32)],
+  }));
+  t.equal(wallet, customState, 'a late event from the stopped local backend is ignored');
+
+  const state = {node: {chain: {height: 100}}, wallet};
+  const waiting = waitForWalletSync(10, {
+    recoveryRequestId: 'a'.repeat(32),
+    rescanBackendGenerationBefore: 8,
+    pollIntervalMs: 1,
+    timeoutMs: 10,
+  })(() => {}, () => state);
+  try {
+    await waiting;
+    t.fail('a wait cannot accept a token from a previous backend');
+  } catch (error) {
+    t.match(error.message, /backend changed/);
+  }
+
+  wallet = walletReducer(wallet, action({
+    status: 'idle', managed: true, ready: true, backendGeneration: 10,
+    generation: 0, activeRequestIds: [], completedRequestIds: [],
+  }));
+  t.equal(wallet.rescanBackendGeneration, 10, 'returning to local starts a clean backend generation');
+  t.deepEqual(wallet.completedRescanRequestIds, []);
+  t.equal(wallet.rescanManaged, true);
   t.end();
 });

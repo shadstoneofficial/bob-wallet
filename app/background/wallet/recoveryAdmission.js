@@ -40,6 +40,11 @@ export function createRecoveryAdmission(getRescanState) {
       rescans.clear();
     },
 
+    resetBackend() {
+      admissions.clear();
+      rescans.clear();
+    },
+
     isBusy,
   };
 }

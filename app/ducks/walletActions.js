@@ -295,7 +295,13 @@ export const waitForWalletSync = (
     }
     const managedRescanPending = rescanStatus === 'waiting' || rescanStatus === 'scanning';
     const requestId = options.recoveryRequestId;
+    const backendGenerationChanged = Number.isSafeInteger(options.rescanBackendGenerationBefore)
+      && state.wallet.rescanBackendGeneration !== options.rescanBackendGenerationBefore;
+    if (backendGenerationChanged) {
+      throw new Error('The wallet backend changed while waiting for recovery. Restart basket preparation after synchronization.');
+    }
     const requestCorrelationAvailable = typeof requestId === 'string'
+      && state.wallet.rescanManaged === true
       && typeof state.wallet.rescanReady === 'boolean';
     const matchingRequestActive = requestCorrelationAvailable
       && activeRescanRequestIds?.includes(requestId);
