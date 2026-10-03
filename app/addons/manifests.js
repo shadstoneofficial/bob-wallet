@@ -43,6 +43,18 @@ const BUILTIN_ADDON_MANIFESTS = Object.freeze([
     origins: ['https://liquidity.spot'],
     networks: ['main'],
   },
+  ...(process.env.NODE_ENV !== 'production' && process.env.BOB_SYSTEM_DNS_DEV === 'true' ? [{
+    schemaVersion: 1,
+    id: 'bob-system-dns',
+    name: 'Bob System DNS',
+    publisher: {name: 'Bob Wallet maintainers'},
+    version: '0.1.0-development',
+    description: 'Read-only readiness and resolver health checks for a future local system DNS feature.',
+    entry: {kind: 'native-service', service: 'system-dns'},
+    capabilities: ['resolver.readStatus'],
+    origins: [],
+    networks: ['main'],
+  }] : []),
 ].map(validateManifest));
 
 const builtInAddonRegistry = new AddonRegistry(BUILTIN_ADDON_MANIFESTS);

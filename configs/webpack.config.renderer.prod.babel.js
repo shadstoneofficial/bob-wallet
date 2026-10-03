@@ -163,6 +163,7 @@ export default {
      */
     new webpack.EnvironmentPlugin({
       NODE_ENV: 'production',
+      BOB_SYSTEM_DNS_DEV: 'false',
       ELECTRON_OVERRIDE_DIST_PATH:
         path.join(__dirname, '..', '..', 'node_modules', 'electron', 'path.txt')
     }),
