@@ -1,4 +1,5 @@
 import semver from 'semver';
+import {normalizeLocale} from '../utils/i18n';
 const pkg = require('../../package.json');
 import settingsClient from "../utils/settingsClient";
 import hip2Client from '../utils/hip2Client';
@@ -45,16 +46,37 @@ export const initHip2 = () => async (dispatch) => {
   })
 }
 
+// Serialize Settings/header writes and prevent late startup reads replacing a choice.
+let localeRevision = 0;
+let localeWrite = Promise.resolve();
+function queueLocaleWrite(write) {
+  localeRevision++;
+  const result = localeWrite.then(write);
+  localeWrite = result.catch(() => {});
+  return result;
+}
+const validCustomLocale = value => value && typeof value === 'object' && !Array.isArray(value)
+  && Object.values(value).every(text => typeof text === 'string');
+
 export const fetchLocale = () => async dispatch => {
-  const locale = await settingsClient.getLocale();
-  const customLocale = await settingsClient.getCustomLocale();
-  if (customLocale) {
-    try {
-      dispatch(setCustomLocale(JSON.parse(customLocale)));
-    } catch (e) {}
-    return;
+  const revision = localeRevision;
+  let locale = 'en-US';
+  let custom = null;
+  try {
+    await localeWrite;
+    const saved = await settingsClient.getLocale();
+    const raw = await settingsClient.getCustomLocale();
+    if (saved === 'custom' && raw) {
+      const parsed = JSON.parse(raw);
+      if (validCustomLocale(parsed)) custom = parsed;
+    }
+    locale = custom ? 'custom' : normalizeLocale(saved);
+  } catch (_) {
+    // Missing/corrupt preferences must not leave the login language blank.
   }
-  dispatch(setLocale(locale));
+  if (revision !== localeRevision) return;
+  dispatch({type: SET_CUSTOM_LOCALE, payload: custom});
+  dispatch({type: SET_LOCALE, payload: locale});
 };
 
 export const fetchTheme = () => async dispatch => {
@@ -73,31 +95,28 @@ export const fetchShowUsdValue = () => async dispatch => {
   });
 };
 
-export const setLocale = locale => async (dispatch) => {
-  await settingsClient.setLocale(locale);
-  dispatch({
-    type: SET_LOCALE,
-    payload: locale,
-  });
-};
+export const setLocale = locale => (dispatch, getState) => queueLocaleWrite(async () => {
+  const next = normalizeLocale(locale);
+  await settingsClient.setLocale(next);
+  dispatch({type: SET_CUSTOM_LOCALE, payload: null});
+  dispatch({type: SET_LOCALE, payload: next});
+}).catch(async error => {
+  // A failed pre-hydration choice invalidated the original startup read. Recover
+  // the saved preference before reporting failure instead of leaving a fallback.
+  if (!getState().app.locale) await dispatch(fetchLocale());
+  throw error;
+});
 
-export const setCustomLocale = json => async (dispatch) => {
+export const setCustomLocale = json => dispatch => {
   if (!json) {
-    dispatch({
-      type: SET_CUSTOM_LOCALE,
-      payload: null,
-    });
-    return;
+    dispatch({type: SET_CUSTOM_LOCALE, payload: null});
+    return Promise.resolve();
   }
-
-  await settingsClient.setCustomLocale(json);
-  dispatch({
-    type: SET_LOCALE,
-    payload: 'custom',
-  });
-  dispatch({
-    type: SET_CUSTOM_LOCALE,
-    payload: json,
+  return queueLocaleWrite(async () => {
+    if (!validCustomLocale(json)) throw new Error('Invalid custom locale JSON');
+    await settingsClient.setCustomLocale(json);
+    dispatch({type: SET_CUSTOM_LOCALE, payload: json});
+    dispatch({type: SET_LOCALE, payload: 'custom'});
   });
 };
 
