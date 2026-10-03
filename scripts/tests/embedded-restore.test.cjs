@@ -6,8 +6,12 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const {spawnSync} = require('node:child_process');
 const child = path.join(__dirname, 'fixtures/embedded-restore-process.cjs');
-for (const nodeMode of ['full', 'spv']) {
-  test(`actual embedded ${nodeMode} disk profile survives two separate source processes`, {timeout: 120000}, () => {
+for (const {nodeMode, delayedAck} of [
+  {nodeMode: 'full', delayedAck: false},
+  {nodeMode: 'spv', delayedAck: false},
+  {nodeMode: 'spv', delayedAck: true},
+]) {
+  test(`actual embedded ${nodeMode} disk profile survives two separate source processes${delayedAck ? ' with delayed disk acknowledgement' : ''}`, {timeout: 120000}, () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bob-embedded-source-'));
     const userData = path.join(root, 'profile');
     fs.mkdirSync(userData);
@@ -19,8 +23,8 @@ for (const nodeMode of ['full', 'spv']) {
       transactionMode: 'disabled', externalTransactionNetwork: false,
       statusPath: path.join(root, 'status.json'), eventLogPath: path.join(root, 'events.jsonl'),
     }), {mode: 0o600});
-    const run = () => {
-      const result = spawnSync(process.execPath, [child, root], {encoding: 'utf8', timeout: 55000});
+    const run = (delay = false) => {
+      const result = spawnSync(process.execPath, [child, root, ...(delay ? ['delay-final-ack'] : [])], {encoding: 'utf8', timeout: 55000});
       assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
       const line = result.stdout.split('\n').find(value => value.startsWith('EMBEDDED_RESTORE_RESULT '));
       assert(line, 'Missing embedded process evidence.');
@@ -34,7 +38,8 @@ for (const nodeMode of ['full', 'spv']) {
       if (nodeMode === 'full') assert.equal(first.evidence.backendState.status, 'failed');
       else assert.equal(first.evidence.backendState.ready, false);
       assert(first.evidence.pendingRequestIds.includes(first.evidence.requestId));
-      const second = run();
+      const second = run(delayedAck);
+      if (delayedAck) assert.equal(second.delayedAcknowledgements, 1);
       assert.equal(second.evidence.height, 20);
       assert.equal(second.evidence.backendState.ready, true);
       assert.equal(second.evidence.recoveryAdmissionClosed, false);

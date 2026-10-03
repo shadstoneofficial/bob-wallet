@@ -93,6 +93,20 @@ const watchdog = setTimeout(() => {process.stderr.write('Embedded source fixture
     await assert.rejects(registered.get('DB.put')('acceptance-embedded-restore-v1', {}),
       {code: 'ERR_PACKAGED_ACCEPTANCE_POLICY'});
     await services.node.service.start('regtest');
+    let delayedAcknowledgements = 0;
+    if (process.argv[3] === 'delay-final-ack') {
+      const wdb = services.wallet.service.node.wdb;
+      const journalKey = Buffer.from('ff626f622d72657363616e2d7631', 'hex');
+      const originalPut = wdb.db.put;
+      wdb.db.put = async function(key, value) {
+        if (Buffer.isBuffer(key) && key.equals(journalKey)
+            && JSON.parse(value.toString('utf8')).requests.length === 0) {
+          delayedAcknowledgements += 1;
+          await new Promise(resolve => setTimeout(resolve, 250));
+        }
+        return originalPut.call(this, key, value);
+      };
+    }
     const result = await seedDisposableMultiwallet(services, config);
     for (const walletId of result.walletIds) {
       services.wallet.service.setWallet(walletId);
@@ -107,7 +121,8 @@ const watchdog = setTimeout(() => {process.stderr.write('Embedded source fixture
     }
     assert.equal(monitor.snapshot().length, 0, JSON.stringify(monitor.snapshot()));
     process.stdout.write(`EMBEDDED_RESTORE_RESULT ${JSON.stringify({evidence, rescanActions,
-      wallets: result.walletIds, failures: monitor.snapshot(), realProfileAccessed: false})}\n`);
+      wallets: result.walletIds, delayedAcknowledgements,
+      failures: monitor.snapshot(), realProfileAccessed: false})}\n`);
   } finally {
     await services.node.service.stop();
     await services.db.close();

@@ -10,7 +10,7 @@ const STATE_KEY = 'acceptance-embedded-restore-v1';
 const JOURNAL_KEY = Buffer.from('ff626f622d72657363616e2d7631', 'hex');
 const WALLET_IDS = ['acceptance-primary', 'acceptance-secondary',
   'acceptance-restore-03', 'acceptance-restore-04', 'acceptance-restore-05'];
-const tick = () => new Promise(resolve => setImmediate(resolve));
+const waitForDisk = () => new Promise(resolve => setTimeout(resolve, 10));
 
 async function initializeEmbeddedRestore(services, config) {
   assert(['restore-full', 'restore-spv'].includes(config.scenario), 'Fixed restore scenario required.');
@@ -113,7 +113,11 @@ async function initializeEmbeddedRestore(services, config) {
     assert((await pending()).some(request => request.requestId === state.requestId));
     for (const raw of state.history.slice(chain.height)) await chain.add(Block.fromRaw(Buffer.from(raw, 'hex')));
   }
-  for (let i = 0; i < 100 && !wdb.bobRescanState.ready; i++) await tick();
+  const deadline = Date.now() + 10000;
+  while ((!wdb.bobRescanState.ready || (await pending()).length > 0
+      || walletService.recoveryAdmission.isBusy()) && Date.now() < deadline) {
+    await waitForDisk();
+  }
   assert.strictEqual(wdb.height, 20);
   assert.strictEqual(wdb.bobRescanState.ready, true);
   assert.strictEqual((await pending()).length, 0);
