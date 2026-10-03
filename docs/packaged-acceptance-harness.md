@@ -59,7 +59,7 @@ Each launch receives its own status and backend-event files, so a current result
 
 Source tests for the unsupported rows remain useful regression evidence but are not packaged acceptance. The backend startup/scan cause and restore implementation belong to the separate restore/rescan investigation; this harness does not ignore the `Pool is not connected!` assertion or claim to fix it.
 
-The logged-out language dropdown (PR #16) and ShakeX display work (PR #15) are separate product changes and are not included in this harness branch. A later acceptance build must use a reviewed merge base containing the intended product changes. Arthur's add-on acceptance remains pending; this harness is not a product acceptance pass.
+The harness branch is now integrated with merged `master` at `5c224d0`, including the logged-out language dropdown from PR #16. ShakeX display work from PR #15 and restore/rescan work from PR #18 remain separate until their owners complete review. A later acceptance build must use a reviewed merge base containing every intended product change. Arthur's add-on acceptance remains pending; this harness is not a product acceptance pass.
 
 ## Integration with the restore/rescan lifecycle work
 
