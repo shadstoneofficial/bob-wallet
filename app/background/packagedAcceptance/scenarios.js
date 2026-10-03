@@ -51,7 +51,9 @@ function buildControlledScenarioPlan(scenario) {
     externalTransactionNetwork: false,
     signingAllowed: false,
     broadcastAllowed: false,
-    evidenceClass: 'source-simulation-only',
+    evidenceClass: definition.fixtureType.startsWith('basket') || definition.fixtureType === 'auction-retry'
+      ? 'source-product-path'
+      : 'source-plan-only',
   };
   if (definition.fixtureType === 'restore-history') {
     return {
@@ -82,7 +84,65 @@ function buildControlledScenarioPlan(scenario) {
   return base;
 }
 
-async function executeControlledSourceFixture(plan, {restoreReplay} = {}) {
+function pendingProductFixture(plan) {
+  return {
+    status: 'PENDING',
+    reason: 'source-product-fixture-adapter-unavailable',
+    fixtureType: plan.fixtureType,
+    packagedUiStatus: 'NOT TESTED',
+  };
+}
+
+function assertProductEvidence(condition, message) {
+  if (!condition) {
+    const error = new Error(`Controlled product fixture failed: ${message}`);
+    error.code = 'ERR_ACCEPTANCE_PRODUCT_FIXTURE';
+    throw error;
+  }
+}
+
+function validateAuctionRetryEvidence(result) {
+  assertProductEvidence(result?.productPath?.includes('AuctionBasket.onSubmit'), 'AuctionBasket UI path was not exercised.');
+  assertProductEvidence(result?.productPath?.includes('sendBidMany'), 'sendBidMany action was not exercised.');
+  assertProductEvidence(result?.productPath?.includes('submitBidManyLifecycle'), 'submission coordinator was not exercised.');
+  assertProductEvidence(result.firstFailure?.phase === 'failed', 'the real error was not retained in failed UI state.');
+  assertProductEvidence(result.firstFailure?.failedStage === 'building', 'the failure did not remain at the construction boundary.');
+  assertProductEvidence(result.firstFailure?.retryAllowed === true, 'Retry was not offered after a pre-signing failure.');
+  assertProductEvidence(result.firstFailure?.visibleErrors > 0, 'the real error was not surfaced through the UI notification path.');
+  assertProductEvidence(result.retryAttempted === true && result.preparationCalls === 2, 'Retry did not re-enter real construction exactly once.');
+  assertProductEvidence(result.inertBroadcastCalls === 0 && result.liveBroadcastCalls === 0, 'a broadcast boundary was reached.');
+  assertProductEvidence(result.basketNamesPreserved === 1, 'the failed basket was not preserved.');
+}
+
+function validateDelayedBasketEvidence(result, plan) {
+  assertProductEvidence(result?.productPath?.includes('AuctionBasket.onSubmit/onBackToBasket'), 'AuctionBasket navigation path was not exercised.');
+  assertProductEvidence(result?.productPath?.includes('sendBidMany'), 'sendBidMany action was not exercised.');
+  assertProductEvidence(result.namesSubmitted === plan.names.length, 'the real action did not receive every basket row.');
+  assertProductEvidence(result.namesPreserved === plan.names.length, 'back navigation changed the basket.');
+  assertProductEvidence(result.preparationCalls === 1, 'construction did not start exactly once.');
+  assertProductEvidence(result.cancelCalls >= 1, 'the real cancellation adapter was not invoked.');
+  assertProductEvidence(result.returnedToEdit === true, 'back navigation did not restore edit state.');
+  assertProductEvidence(result.cancellationStopsContinuation === true, 'late construction continued after cancellation.');
+  assertProductEvidence(result.inertBroadcastCalls === 0 && result.liveBroadcastCalls === 0, 'cancelled construction reached a broadcast boundary.');
+  assertProductEvidence(result.basketClears === 0, 'the basket was cleared without a transaction.');
+}
+
+function validateAmbiguousBasketEvidence(result, plan) {
+  assertProductEvidence(result?.productPath?.includes('AuctionBasket draft/navigation'), 'AuctionBasket reuse path was not exercised.');
+  assertProductEvidence(result?.productPath?.includes('sendBidMany duplicate lock'), 'sendBidMany duplicate lock was not exercised.');
+  assertProductEvidence(result.firstFailure?.failedStage === 'broadcasting', 'ambiguous failure was not attributed to broadcasting.');
+  assertProductEvidence(result.firstFailure?.retryAllowed === false, 'ambiguous failure incorrectly enabled Retry.');
+  assertProductEvidence(result.firstFailure?.broadcastUncertain === true, 'ambiguous state was not retained.');
+  assertProductEvidence(result.firstFailure?.visibleErrors > 0, 'ambiguous failure was not visible.');
+  assertProductEvidence(result.persistedLock === true, 'navigation/profile reuse did not restore the safety lock.');
+  assertProductEvidence(result.duplicateBlockedAfterReuse === true, 'the product action did not block duplicate submission after reuse.');
+  assertProductEvidence(result.preparationCalls === 1, 'duplicate navigation caused another construction.');
+  assertProductEvidence(result.inertBroadcastCalls === plan.maximumBoundaryCalls, 'ambiguous boundary call count changed.');
+  assertProductEvidence(result.liveBroadcastCalls === 0, 'a live broadcast was attempted.');
+  assertProductEvidence(result.basketNamesPreserved === plan.names.length, 'the ambiguous basket was not preserved.');
+}
+
+async function executeControlledSourceFixture(plan, {restoreReplay, productAdapter} = {}) {
   switch (plan.fixtureType) {
     case 'restore-history': {
       if (typeof restoreReplay !== 'function') {
@@ -131,72 +191,33 @@ async function executeControlledSourceFixture(plan, {restoreReplay} = {}) {
       };
     }
     case 'auction-retry': {
-      let attempts = 0;
-      const review = async () => {
-        attempts += 1;
-        if (attempts === 1) {
-          const failure = new Error('Fixture pre-signing failure.');
-          failure.code = 'ERR_ACCEPTANCE_PRE_SIGN';
-          throw failure;
-        }
-        return {safeToRetry: true};
-      };
-      let error;
-      try {
-        await review();
-      } catch (failure) {
-        error = failure;
-      }
-      const retry = await review();
+      if (typeof productAdapter?.runAuctionRetry !== 'function') return pendingProductFixture(plan);
+      const evidence = await productAdapter.runAuctionRetry(plan);
+      validateAuctionRetryEvidence(evidence);
       return {
-        status: 'SOURCE FIXTURE READY',
-        retainedError: {code: error.code, message: error.message},
-        reviewAttempts: attempts,
-        retryAvailable: retry.safeToRetry,
-        signingCalls: 0,
-        broadcastCalls: 0,
+        status: 'SOURCE PRODUCT PATH READY',
+        evidence,
         packagedUiStatus: 'NOT TESTED',
       };
     }
     case 'basket-delayed': {
-      let constructionCalls = 0;
-      let cancelled = false;
-      const construct = async () => {
-        constructionCalls += 1;
-        await Promise.resolve();
-        return {continued: !cancelled};
-      };
-      const pending = construct();
-      cancelled = true;
-      const construction = await pending;
+      if (typeof productAdapter?.runDelayedBasket !== 'function') return pendingProductFixture(plan);
+      const evidence = await productAdapter.runDelayedBasket(plan);
+      validateDelayedBasketEvidence(evidence, plan);
       return {
-        status: 'SOURCE FIXTURE READY',
-        namesPreserved: plan.names.length,
-        constructionCalls,
-        cancellationStopsContinuation: !construction.continued,
-        signingCalls: 0,
-        broadcastCalls: 0,
+        status: 'SOURCE PRODUCT PATH READY',
+        evidence,
         packagedUiStatus: 'NOT TESTED',
       };
     }
     case 'basket-ambiguous': {
-      let boundaryCalls = 0;
-      let retryLocked = false;
-      const boundary = async () => {
-        boundaryCalls += 1;
-        retryLocked = true;
-        return {outcome: 'unknown'};
-      };
-      const result = await boundary();
-      if (!retryLocked) await boundary();
+      if (typeof productAdapter?.runAmbiguousBasket !== 'function') return pendingProductFixture(plan);
+      const evidence = await productAdapter.runAmbiguousBasket(plan);
+      validateAmbiguousBasketEvidence(evidence, plan);
       return {
-        status: 'SOURCE FIXTURE READY',
-        boundaryCalls,
-        outcome: result.outcome,
-        retryLocked,
+        status: 'SOURCE PRODUCT PATH READY',
+        evidence,
         inertPayloadDigest: plan.inertPayloadDigest,
-        signingCalls: 0,
-        liveBroadcastCalls: 0,
         packagedUiStatus: 'NOT TESTED',
       };
     }

@@ -32,6 +32,9 @@ const {
   createGeneratedRestoreHistory,
   executeControlledSourceFixture,
 } = require('../../app/background/packagedAcceptance/scenarios');
+const {
+  createProductFixtureAdapter,
+} = require('../lib/packaged-acceptance-product-fixture.cjs');
 
 function acceptanceManifest(root) {
   const userData = path.join(root, 'user-data');
@@ -482,25 +485,66 @@ test('restore plan stays pending without the reviewed PR 18 replay capability', 
   });
 });
 
-test('auction and basket source fixtures are inert and retain fail-closed evidence', async () => {
-  const retry = await executeControlledSourceFixture(buildControlledScenarioPlan('auction-retry'));
-  assert.equal(retry.retainedError.code, 'ERR_ACCEPTANCE_PRE_SIGN');
-  assert.equal(retry.reviewAttempts, 2);
-  assert.equal(retry.retryAvailable, true);
-  assert.equal(retry.signingCalls, 0);
-  assert.equal(retry.broadcastCalls, 0);
+test('auction and basket scenarios stay pending when the source product adapter is absent', async () => {
+  for (const scenario of ['auction-retry', 'basket-20-delayed', 'basket-ambiguous']) {
+    const result = await executeControlledSourceFixture(buildControlledScenarioPlan(scenario));
+    assert.equal(result.status, 'PENDING');
+    assert.equal(result.reason, 'source-product-fixture-adapter-unavailable');
+    assert.equal(result.packagedUiStatus, 'NOT TESTED');
+  }
+});
 
-  const delayed = await executeControlledSourceFixture(buildControlledScenarioPlan('basket-20-delayed'));
-  assert.equal(delayed.namesPreserved, 20);
-  assert.equal(delayed.constructionCalls, 1);
-  assert.equal(delayed.cancellationStopsContinuation, true);
-  assert.equal(delayed.signingCalls, 0);
-  assert.equal(delayed.broadcastCalls, 0);
+test('auction Retry drives the real UI, Redux action, and submission coordinator without broadcast', async () => {
+  const result = await executeControlledSourceFixture(
+    buildControlledScenarioPlan('auction-retry'),
+    {productAdapter: createProductFixtureAdapter()},
+  );
+  assert.equal(result.status, 'SOURCE PRODUCT PATH READY');
+  assert.equal(result.evidence.firstFailure.retryAllowed, true);
+  assert.equal(result.evidence.firstFailure.visibleErrors, 1);
+  assert.equal(result.evidence.retryAttempted, true);
+  assert.equal(result.evidence.preparationCalls, 2);
+  assert.equal(result.evidence.inertBroadcastCalls, 0);
+  assert.equal(result.evidence.liveBroadcastCalls, 0);
+  assert.equal(result.packagedUiStatus, 'NOT TESTED');
+});
 
-  const ambiguous = await executeControlledSourceFixture(buildControlledScenarioPlan('basket-ambiguous'));
-  assert.equal(ambiguous.boundaryCalls, 1);
-  assert.equal(ambiguous.outcome, 'unknown');
-  assert.equal(ambiguous.retryLocked, true);
-  assert.equal(ambiguous.signingCalls, 0);
-  assert.equal(ambiguous.liveBroadcastCalls, 0);
+test('20-name back navigation cancels the real product path and preserves the basket', async () => {
+  const result = await executeControlledSourceFixture(
+    buildControlledScenarioPlan('basket-20-delayed'),
+    {productAdapter: createProductFixtureAdapter()},
+  );
+  assert.equal(result.status, 'SOURCE PRODUCT PATH READY');
+  assert.equal(result.evidence.namesSubmitted, 20);
+  assert.equal(result.evidence.namesPreserved, 20);
+  assert.equal(result.evidence.cancellationStopsContinuation, true);
+  assert.equal(result.evidence.inertBroadcastCalls, 0);
+  assert.equal(result.evidence.liveBroadcastCalls, 0);
+  assert.equal(result.evidence.basketClears, 0);
+});
+
+test('ambiguous product boundary retains the lock across navigation and profile reuse', async () => {
+  const result = await executeControlledSourceFixture(
+    buildControlledScenarioPlan('basket-ambiguous'),
+    {productAdapter: createProductFixtureAdapter()},
+  );
+  assert.equal(result.status, 'SOURCE PRODUCT PATH READY');
+  assert.equal(result.evidence.firstFailure.retryAllowed, false);
+  assert.equal(result.evidence.firstFailure.broadcastUncertain, true);
+  assert.equal(result.evidence.persistedLock, true);
+  assert.equal(result.evidence.duplicateBlockedAfterReuse, true);
+  assert.equal(result.evidence.preparationCalls, 1);
+  assert.equal(result.evidence.inertBroadcastCalls, 1);
+  assert.equal(result.evidence.liveBroadcastCalls, 0);
+});
+
+test('mutation: removing AuctionBasket cancellation makes the controlled fixture fail', async () => {
+  await assert.rejects(
+    executeControlledSourceFixture(
+      buildControlledScenarioPlan('basket-20-delayed'),
+      {productAdapter: createProductFixtureAdapter({mutateCancellationGuard: true})},
+    ),
+    error => error?.code === 'ERR_ACCEPTANCE_PRODUCT_FIXTURE'
+      && /cancellation|broadcast boundary/i.test(error.message),
+  );
 });
