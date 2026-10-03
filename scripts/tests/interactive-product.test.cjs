@@ -41,7 +41,8 @@ function startBackend(scenario,values=new Map()){
   const db={get:async key=>values.get(key)||null,put:async(key,value)=>values.set(key,structuredClone(value))};
   installProductRuntime({scenario},db,server);
   const runtime=require('../../app/background/packagedAcceptance/productRuntime').getProductRuntime();
-  server.withService('Wallet',wrapAcceptanceWalletMethods({getAuctionInfo:()=>assert.fail('raw auction'),findBasketBidTransactions:()=>assert.fail('raw history'),prepareBidMany:()=>assert.fail('raw signing'),cancelBidManyAttempt:()=>assert.fail('raw cancellation'),broadcastPreparedBidMany:()=>assert.fail('live broadcast')},true));
+  server.withService('Wallet',wrapAcceptanceWalletMethods({getAuctionInfo:()=>assert.fail('raw auction'),findBasketBidTransactions:()=>assert.fail('raw history'),prepareBidMany:()=>assert.fail('raw signing'),cancelBidManyAttempt:()=>assert.fail('raw cancellation'),broadcastPreparedBidMany:()=>assert.fail('live broadcast'),getPendingTransactions:()=>assert.fail('raw pending history')},true));
+  server.withService('DB',db);
   server.withService('Node',runtime.nodeMethods);
   server.withService('Analytics',{screenView:async()=>null});
   server.start();
@@ -155,4 +156,34 @@ test('actual disposable login verification does not request or reveal a seed',as
   const actions=[];
   await verifyPhrase('unused-disposable-test-passphrase')(action=>actions.push(action),()=>({wallet:{watchOnly:false}}));
   assert.deepEqual(actions,[{type:SET_PHRASE_MISMATCH,payload:false}]);
+});
+
+test('real delayed 20-name success clears only after one inert result with an ID',async()=>{
+  // A different disposable app process must not share the earlier ambiguity lock.
+  if(process.env.BOB_INERT_SUCCESS_CHILD !== 'true') {
+    const {spawnSync}=require('node:child_process');
+    const environment={...process.env,BOB_INERT_SUCCESS_CHILD:'true'};
+    delete environment.NODE_TEST_CONTEXT;
+    const result=spawnSync(process.execPath,['--test','--test-name-pattern=real delayed 20-name success',__filename],{
+      env:environment,encoding:'utf8',timeout:30000,
+    });
+    assert.equal(result.status,0,result.stdout+result.stderr);
+    assert.match(result.stdout,/# pass 1\b/);
+    return;
+  }
+  const runtime=startBackend('basket-20-delayed');const root=await mount();
+  try{
+    await reviewAndAccept();await submit();
+    assert.equal(document.querySelector('[data-testid="acceptance-basket-clears"]').textContent,'0');
+    for(let i=0;i<120 && !(await runtime.describe()).state.inertTxid;i++){
+      await act(async()=>{await new Promise(resolve=>setTimeout(resolve,100));});
+    }
+    await tick();
+    const state=(await runtime.describe()).state;
+    assert.equal(state.preparationCalls,1);
+    assert.equal(state.inertBoundaryCalls,1);
+    assert.equal(state.liveBroadcastCalls,0);
+    assert.match(state.inertTxid,/^[a-f0-9]{64}$/);
+    assert.equal(document.querySelector('[data-testid="acceptance-basket-clears"]').textContent,'1');
+  }finally{await act(async()=>root.unmount());window.localStorage.clear();}
 });

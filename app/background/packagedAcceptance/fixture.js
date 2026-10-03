@@ -45,7 +45,9 @@ async function waitForWalletService(walletService, timeoutMs = 30000) {
 async function seedDisposableMultiwallet(services, config) {
   const walletService = services.wallet.service;
   await waitForWalletService(walletService);
-  const wanted = ['acceptance-primary', 'acceptance-secondary'];
+  const wanted = config.scenario.startsWith('restore-')
+    ? require('./embeddedRestore').WALLET_IDS
+    : ['acceptance-primary', 'acceptance-secondary'];
   const existing = new Set((await walletService.listWallets()).map(wallet => wallet.wid));
   const created = [];
 
@@ -58,7 +60,7 @@ async function seedDisposableMultiwallet(services, config) {
   const scenarioPlan = buildControlledScenarioPlan(config.scenario);
   const runtime = require('./productRuntime').getProductRuntime();
   const sourceFixture = runtime && scenarioPlan.fixtureType === 'restore-history'
-    ? await runtime.initializeRestore()
+    ? await runtime.initializeRestore(services)
     : runtime && scenarioPlan.evidenceClass === 'source-product-path'
     ? {status: 'INTERACTIVE FIXTURE IMPLEMENTED', snapshot: await runtime.describe(), packagedUiStatus: 'NOT TESTED'}
     : await executeControlledSourceFixture(scenarioPlan);

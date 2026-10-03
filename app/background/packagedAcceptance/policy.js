@@ -9,6 +9,7 @@ const BLOCKED_WALLET_METHODS = new Set([
   'setAddressMetadata',
   'setPassphrase',
   'revealSeed',
+  'getMasterHDKey',
   'removeWalletById',
   'updateAccountDepth',
   'findNonce',
@@ -64,6 +65,7 @@ const BLOCKED_WALLET_METHODS = new Set([
 
 const PROTECTED_DB_KEYS = new Set([
   'acceptance-fixed-product-state-v1',
+  'acceptance-embedded-restore-v1',
   'connection_type',
   'network',
   'hsdPrefixDir',
@@ -157,7 +159,14 @@ function constrainHsdOptions(options, active, prefix) {
     network: 'regtest',
     prefix,
     noDns: true,
-    listen: true,
+    listen: false,
+    host: '127.0.0.1',
+    httpHost: '127.0.0.1',
+    walletHttpHost: '127.0.0.1',
+    seeds: [],
+    nodes: [],
+    maxOutbound: 1,
+    createSocket: () => blocked('outbound P2P socket'),
   };
 }
 
@@ -202,6 +211,7 @@ function installAcceptanceBackendPolicy(services, config) {
 
   for (const method of [
     'broadcastRawTx',
+    'generateToAddress',
     'sendRawAirdrop',
     'sendRawClaim',
     'testCustomRPCClient',

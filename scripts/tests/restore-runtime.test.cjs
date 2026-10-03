@@ -10,10 +10,9 @@ const deny = () => {throw new Error('Source replay test forbids every socket.');
 net.Socket.prototype.connect = net.connect = net.createConnection = net.Server.prototype.listen = deny;
 dgram.createSocket = deny;
 const {installProductRuntime, getProductRuntime} = require('../../app/background/packagedAcceptance/productRuntime');
-const {seedDisposableMultiwallet} = require('../../app/background/packagedAcceptance/fixture');
 
 for (const scenario of ['restore-full', 'restore-spv']) {
-  test(`app fixture initialization invokes actual reviewed ${scenario} replay`, {timeout: 30000}, async () => {
+  test(`retained in-memory fixture invokes actual reviewed ${scenario} replay`, {timeout: 30000}, async () => {
     const values = new Map();
     let exposed;
     installProductRuntime({scenario}, {
@@ -21,12 +20,7 @@ for (const scenario of ['restore-full', 'restore-spv']) {
     }, {withService(name, methods) {
       assert.equal(name, 'Acceptance'); exposed = Object.keys(methods);
     }});
-    const service = {node: {wdb: {db: {loaded: true}}},
-      listWallets: async () => ['acceptance-primary', 'acceptance-secondary'].map(wid => ({wid})),
-      createNewWallet: () => assert.fail('No arbitrary wallet creation permitted by this source test'),
-      setWallet: id => assert.equal(id, 'acceptance-primary')};
-    const result = await seedDisposableMultiwallet({wallet: {service}}, {scenario});
-    const evidence = result.sourceFixture;
+    const evidence = await getProductRuntime().initializeRestore();
     assert.deepEqual(exposed, ['describe']);
     assert.equal(evidence.status, 'SOURCE REVIEWED REPLAY PASSED');
     assert.equal(evidence.reviewedAdapter, 'installLocalRescan');

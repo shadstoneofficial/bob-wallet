@@ -23,7 +23,7 @@
     "test:sync": "node scripts/sync/run.cjs",
     "pretest": "webpack --config ./configs/webpack.config.test.babel.js",
     "test": "tape -r jsdom-global/register ./test-dist/test.js && npm run test:packaged-harness",
-    "test:packaged-harness": "node --test scripts/tests/packaged-acceptance.test.cjs scripts/tests/product-runtime.test.cjs scripts/tests/interactive-product.test.cjs scripts/tests/restore-runtime.test.cjs scripts/tests/acceptance-routes.test.cjs",
+    "test:packaged-harness": "node --test scripts/tests/packaged-acceptance.test.cjs scripts/tests/product-runtime.test.cjs scripts/tests/interactive-product.test.cjs scripts/tests/restore-runtime.test.cjs scripts/tests/embedded-restore.test.cjs scripts/tests/acceptance-routes.test.cjs",
     "add-locale": "node scripts/add-locale.js",
     "check-all-locales": "node scripts/check-all-locales.js",
     "check-locale": "node scripts/check-locale.js",

@@ -1210,7 +1210,7 @@
   "shakexLoadTimeout": "คำขอหมดเวลา โปรดลองอีกครั้ง",
   "shakexLoadError": "ไม่สามารถโหลดรายการ ShakeX โปรดลองอีกครั้งในภายหลังหรือเปิด ShakeX",
   "shakexShowingPrevious": "รายการที่โหลดก่อนหน้านี้ยังคงอยู่ด้านล่าง",
-  "shakexSearchLabel": "ค้นหาชื่อ (ASCII / punycode)",
+  "shakexSearchLabel": "ค้นหาชื่อ (Unicode / อีโมจิ / punycode)",
   "shakexSearchPlaceholder": "ค้นหาชื่อ",
   "shakexListingCountOne": "ประกาศ %s รายการ ข้อมูลติดต่อผู้ขายแสดงตามที่เผยแพร่ ไม่ใช่ตัวตนที่ผ่านการยืนยัน",
   "shakexListingCountMany": "ประกาศ %s รายการ ข้อมูลติดต่อผู้ขายแสดงตามที่เผยแพร่ ไม่ใช่ตัวตนที่ผ่านการยืนยัน",
@@ -1300,5 +1300,7 @@
   "addonLiquidityChannelTitle": "ช่องทาง Liquidity",
   "addonLiquidityChannelHelp": "ผู้เยี่ยมชมควรใช้ P2P ได้โดยไม่ต้องมี GFAVIP ส่วน GFAVIP เป็นตัวเลือกสำหรับ Gems และสิทธิประโยชน์บัญชี",
   "addonLiquidityChannelSave": "เพิ่ม/บันทึก",
-  "addonLiquidityChannelInvalid": "กรอกโฮสต์ช่องทางที่ถูกต้อง"
+  "addonLiquidityChannelInvalid": "กรอกโฮสต์ช่องทางที่ถูกต้อง",
+  "walletRescanWaiting": "กำลังรอสแกนประวัติกระเป๋าเงินใหม่…",
+  "walletRescanFailed": "การกู้คืนกระเป๋าเงินยังไม่เสร็จสมบูรณ์ เริ่ม Bob ใหม่เพื่อดำเนินการต่อ"
 }

@@ -20,6 +20,7 @@ export default function InteractiveFixture() {
   const [visible, setVisible] = useState(true);
   const [notice, setNotice] = useState('');
   const [review, setReview] = useState(null);
+  const [basketClears, setBasketClears] = useState(0);
   useEffect(() => {
     let active = true;
     const update = () => acceptance.describe().then(value => {if(active)setFixture(value);})
@@ -59,14 +60,15 @@ export default function InteractiveFixture() {
     <p role="alert">{notice}</p>
     <button type="button" onClick={()=>setVisible(value=>!value)}>{visible?'Leave basket':'Return to basket'}</button>
     <pre data-testid="acceptance-state">{JSON.stringify(fixture.state,null,2)}</pre>
+    <output data-testid="acceptance-basket-clears">{basketClears}</output>
     {fixture.plan.fixtureType === 'restore-history' && <pre data-testid="acceptance-restore-evidence">
       {JSON.stringify(fixture.restoreEvidence || {status: 'Preparing generated regtest replay'}, null, 2)}
     </pre>}
     {visible && names.length>0 && <AuctionBasket
-      order={names} items={items} network="regtest" walletId={fixture.walletId}
+      order={basketClears ? [] : names} items={items} network="regtest" walletId={fixture.walletId}
       spendableBalance={1000000000000} watchOnly={false} walletType="hot"
       addNamesToBasket={()=>({added:0})} removeFromBasket={()=>{}}
-      updateBasketItem={()=>{}} importBasketRows={()=>{}} clearBasket={()=>setNotice('Unexpected basket clear')}
+      updateBasketItem={()=>{}} importBasketRows={()=>{}} clearBasket={()=>setBasketClears(count=>count+1)}
       sendBidMany={submit} showError={setNotice} showSuccess={setNotice} history={{push:()=>setVisible(false)}}
     />}
     <ListingForm resource={FIXED_RESOURCE} onStage={stage} disabled={false}/>

@@ -43,6 +43,7 @@ function createProductRuntime(config, db) {
     if (typeof value !== 'string' || !/^basket-[0-9]+-[a-f0-9]+$/.test(value)) reject('invalid attempt');
   };
   const walletMethods = names.length ? {
+    async getPendingTransactions() {return [];},
     async getAuctionInfo(name) {
       if (!names.includes(name)) reject('non-fixture auction');
       return {name, state: 'BIDDING'};
@@ -62,7 +63,7 @@ function createProductRuntime(config, db) {
       let delayed;
       await serialized(async () => {
         await load();
-        if (state.uncertain || state.inertBoundaryCalls) reject('persisted ambiguous duplicate');
+        if (state.uncertain || state.inertBoundaryCalls) reject('persisted inert boundary duplicate');
         if (pending) reject('overlapping preparation');
         state.preparationCalls += 1;
         preparedAttempt = null;
@@ -109,13 +110,15 @@ function createProductRuntime(config, db) {
       assertAttempt(attemptId);
       return serialized(async () => {
         await load();
-        if (plan.fixtureType !== 'basket-ambiguous' || state.inertBoundaryCalls
+        if (!['basket-ambiguous', 'basket-delayed'].includes(plan.fixtureType) || state.inertBoundaryCalls
             || preparedAttempt !== attemptId) reject('broadcast boundary');
-        // This journal is written before returning the inert ambiguous error.
+        // Journal either inert outcome before returning; never sign or relay.
         state.inertBoundaryCalls = 1;
-        state.uncertain = true;
+        state.uncertain = plan.fixtureType === 'basket-ambiguous';
+        if (!state.uncertain) state.inertTxid = 'ac'.repeat(32);
         preparedAttempt = null;
         await save();
+        if (!state.uncertain) return {txid: state.inertTxid, inert: true};
         const error = new Error('Controlled ambiguous result. No signing or network broadcast occurred; duplicate attempts remain locked.');
         error.code = 'ETXBROADCASTUNCERTAIN';
         throw error;
@@ -130,10 +133,13 @@ function createProductRuntime(config, db) {
         return {start: {reserved: false}, info: {state: 'BIDDING', height: 100, stats: {hoursUntilReveal: 10}}};
       },
     } : {},
-    initializeRestore() {
+    initializeRestore(services) {
       if (plan.fixtureType !== 'restore-history') reject('non-restore initialization');
       if (!restoreInitialization) {
-        restoreInitialization = require('./restoreReplay').runControlledRestore(config.scenario)
+        const replay = services
+          ? require('./embeddedRestore').initializeEmbeddedRestore(services, config)
+          : require('./restoreReplay').runControlledRestore(config.scenario);
+        restoreInitialization = replay
           .then(result => {restoreEvidence = result; return result;});
       }
       return restoreInitialization;

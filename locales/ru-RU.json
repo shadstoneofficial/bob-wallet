@@ -1210,7 +1210,7 @@
   "shakexLoadTimeout": "Время запроса истекло. Пожалуйста, попробуйте еще раз.",
   "shakexLoadError": "Невозможно загрузить списки ShakeX. Пожалуйста, повторите попытку позже или откройте ShakeX.",
   "shakexShowingPrevious": "Ранее загруженные объявления остаются ниже.",
-  "shakexSearchLabel": "Поиск имен (ASCII / punycode)",
+  "shakexSearchLabel": "Поиск имён (Unicode / эмодзи / punycode)",
   "shakexSearchPlaceholder": "Поиск имен",
   "shakexListingCountOne": "Предложений: %s. Контакты продавцов показаны как опубликованы; личности не проверены.",
   "shakexListingCountMany": "Предложений: %s. Контакты продавцов показаны как опубликованы; личности не проверены.",
@@ -1300,5 +1300,7 @@
   "addonLiquidityChannelTitle": "Канал Liquidity",
   "addonLiquidityChannelHelp": "Гостевой P2P должен быть доступен без GFAVIP; GFAVIP необязателен и нужен для Gems и преимуществ аккаунта.",
   "addonLiquidityChannelSave": "Добавить/сохранить",
-  "addonLiquidityChannelInvalid": "Введите корректный хост канала."
+  "addonLiquidityChannelInvalid": "Введите корректный хост канала.",
+  "walletRescanWaiting": "Ожидание повторного сканирования истории кошелька…",
+  "walletRescanFailed": "Восстановление кошелька не завершено. Перезапустите Bob, чтобы продолжить."
 }
