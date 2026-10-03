@@ -1,0 +1,26 @@
+{
+  "network": "regtest",
+  "storage": "memory",
+  "sockets": 0,
+  "results": [
+    {
+      "action": "list",
+      "txid": "ba1970702dc4c9a19aaf826b07eb9c84e60d84435733aabd8766cad38cc74f3e",
+      "height": 57,
+      "bytes": 116
+    },
+    {
+      "action": "edit",
+      "txid": "df46ae88dc023bd1bdfeda0589e47d49011a56d881207577b260fcff3eb4bbaa",
+      "height": 63,
+      "bytes": 116
+    },
+    {
+      "action": "delist",
+      "txid": "458081f5a5167f819f8f646fa5e5b24e2a0c7e88d99068d4a683d7c2a56ec418",
+      "height": 69,
+      "bytes": 63
+    }
+  ],
+  "passed": true
+}

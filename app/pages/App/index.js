@@ -43,12 +43,16 @@ import Exchange from '../Exchange';
 import SignMessage from "../SignMessage";
 import VerifyMessage from "../VerifyMessage";
 import Addons from '../Addons';
+import ShakeX from '../../addons/shakex';
 import Messages from '../Messages';
 import {fetchLocale, fetchTheme, fetchShowUsdValue, initHip2, checkForUpdates} from "../../ducks/app";
 import Multisig from "../Multisig";
 import {I18nContext} from "../../utils/i18n";
 import {EXPLORERS} from "../../constants/explorers";
 import StorageErrorBanner from '../../components/StorageErrorBanner';
+// Stable identity prevents locale/context updates from remounting the login form.
+const LoginScreen = () => <AccountLogin className="app__login" />;
+
 const connClient = cClientStub(() => require('electron').ipcRenderer);
 const settingClient = sClientStub(() => require('electron').ipcRenderer);
 
@@ -164,7 +168,7 @@ class App extends Component {
         <Switch>
           <Route
             path="/login"
-            render={this.uninitializedWrapper(() => <AccountLogin className="app__login" />, true, true)}
+            render={this.uninitializedWrapper(LoginScreen, true, true)}
           />
           <Route path="/funding-options" render={this.uninitializedWrapper(FundAccessOptions, true)} />
           <Route path="/existing-options" render={this.uninitializedWrapper(ExistingAccountOptions)} />
@@ -305,6 +309,12 @@ class App extends Component {
             wallets={wallets}
             path="/exchange"
             render={this.routeRenderer(t('headingExchange'), Exchange, true)}
+          />
+          <ProtectedRoute
+            isLocked={isLocked}
+            wallets={wallets}
+            path="/addons/shakex"
+            render={this.routeRenderer('ShakeX', ShakeX)}
           />
           <ProtectedRoute
             isLocked={isLocked}

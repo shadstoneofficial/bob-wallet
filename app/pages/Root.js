@@ -67,6 +67,7 @@ class Content extends Component {
       <I18nContext.Provider
         value={{
           t: this.translate,
+          locale: this.props.locale,
         }}
       >
         <ConnectedRouter history={this.props.history}>
