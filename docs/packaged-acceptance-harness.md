@@ -40,6 +40,8 @@ The launcher requires an absolute profile root, refuses the normal `~/Library/Ap
 
 The main process opens the renderer before waiting for the disposable WalletDB fixture. This ordering is required because the renderer starts the local node and wallet plugin; waiting for WalletDB first would deadlock a clean launch. A regression test withholds wallet readiness until the window exists.
 
+The renderer's only unconditional protected startup write is its normal persistence of the selected network. The DB policy permits that path only when the value is exactly `regtest`; an IPC-level regression drives clean startup and profile reuse through the real renderer thunk, fake node/wallet services, and the guarded DB client, then proves a `main` write is rejected before `Node.start`.
+
 Each launch receives its own status and backend-event files, so a current result cannot be confused with an earlier run. Sentry is disabled in packaged test modes, and interactive acceptance shutdown uses the same bounded node/database teardown and structured backend-error gate as the automated smoke test.
 
 ## Honest acceptance matrix
@@ -63,7 +65,7 @@ The harness branch is now integrated with merged `master` at `5c224d0`, includin
 
 ## Integration with the restore/rescan lifecycle work
 
-PR #18 and this harness are mechanically compatible. Their only shared file is `package.json`; the combined result retains both `test:sync` and `test:packaged-harness`. PR #18 installs its embedded WalletDB lifecycle adapter before the wallet plugin opens. The harness sets the isolated `userData` path and writes the local regtest connection configuration before node and wallet services start, so the adapter operates only on the disposable profile during packaged acceptance.
+PR #18 and this harness previously passed a mechanical merge-tree check, but that is not a complete integration verdict. Both branches now modify `app/background/node/service.js`, `app/background/wallet/service.js`, and `package.json`; a reviewed combined branch must preserve PR #18's WalletDB lifecycle adapter, this harness's backend isolation policy, and both test scripts. PR #18 installs its embedded WalletDB lifecycle adapter before the wallet plugin opens. The harness sets the isolated `userData` path and writes the local regtest connection configuration before node and wallet services start, so the adapter must operate only on the disposable profile during packaged acceptance.
 
 The harness records recognized hsd, WalletDB, node-client, assertion, startup and shutdown failures from process startup through bounded teardown. Its explicit shutdown calls `NodeService.stop()`, which closes the hsd node and therefore exercises PR #18's WalletDB close adapter. A structured backend error or incomplete teardown makes the smoke/acceptance process exit nonzero. This is detection, not proof that PR #18 fixes `Pool is not connected!`; the combined packaged run must still demonstrate zero structured backend errors.
 
@@ -76,7 +78,7 @@ Interactive acceptance cannot select the ordinary profile accidentally:
 - the app applies the isolated `userData` path before loading any backend service; and
 - the configured network is pinned to local regtest/P2P, and hsd config-file, command-line and environment loading are disabled in acceptance mode;
 - the launcher strips inherited `HSD_*` variables, while backend checks independently force the disposable prefix, SPV, no-DNS and regtest settings for direct launches;
-- critical raw DB IPC writes and deletes are blocked, so the renderer cannot replace the node directory, network, connection type, SPV mode, helper endpoint or API keys before restarting the node;
+- critical raw DB IPC writes and deletes are blocked except for exact idempotent acceptance values (`regtest`, P2P, SPV and no-DNS), so normal renderer startup can persist `regtest` but cannot replace the node directory, network, connection type, helper endpoint or API keys before restarting the node;
 - Custom RPC and network-setting changes are rejected, and renderer IPC cannot invoke seed import, signing, transaction construction or broadcast methods;
 - node-level raw transaction, claim and airdrop broadcasts are blocked below the renderer boundary; and
 - the launcher removes inherited smoke-mode variables while the runtime rejects simultaneous smoke and acceptance modes.

@@ -267,11 +267,21 @@ test('acceptance DB IPC cannot mutate critical node or profile settings', async 
     get: async () => null,
   }, true);
   await wrapped.put('locale', 'zh');
+  await wrapped.put('network', 'regtest');
+  await wrapped.put('connection_type', 'P2P');
+  await wrapped.put('nodeSpvMode', '1');
+  await wrapped.put('nodeNoDns1', '1');
   await assert.rejects(wrapped.put('network', 'main'), {code: 'ERR_PACKAGED_ACCEPTANCE_POLICY'});
   await assert.rejects(wrapped.put('hsdPrefixDir', '/real-wallet'), {code: 'ERR_PACKAGED_ACCEPTANCE_POLICY'});
   await assert.rejects(wrapped.put('nodeSpvMode', '0'), {code: 'ERR_PACKAGED_ACCEPTANCE_POLICY'});
   await assert.rejects(wrapped.del('connection_type'), {code: 'ERR_PACKAGED_ACCEPTANCE_POLICY'});
-  assert.deepEqual(writes, [['locale', 'zh']]);
+  assert.deepEqual(writes, [
+    ['locale', 'zh'],
+    ['network', 'regtest'],
+    ['connection_type', 'P2P'],
+    ['nodeSpvMode', '1'],
+    ['nodeNoDns1', '1'],
+  ]);
   assert.deepEqual(deletes, []);
 });
 
@@ -284,4 +294,90 @@ test('acceptance node directory rejects symlink replacement', {skip: process.pla
     () => assertAcceptanceHsdDirectory(userData, hsdDirectory),
     {code: 'ERR_PACKAGED_ACCEPTANCE_POLICY'},
   );
+});
+
+test('renderer startup reaches fake node and wallet IPC only with approved regtest settings', async () => {
+  require('@babel/register')({extensions: ['.js']});
+  const Module = require('module');
+  const {SIGIL} = require('../../app/background/ipc/ipc');
+  const originalLoad = Module._load;
+  const listeners = new Map();
+  let nextListener = 0;
+  const starts = [];
+  const stored = new Map([
+    ['network', 'regtest'],
+    ['watchlist:regtest', []],
+  ]);
+  const db = wrapAcceptanceDbMethods({
+    async get(key) { return stored.has(key) ? stored.get(key) : null; },
+    async put(key, value) { stored.set(key, value); },
+    async del(key) { stored.delete(key); },
+  }, true);
+  const methods = {
+    'DB.get': key => db.get(key),
+    'DB.put': (key, value) => db.put(key, value),
+    'Node.start': async network => { starts.push(network); },
+    'Node.getInfo': async () => ({network: 'regtest', chain: {height: 0}}),
+    'Node.getFees': async () => ({rate: 0}),
+    'Node.getSpvMode': async () => true,
+    'Wallet.isReady': async () => 'regtest',
+  };
+  const ipcRenderer = {
+    send(channel, request) {
+      if (channel !== SIGIL) throw new Error(`Unexpected IPC channel: ${channel}`);
+      Promise.resolve()
+        .then(() => {
+          const method = methods[request.method];
+          if (!method) throw new Error(`Unexpected IPC method: ${request.method}`);
+          return method(...request.params);
+        })
+        .then(result => ({jsonrpc: '2.0', result, id: request.id}))
+        .catch(error => ({
+          jsonrpc: '2.0',
+          error: {code: error.code || -1, message: error.message},
+          id: request.id,
+        }))
+        .then(response => {
+          for (const listener of listeners.values()) listener(null, JSON.stringify(response));
+        });
+    },
+    on(channel, listener) {
+      if (channel !== SIGIL) throw new Error(`Unexpected IPC channel: ${channel}`);
+      const id = ++nextListener;
+      listeners.set(id, listener);
+      return ipcRenderer;
+    },
+    off(channel, listener) {
+      if (channel !== SIGIL) throw new Error(`Unexpected IPC channel: ${channel}`);
+      for (const [id, candidate] of listeners) {
+        if (candidate === listener) listeners.delete(id);
+      }
+      return ipcRenderer;
+    },
+  };
+  Module._load = function load(request, parent, isMain) {
+    if (request === 'electron') return {ipcRenderer, app: {isPackaged: true}};
+    return originalLoad.call(this, request, parent, isMain);
+  };
+
+  try {
+    const {startApp} = require('../../app/ducks/node');
+    const actions = [];
+    const dispatch = action => {
+      if (typeof action === 'function') return action(dispatch);
+      actions.push(action);
+      return action;
+    };
+    await startApp()(dispatch);
+    await startApp('regtest')(dispatch);
+    assert.deepEqual(starts, ['regtest', 'regtest']);
+
+    await assert.rejects(
+      startApp('main')(dispatch),
+      {code: 'ERR_PACKAGED_ACCEPTANCE_POLICY'},
+    );
+    assert.deepEqual(starts, ['regtest', 'regtest']);
+  } finally {
+    Module._load = originalLoad;
+  }
 });

@@ -96,12 +96,33 @@ function wrapBlockedMethods(methods, blockedNames, serviceName, active) {
   ]));
 }
 
-function wrapAcceptanceDbMethods(methods, active) {
+function isApprovedAcceptanceDbWrite(key, value, {expectedHsdPrefix} = {}) {
+  switch (key) {
+    case 'connection_type':
+      return value === 'P2P';
+    case 'network':
+      return value === 'regtest';
+    case 'nodeSpvMode':
+    case 'nodeNoDns1':
+      return value === '1';
+    case 'hsdPrefixDir':
+      return Boolean(expectedHsdPrefix)
+        && typeof value === 'string'
+        && path.resolve(value) === path.resolve(expectedHsdPrefix);
+    default:
+      return false;
+  }
+}
+
+function wrapAcceptanceDbMethods(methods, active, options = {}) {
   if (!active) return methods;
   return {
     ...methods,
     async put(key, value) {
-      if (PROTECTED_DB_KEYS.has(key)) blocked(`DB.put(${key})`);
+      if (PROTECTED_DB_KEYS.has(key)
+          && !isApprovedAcceptanceDbWrite(key, value, options)) {
+        blocked(`DB.put(${key})`);
+      }
       return methods.put(key, value);
     },
     async del(key) {
@@ -188,6 +209,7 @@ module.exports = {
   assertAcceptanceHsdDirectory,
   constrainHsdOptions,
   installAcceptanceBackendPolicy,
+  isApprovedAcceptanceDbWrite,
   sanitizeAcceptanceEnvironment,
   wrapAcceptanceDbMethods,
   wrapBlockedMethods,
