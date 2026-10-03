@@ -77,6 +77,13 @@ function main() {
         if (stdout) console.log(stdout);
         if (stderr) console.error(stderr);
         if (err) throw err;
+        execFile(process.execPath, [path.join(rootDir, 'scripts', 'write-build-provenance.js')], {
+          cwd: rootDir,
+        }, (provenanceError, output, diagnostic) => {
+          if (output) console.log(output);
+          if (diagnostic) console.error(diagnostic);
+          if (provenanceError) throw provenanceError;
+        });
       });
       return;
     }

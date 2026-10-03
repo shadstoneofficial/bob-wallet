@@ -14,13 +14,13 @@ const CASES = [
   ['packagedStartup', 'READY', 'Launch, renderer, local regtest services and structured error monitoring.'],
   ['persistentRestart', 'READY', 'Quit and reopen the same disposable profile.'],
   ['multiwalletSwitching', 'READY', 'Two generated, encrypted disposable wallets.'],
-  ['localeSelectionPersistence', 'READY', 'Manual English/Simplified Chinese selection and restart.'],
+  ['localeSelectionPersistence', 'NOT TESTED', 'Manual English/Chinese/Russian/Thai selection, layout and restart required.'],
   ['auctionRealErrorRetry', 'SOURCE PRODUCT PATH READY', 'Real UI/action/coordinator with inert wallet boundary; packaged UI remains NOT TESTED.'],
-  ['basket20NameDelayedConstruction', 'SOURCE PRODUCT PATH READY', 'Real 20-name UI/action cancellation path; packaged UI remains NOT TESTED.'],
+  ['basket20NameDelayedConstruction', 'SOURCE PRODUCT PATH READY', 'Real 20-name cancellation and completed inert-ID/clear path; packaged UI remains NOT TESTED.'],
   ['basketAmbiguousOutcomeLock', 'SOURCE PRODUCT PATH READY', 'Real action lock and draft reuse with inert boundary; packaged UI remains NOT TESTED.'],
-  ['shakeXReviewAndDnsPreservation', 'NOT TESTED', 'No controlled packaged ShakeX listing fixture yet.'],
-  ['sequentialRestore', 'SOURCE FIXTURE READY', 'Generated history plan; reviewed backend replay target remains NOT TESTED.'],
-  ['overlappingRestore', 'SOURCE FIXTURE READY', 'Generated five-request plan; reviewed backend replay target remains NOT TESTED.'],
+  ['shakeXReviewAndDnsPreservation', 'SOURCE PRODUCT PATH READY', 'Fixed listing/resource DOM review passes; packaged UI remains NOT TESTED.'],
+  ['sequentialRestore', 'SOURCE EMBEDDED PATH READY', 'Actual disposable disk profile passes separate-process quit/reuse; packaged backend remains NOT TESTED.'],
+  ['overlappingRestore', 'SOURCE FIXTURE READY', 'Actual reviewed replay/overlap source checks pass; packaged backend remains NOT TESTED.'],
 ];
 
 function usage() {

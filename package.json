@@ -2,7 +2,7 @@
   "name": "bob-wallet",
   "productName": "Bob LearnHNS",
   "author": "Kyokan Group, Inc.",
-  "version": "2.3.13",
+  "version": "2.3.14",
   "description": "A Handshake wallet and auction manager.",
   "scripts": {
     "build": "./scripts/package.sh",
@@ -13,7 +13,7 @@
     "package-mac": "npm run build && node scripts/force-goosig-mini-gmp.js && electron-builder build --mac --publish never",
     "package-mac-intel": "npm run build && node scripts/force-goosig-mini-gmp.js && electron-builder build --mac --x64 --publish never",
     "package-mac-notarized": "bash scripts/build-notarized-macos.sh",
-    "package-win": "node ./scripts/package.js && node scripts/force-goosig-mini-gmp.js && electron-builder build --win --x64 --arm64=false",
+    "package-win": "node ./scripts/package.js && node scripts/force-goosig-mini-gmp.js && electron-builder build --win --x64 --arm64=false --publish never",
     "prestart": "npm run build",
     "start": "cross-env NODE_ENV=production electron -r @babel/register ./app/main.js",
     "start-main-dev": "cross-env HOT=1 NODE_ENV=development electron --inspect=5858 -r @babel/register ./app/main.js",

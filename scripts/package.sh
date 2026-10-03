@@ -19,3 +19,4 @@ $DIR/node_modules/.bin/babel $DIR/app/ducks/claims.js -o ./dist/ducks/claims.js
 $DIR/node_modules/.bin/babel $DIR/app/ducks/notifications.js -o ./dist/ducks/notifications.js
 $DIR/node_modules/.bin/babel $DIR/app/ducks/storageReducer.js -o ./dist/ducks/storageReducer.js
 node $DIR/scripts/validate-dist.js
+node $DIR/scripts/write-build-provenance.js
