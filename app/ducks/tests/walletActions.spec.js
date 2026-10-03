@@ -135,3 +135,33 @@ test('queued managed recovery cannot reuse the preceding scan completion height'
   } finally {clock.restore();}
   t.end();
 });
+
+test('required rescan generation detects a full scan that finished before the first poll', async t => {
+  const state = {node: {chain: {height: 100}}, wallet: {
+    walletSync: false,
+    walletHeight: 100,
+    rescanHeight: null,
+    rescanStatus: 'complete',
+    rescanGeneration: 9,
+  }};
+  await waitForWalletSync(10, {
+    requireRescanStart: true,
+    rescanGenerationBefore: 8,
+    pollIntervalMs: 5,
+  })(() => {}, () => state);
+  t.pass('matching completion generation counts even after waiting observed the fast start-to-complete cycle');
+
+  const stale = {...state, wallet: {...state.wallet, rescanGeneration: 8}};
+  const clock = sinon.useFakeTimers();
+  let settled = false;
+  const waiting = waitForWalletSync(1, {
+    requireRescanStart: true,
+    rescanGenerationBefore: 8,
+    pollIntervalMs: 5,
+    timeoutMs: 10,
+  })(() => {}, () => stale).catch(() => {settled = true;});
+  await clock.tickAsync(10);
+  await waiting;
+  clock.restore();
+  t.ok(settled, 'a stale completion with the prior generation does not satisfy a required rescan');
+});

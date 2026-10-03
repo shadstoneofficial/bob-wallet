@@ -389,6 +389,7 @@ export class NodeService extends EventEmitter {
     await this.hsd.open();
     this.emit('start local', this.hsd.get('walletdb'), walletApiKey);
     await this.hsd.connect();
+    await this.hsd.get('walletdb').wdb.resumeLocalSync?.();
     await this.hsd.startSync();
 
     const migrateFlag = `${this.networkName}-hsd-4.0.0-migrate${spv ? '-spv' : ''}`;

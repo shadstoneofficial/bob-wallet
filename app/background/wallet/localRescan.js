@@ -17,14 +17,17 @@ export function installLocalRescan(wdb, node) {
   const ownership = new AsyncLocalStorage();
   const journalLock = new Lock();
   let closing = false;
-  let pending = 0;
   let active = false;
-  let activeObserved = false;
   let failed = false;
   let target = null;
+  let generation = 0;
+  let startupSyncDeferred = false;
+  const unjournaled = new Set();
+  const unacknowledged = new Set();
+  const completedOwners = new Set();
   let lastPublished = 0;
   function publish(status) {
-    const state = {status, height: wdb.height, target};
+    const state = {status, height: wdb.height, target, generation};
     const previous = wdb.bobRescanState;
     wdb.bobRescanState = state;
     if (previous?.status === status && previous.target === target
@@ -33,15 +36,16 @@ export function installLocalRescan(wdb, node) {
     wdb.emit('bob rescan', state);
   }
   function advance() {
-    if (target === null || failed) return;
-    if (wdb.height >= target && pending <= (active ? 1 : 0) && (!active || activeObserved)) {
+    if (failed) return;
+    if (generation === 0 && unjournaled.size === 0 && unacknowledged.size === 0) return;
+    if (unjournaled.size === 0 && unacknowledged.size === 0 && !active && generation > 0) {
       publish('complete');
     } else {
-      publish(active || pending === 0 ? 'scanning' : 'waiting');
+      publish(active ? 'scanning' : 'waiting');
     }
   }
-  wdb.bobRescanState = {status: 'idle', height: wdb.height, target: null};
-  wdb.on('block connect', () => {activeObserved = true; advance();});
+  wdb.bobRescanState = {status: 'idle', height: wdb.height, target: null, generation: 0};
+  wdb.on('block connect', advance);
   async function journal(update) {
     const release = await journalLock.lock();
     try {
@@ -67,20 +71,57 @@ export function installLocalRescan(wdb, node) {
     if (!owner?.active) return originalClientRescan.call(this, start);
     // Already own the chain mutex. Use hsd 6.1.1's unlocked implementations;
     // otherwise its public scan/reset would acquire the same mutex twice.
-    if (node.spv) return chain._reset(start, false);
-    return chain.db.scan(start, this.filter, (entry, txs) =>
-      this.emitAsync('block rescan', entry, txs));
+    let result;
+    if (node.spv) {
+      result = await chain._reset(start, false);
+    } else {
+      result = await chain.db.scan(start, this.filter, (entry, txs) =>
+        this.emitAsync('block rescan', entry, txs));
+    }
+
+    // A final height event is only display progress. Mark recovery ready after
+    // the actual backend scan succeeds and its journal acknowledgement is durable.
+    if (owner.requestIds?.length) {
+      await acknowledge(owner.requestIds);
+      for (const id of owner.requestIds) unacknowledged.delete(id);
+      owner.backendComplete = true;
+      if (!wdb.txLock.busy) releaseCompletedOwner(owner);
+      else completedOwners.add(owner);
+    }
+    return result;
   };
 
-  async function withChainLock(operation) {
+  const originalTxUnlocker = wdb.txLock.unlocker;
+  wdb.txLock.unlocker = function(...args) {
+    const result = originalTxUnlocker(...args);
+    for (const owner of [...completedOwners]) releaseCompletedOwner(owner, true);
+    return result;
+  };
+
+  function releaseCompletedOwner(owner, fromUnlock = false) {
+    if (!owner.backendComplete || (!fromUnlock && wdb.txLock.busy)) return;
+    completedOwners.delete(owner);
+    owner.txLockReleased = true;
+    owner.releaseChainLock?.();
+  }
+
+  async function withChainLock(owner, operation) {
     const unlock = await chain.locker.lock();
-    const owner = {active: true};
+    let released = false;
+    owner.active = true;
+    owner.releaseChainLock = () => {
+      if (released) return;
+      released = true;
+      owner.active = false;
+      unlock();
+      active = false;
+      advance();
+    };
     try {
       return await ownership.run(owner, operation);
     } finally {
       // Descendant callbacks must not bypass the mutex after ownership ends.
-      owner.active = false;
-      unlock();
+      owner.releaseChainLock();
     }
   }
 
@@ -88,27 +129,31 @@ export function installLocalRescan(wdb, node) {
     if (closing) throw new Error('Wallet is stopping; recovery was not started.');
     if (height == null) height = this.state.startHeight;
     if ((height >>> 0) !== height) throw new Error('WDB: Must pass in a height.');
+    const ticket = {};
+    if (unjournaled.size === 0 && unacknowledged.size === 0) {
+      generation++;
+      target = Math.max(chain.height || 0, wdb.height || 0);
+      failed = false;
+    }
+    unjournaled.add(ticket);
     // Persist before waiting for either backend mutex. A crash or failed scan
     // must not silently discard a later wallet's earlier recovery requirement.
-    target = Math.max(target || 0, chain.height || 0, wdb.height || 0);
-    pending++;
-    if (!failed) publish(active ? 'scanning' : 'waiting');
+    publish(active ? 'scanning' : 'waiting');
+    let id = null;
     try {
-      const id = await journal(value => {
+      id = await journal(value => {
         const id = ++value.next;
         value.requests.push({id, height});
         return id;
       });
-      return await withChainLock(async () => {
+      unjournaled.delete(ticket);
+      unacknowledged.add(id);
+      return await withChainLock({requestIds: [id]}, async () => {
         if (closing) throw new Error('Wallet is stopping; recovery remains pending for restart.');
         active = true;
-        activeObserved = false;
-        if (!failed) publish('scanning');
+        publish('scanning');
         try {
           const result = await originalRescan.call(this, height);
-          // In SPV mode, durable rewind completion is enough: subsequent
-          // download resumes from the persisted WalletDB state on restart.
-          await acknowledge([id]);
           return result;
         } finally {active = false;}
       });
@@ -117,7 +162,7 @@ export function installLocalRescan(wdb, node) {
       publish('failed');
       throw error;
     } finally {
-      pending--;
+      if (id == null) unjournaled.delete(ticket);
       advance();
     }
   };
@@ -125,34 +170,46 @@ export function installLocalRescan(wdb, node) {
   const originalSync = wdb.syncNode;
   wdb.syncNode = async function() {
     if (closing) return;
-    return withChainLock(async () => {
-      if (closing) return;
-      await originalSync.call(this);
-      const pending = await journal(value => value.requests.slice());
-      if (!pending.length) return;
-      const height = pending.reduce((min, r) => Math.min(min, r.height), 0xffffffff);
-      target = Math.max(target || 0, chain.height || 0, wdb.height || 0);
-      active = true;
-      activeObserved = false;
-      publish('scanning');
-      try {
-        await originalRescan.call(this, height);
-        await acknowledge(pending.map(r => r.id));
+    if (node.pool && typeof node.pool.connected === 'boolean' && !node.pool.connected) {
+      startupSyncDeferred = true;
+      return;
+    }
+    try {
+      return await withChainLock({requestIds: []}, async () => {
+        if (closing) return;
+        await originalSync.call(this);
+        const requests = await journal(value => value.requests.slice());
+        for (const request of requests) unacknowledged.add(request.id);
+        if (!requests.length) {
+          failed = false;
+          publish('idle');
+          return;
+        }
+        const height = requests.reduce((min, r) => Math.min(min, r.height), 0xffffffff);
+        target = Math.max(chain.height || 0, wdb.height || 0);
+        if (generation === 0) generation = 1;
+        active = true;
         failed = false;
-      } catch (error) {
-        failed = true;
-        publish('failed');
-        throw error;
-      } finally {
-        active = false;
-        advance();
-      }
-    });
+        const owner = ownership.getStore();
+        owner.requestIds = requests.map(r => r.id);
+        publish('scanning');
+        await originalRescan.call(this, height);
+      });
+    } catch (error) {
+      failed = true;
+      publish('failed');
+      throw error;
+    } finally {advance();}
+  };
+  wdb.resumeLocalSync = async function() {
+    if (!startupSyncDeferred || closing) return;
+    startupSyncDeferred = false;
+    return wdb.syncNode();
   };
   const originalClose = wdb.close;
   wdb.close = async function() {
     closing = true;
-    return withChainLock(async () => {
+    return withChainLock({requestIds: []}, async () => {
       const releaseWallet = await wdb.txLock.lock();
       try {
         const release = await journalLock.lock();

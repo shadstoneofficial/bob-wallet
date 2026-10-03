@@ -39,6 +39,8 @@ import {
   broadcastAndRecord,
   reserveTransactionInputs,
 } from './transactionSafety';
+import {createRecoveryAdmission} from './recoveryAdmission';
+import {createRescanRiskTracker} from './rescanRisk';
 
 const WalletNode = require('hsd/lib/wallet/node');
 const TX = require('hsd/lib/primitives/tx');
@@ -97,7 +99,8 @@ class WalletService {
     this.heightBeforeRescan = null; // null = not rescanning
     this.conn = {type: null};
     this.findNonceStop = false;
-    this.rescanMaySubmitTransaction = false;
+    this.recoveryAdmission = createRecoveryAdmission(() => this.node?.wdb?.bobRescanState);
+    this.rescanRisk = createRescanRiskTracker();
     this.walletMutationCoordinator = new WalletMutationCoordinator();
     this.preparedBidManyAttempts = new Map();
     this.didSelectTransactionWallet = false;
@@ -107,7 +110,7 @@ class WalletService {
   _onWalletDBError = (error) => {
     if (!storageHealth.reportError(error, {
       source: 'walletdb',
-      transactionAttempted: this.rescanMaySubmitTransaction,
+      transactionAttempted: this.rescanRisk.transactionAttempted,
     })) {
       console.error('walletdb error', error);
     }
@@ -286,6 +289,7 @@ class WalletService {
   };
 
   onRescanState = state => {
+    if (state.status === 'complete') this.recoveryAdmission.finishRescans();
     dispatchToMainWindow({type: SET_RESCAN_STATE, payload: state});
   };
 
@@ -478,29 +482,30 @@ class WalletService {
 
   rescan = async (height = 0, options = {}) => {
     const transactionAttempted = !!options.transactionAttempted;
-    const storagePath = await this.nodeService.getDir();
-    await storageHealth.preflight(storagePath, {
-      source: 'wallet-rescan-preflight',
-      transactionAttempted,
-    });
-
-    if (!this.node.wdb.bobRescanState) {
-      this.heightBeforeRescan = this.lastKnownChainHeight;
-      this.lastKnownChainHeight = height;
-
-      dispatchToMainWindow({type: START_SYNC_WALLET});
-      dispatchToMainWindow({
-        type: SYNC_WALLET_PROGRESS,
-        payload: height,
-      });
-      dispatchToMainWindow({
-        type: SET_RESCAN_HEIGHT,
-        payload: this.heightBeforeRescan,
-      });
-    }
-
-    this.rescanMaySubmitTransaction = transactionAttempted;
+    const releaseAdmission = this.recoveryAdmission.beginRescan(options.recoveryAdmission);
+    const releaseRisk = this.rescanRisk.track(transactionAttempted);
     try {
+      const storagePath = await this.nodeService.getDir();
+      await storageHealth.preflight(storagePath, {
+        source: 'wallet-rescan-preflight',
+        transactionAttempted,
+      });
+
+      if (!this.node.wdb.bobRescanState) {
+        this.heightBeforeRescan = this.lastKnownChainHeight;
+        this.lastKnownChainHeight = height;
+
+        dispatchToMainWindow({type: START_SYNC_WALLET});
+        dispatchToMainWindow({
+          type: SYNC_WALLET_PROGRESS,
+          payload: height,
+        });
+        dispatchToMainWindow({
+          type: SET_RESCAN_HEIGHT,
+          payload: this.heightBeforeRescan,
+        });
+      }
+
       return await this.node.wdb.rescan(height);
     } catch (error) {
       storageHealth.reportError(error, {
@@ -509,7 +514,8 @@ class WalletService {
       });
       throw error;
     } finally {
-      this.rescanMaySubmitTransaction = false;
+      releaseRisk();
+      releaseAdmission();
     }
   };
 
@@ -517,50 +523,59 @@ class WalletService {
     return this.node.wdb.deepClean();
   };
 
-  importSeed = async (name, passphrase, type, secret, m, n) => {
-    this.setWallet(name);
+  importSeed = async (name, passphrase, type, secret, m, n, rescanHeight = 0) => {
+    const recoveryAdmission = this.recoveryAdmission.beginImport();
+    try {
+      this.setWallet(name);
 
-    const options = {
-      id: name,
-      passphrase,
-      m,
-      n,
-    };
-    switch (type) {
-      case 'phrase':
-        options.mnemonic = secret.trim();
-        break;
-      case 'xpriv':
-        options.master = secret.trim();
-        break;
-      case 'master':
-        const data = secret.master;
-        const parsedData = {
-          encrypted: data.encrypted,
-          alg: data.algorithm,
-          iv: Buffer.from(data.iv, 'hex'),
-          ciphertext: Buffer.from(data.ciphertext, 'hex'),
-          n: data.n,
-          r: data.r,
-          p: data.p,
-        };
-        const mk = new MasterKey(parsedData);
-        options.master = await mk.unlock(secret.passphrase, 10)
-        assert(options.master, 'Could not decrypt key.')
-        break;
-      default:
-        throw new Error('Invalid type.')
+      const options = {
+        id: name,
+        passphrase,
+        m,
+        n,
+      };
+      switch (type) {
+        case 'phrase':
+          options.mnemonic = secret.trim();
+          break;
+        case 'xpriv':
+          options.master = secret.trim();
+          break;
+        case 'master':
+          const data = secret.master;
+          const parsedData = {
+            encrypted: data.encrypted,
+            alg: data.algorithm,
+            iv: Buffer.from(data.iv, 'hex'),
+            ciphertext: Buffer.from(data.ciphertext, 'hex'),
+            n: data.n,
+            r: data.r,
+            p: data.p,
+          };
+          const mk = new MasterKey(parsedData);
+          options.master = await mk.unlock(secret.passphrase, 10)
+          assert(options.master, 'Could not decrypt key.')
+          break;
+        default:
+          throw new Error('Invalid type.')
+      }
+
+      const res = await this.node.wdb.create(options);
+      const wallets = await this.listWallets();
+
+      dispatchToMainWindow({
+        type: SET_WALLETS,
+        payload: createPayloadForSetWallets(wallets, name),
+      });
+
+      this.rescan(rescanHeight, {recoveryAdmission}).catch(error => {
+        console.error('Imported wallet rescan failed:', error);
+      });
+      return res.getJSON();
+    } catch (error) {
+      this.recoveryAdmission.releaseImport(recoveryAdmission);
+      throw error;
     }
-
-    const res = await this.node.wdb.create(options);
-    const wallets = await this.listWallets();
-
-    dispatchToMainWindow({
-      type: SET_WALLETS,
-      payload: createPayloadForSetWallets(wallets, name),
-    });
-
-    return res.getJSON();
   };
 
   generateReceivingAddress = async () => {
@@ -883,124 +898,129 @@ class WalletService {
     if (!wallet) throw new Error('Selected wallet was not found.');
     if (wallet.watchOnly) throw new Error('Cannot derive new accounts for a watch-only wallet.');
 
-    await wallet.unlock(passphrase, ONE_MINUTE);
+    const recoveryAdmission = this.recoveryAdmission.beginImport();
+    try {
+      await wallet.unlock(passphrase, ONE_MINUTE);
 
-    if (!wallet.master || !wallet.master.key) {
-      throw new Error('Bob could not unlock the wallet master key.');
-    }
+      if (!wallet.master || !wallet.master.key) {
+        throw new Error('Bob could not unlock the wallet master key.');
+      }
 
-    const existingAccounts = new Map();
-    const existingAccountNames = await wallet.getAccounts();
+      const existingAccounts = new Map();
+      const existingAccountNames = await wallet.getAccounts();
 
-    for (const accountName of existingAccountNames) {
-      const account = await wallet.getAccount(accountName);
-      if (account) existingAccounts.set(account.accountIndex, account);
-    }
+      for (const accountName of existingAccountNames) {
+        const account = await wallet.getAccount(accountName);
+        if (account) existingAccounts.set(account.accountIndex, account);
+      }
 
-    let match = null;
-    const accountDepth = Math.max(wallet.accountDepth || 0, existingAccounts.size);
+      let match = null;
+      const accountDepth = Math.max(wallet.accountDepth || 0, existingAccounts.size);
 
-    for (let accountIndex = 0; accountIndex < SHAKE_RECOVERY_ACCOUNT_LIMIT; accountIndex++) {
-      const existingAccount = existingAccounts.get(accountIndex);
-      const account = existingAccount || this.createVirtualAccount(wallet, accountIndex);
-      const branches = [
-        {
-          id: 0,
-          name: 'receive',
-          derive: index => account.deriveReceive(index),
-        },
-        {
-          id: 1,
-          name: 'change',
-          derive: index => account.deriveChange(index),
-        },
-      ];
+      for (let accountIndex = 0; accountIndex < SHAKE_RECOVERY_ACCOUNT_LIMIT; accountIndex++) {
+        const existingAccount = existingAccounts.get(accountIndex);
+        const account = existingAccount || this.createVirtualAccount(wallet, accountIndex);
+        const branches = [
+          {
+            id: 0,
+            name: 'receive',
+            derive: index => account.deriveReceive(index),
+          },
+          {
+            id: 1,
+            name: 'change',
+            derive: index => account.deriveChange(index),
+          },
+        ];
 
-      for (const branch of branches) {
-        for (let index = 0; index < SHAKE_RECOVERY_DERIVATION_LIMIT; index++) {
-          const derivedAddress = branch.derive(index).getAddress();
+        for (const branch of branches) {
+          for (let index = 0; index < SHAKE_RECOVERY_DERIVATION_LIMIT; index++) {
+            const derivedAddress = branch.derive(index).getAddress();
 
-          if (!derivedAddress.hash.equals(parsedAddress.hash)) continue;
+            if (!derivedAddress.hash.equals(parsedAddress.hash)) continue;
 
-          match = {
-            walletId: this.name,
-            accountIndex,
-            accountName: existingAccount ? existingAccount.name : null,
-            branch: branch.id,
-            branchName: branch.name,
-            index,
-            accountExisted: !!existingAccount,
-            address: addressString,
-          };
-          break;
+            match = {
+              walletId: this.name,
+              accountIndex,
+              accountName: existingAccount ? existingAccount.name : null,
+              branch: branch.id,
+              branchName: branch.name,
+              index,
+              accountExisted: !!existingAccount,
+              address: addressString,
+            };
+            break;
+          }
+
+          if (match) break;
         }
 
         if (match) break;
       }
 
-      if (match) break;
-    }
+      if (!match) {
+        return {
+          status: 'not-found',
+          address: addressString,
+          selectedWallet: this.name,
+          accountLimit: SHAKE_RECOVERY_ACCOUNT_LIMIT,
+          derivationLimit: SHAKE_RECOVERY_DERIVATION_LIMIT,
+          recoveryScan: true,
+          importedAccounts: [],
+        };
+      }
 
-    if (!match) {
+      const importedAccounts = [];
+
+      if (!match.accountExisted) {
+        if (match.accountIndex < accountDepth) {
+          throw new Error(`Matching account index ${match.accountIndex} is below Bob's current account depth but was not loaded.`);
+        }
+
+        for (let accountIndex = accountDepth; accountIndex <= match.accountIndex; accountIndex++) {
+          const accountName = await this.getUniqueAccountName(wallet, accountIndex === match.accountIndex
+            ? `shake-account-${accountIndex}`
+            : `imported-account-${accountIndex}`);
+          const account = await wallet.createAccount({
+            name: accountName,
+            type: 'pubkeyhash',
+          }, passphrase);
+
+          importedAccounts.push({
+            accountIndex: account.accountIndex,
+            accountName: account.name,
+          });
+
+          if (account.accountIndex === match.accountIndex) {
+            match.accountName = account.name;
+          }
+        }
+
+        const wallets = await this.listWallets();
+        dispatchToMainWindow({
+          type: SET_WALLETS,
+          payload: createPayloadForSetWallets(wallets, this.name),
+        });
+
+        this.rescan(0, {recoveryAdmission}).catch(e => {
+          console.error('Could not start account recovery rescan.', e);
+        });
+      }
+
       return {
-        status: 'not-found',
+        status: match.accountExisted ? 'found-existing-account' : 'imported-account',
         address: addressString,
         selectedWallet: this.name,
         accountLimit: SHAKE_RECOVERY_ACCOUNT_LIMIT,
         derivationLimit: SHAKE_RECOVERY_DERIVATION_LIMIT,
         recoveryScan: true,
-        importedAccounts: [],
+        match,
+        importedAccounts,
+        rescanStarted: importedAccounts.length > 0,
       };
+    } finally {
+      this.recoveryAdmission.releaseImport(recoveryAdmission);
     }
-
-    const importedAccounts = [];
-
-    if (!match.accountExisted) {
-      if (match.accountIndex < accountDepth) {
-        throw new Error(`Matching account index ${match.accountIndex} is below Bob's current account depth but was not loaded.`);
-      }
-
-      for (let accountIndex = accountDepth; accountIndex <= match.accountIndex; accountIndex++) {
-        const accountName = await this.getUniqueAccountName(wallet, accountIndex === match.accountIndex
-          ? `shake-account-${accountIndex}`
-          : `imported-account-${accountIndex}`);
-        const account = await wallet.createAccount({
-          name: accountName,
-          type: 'pubkeyhash',
-        }, passphrase);
-
-        importedAccounts.push({
-          accountIndex: account.accountIndex,
-          accountName: account.name,
-        });
-
-        if (account.accountIndex === match.accountIndex) {
-          match.accountName = account.name;
-        }
-      }
-
-      const wallets = await this.listWallets();
-      dispatchToMainWindow({
-        type: SET_WALLETS,
-        payload: createPayloadForSetWallets(wallets, this.name),
-      });
-
-      this.rescan(0).catch(e => {
-        console.error('Could not start account recovery rescan.', e);
-      });
-    }
-
-    return {
-      status: match.accountExisted ? 'found-existing-account' : 'imported-account',
-      address: addressString,
-      selectedWallet: this.name,
-      accountLimit: SHAKE_RECOVERY_ACCOUNT_LIMIT,
-      derivationLimit: SHAKE_RECOVERY_DERIVATION_LIMIT,
-      recoveryScan: true,
-      match,
-      importedAccounts,
-      rescanStarted: importedAccounts.length > 0,
-    };
   };
 
   createVirtualAccount(wallet, accountIndex) {
@@ -1971,15 +1991,21 @@ class WalletService {
   };
 
   importName = async (name, start, options = {}) => {
-    await this._executeRPC('importname', [name, null]);
+    const recoveryAdmission = this.recoveryAdmission.beginImport();
+    try {
+      await this._executeRPC('importname', [name, null]);
 
-    // wait 1 sec (for filterload to update on peer)
-    if (this.nodeService.spv) {
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // wait 1 sec (for filterload to update on peer)
+      if (this.nodeService.spv) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+
+      // rescan
+      return await this.rescan(start, {...options, recoveryAdmission});
+    } catch (error) {
+      this.recoveryAdmission.releaseImport(recoveryAdmission);
+      throw error;
     }
-
-    // rescan
-    return this.rescan(start, options);
   };
 
   /**
@@ -1994,38 +2020,43 @@ class WalletService {
       return null;
     }
 
-    let minHeight = null;
-    const seen = new Set();
+    const recoveryAdmission = this.recoveryAdmission.beginImport();
+    try {
+      let minHeight = null;
+      const seen = new Set();
 
-    for (const entry of entries) {
-      const name = (entry?.name || '').trim().toLowerCase();
-      if (!name || seen.has(name)) {
-        continue;
-      }
-      seen.add(name);
+      for (const entry of entries) {
+        const name = (entry?.name || '').trim().toLowerCase();
+        if (!name || seen.has(name)) {
+          continue;
+        }
+        seen.add(name);
 
-      await this._executeRPC('importname', [name, null]);
+        await this._executeRPC('importname', [name, null]);
 
-      const h = Number(entry.height);
-      if (Number.isFinite(h)) {
-        if (minHeight == null || h < minHeight) {
-          minHeight = h;
+        const h = Number(entry.height);
+        if (Number.isFinite(h)) {
+          if (minHeight == null || h < minHeight) {
+            minHeight = h;
+          }
         }
       }
-    }
 
-    if (this.nodeService.spv) {
-      // Allow bloom filter / peer filterload to update once for all names.
-      await new Promise(resolve => setTimeout(resolve, 1500));
-    }
+      if (this.nodeService.spv) {
+        // Allow bloom filter / peer filterload to update once for all names.
+        await new Promise(resolve => setTimeout(resolve, 1500));
+      }
 
-    // Start one rescan from the earliest auction height. Completion is observed
-    // through wallet progress events instead of holding this IPC request open:
-    // hsd can reach the target height without resolving wdb.rescan().
-    this.rescan(minHeight == null ? 0 : minHeight, options).catch(error => {
-      console.error('Bulk name import rescan failed:', error);
-    });
-    return {rescanStarted: true, height: minHeight == null ? 0 : minHeight};
+      // Start one rescan from the earliest auction height. Completion is observed
+      // through durable backend state rather than this IPC request's promise.
+      this.rescan(minHeight == null ? 0 : minHeight, {...options, recoveryAdmission}).catch(error => {
+        console.error('Bulk name import rescan failed:', error);
+      });
+      return {rescanStarted: true, height: minHeight == null ? 0 : minHeight};
+    } catch (error) {
+      this.recoveryAdmission.releaseImport(recoveryAdmission);
+      throw error;
+    }
   };
 
   rpcGetWalletInfo = async () => {

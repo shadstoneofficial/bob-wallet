@@ -281,11 +281,23 @@ export const waitForWalletSync = (
     }
 
     const nodeHeight = state.node.chain.height;
-    const {walletHeight, rescanHeight, walletSync, rescanStatus} = state.wallet;
+    const {
+      walletHeight,
+      rescanHeight,
+      walletSync,
+      rescanStatus,
+      rescanGeneration,
+    } = state.wallet;
     if (rescanStatus === 'failed') {
       throw new Error('Wallet recovery is incomplete. Restart Bob to resume before retrying.');
     }
     const managedRescanPending = rescanStatus === 'waiting' || rescanStatus === 'scanning';
+    const matchingRescanGeneration = Number.isSafeInteger(options.rescanGenerationBefore)
+      && rescanGeneration > options.rescanGenerationBefore;
+
+    if (!sawRescan && matchingRescanGeneration) {
+      sawRescan = true;
+    }
 
     if (!sawRescan && walletSync && rescanHeight !== null) {
       sawRescan = true;
@@ -298,6 +310,8 @@ export const waitForWalletSync = (
     } else if (managedRescanPending) {
       // A queued scan may still show the preceding scan's final height.
       // Managed completion is emitted from observed blocks, not an RPC reply.
+    } else if (matchingRescanGeneration && rescanStatus === 'complete') {
+      break;
     } else if (walletSync) {
       if (rescanHeight === null || walletHeight >= rescanHeight) {
         break;
@@ -315,7 +329,7 @@ export const waitForWalletSync = (
       progress = 0;
     }
 
-    const progressKey = `${rescanStatus}:${walletSync}:${walletHeight}:${rescanHeight}:${nodeHeight}:${progress.toFixed(4)}`;
+    const progressKey = `${rescanStatus}:${rescanGeneration}:${walletSync}:${walletHeight}:${rescanHeight}:${nodeHeight}:${progress.toFixed(4)}`;
     if (lastProgressKey === progressKey) {
       stall++;
     } else {

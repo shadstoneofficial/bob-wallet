@@ -8,6 +8,8 @@ function deferred() {let resolve; const promise = new Promise(r => {resolve = r;
 const tick = () => new Promise(r => setImmediate(r));
 function fixture({store = new Map(), spv = false} = {}) {
   const calls = [];
+  let rescanPostlude = async result => result;
+  let rescanCalls = 0;
   const chain = {locker: new Lock(), db: {scan: async height => calls.push(height)}};
   chain._reset = async height => calls.push(height);
   const node = {chain, spv};
@@ -28,8 +30,10 @@ function fixture({store = new Map(), spv = false} = {}) {
     },
     async rescan(height) {
       const unlock = await this.txLock.lock();
-      try {return await client.rescan(height);}
+      let result;
+      try {result = await client.rescan(height);}
       finally {unlock();}
+      return rescanPostlude(result, ++rescanCalls);
     },
     async close() {},
     async syncNode() {
@@ -39,7 +43,7 @@ function fixture({store = new Map(), spv = false} = {}) {
     },
   });
   installLocalRescan(wdb, node);
-  return {wdb, chain, store, calls};
+  return {wdb, chain, store, calls, setRescanPostlude(fn) {rescanPostlude = fn;}};
 }
 function record(store) {return JSON.parse([...store.values()][0].toString());}
 
@@ -136,7 +140,7 @@ test('shutdown preserves accepted waiting recovery and rejects new requests', as
   t.end();
 });
 
-test('progress keeps the original target across overlaps and completion does not await an RPC reply', async t => {
+test('completion requires durable scan acknowledgement and releases queues before a late RPC reply', async t => {
   const f = fixture(); f.chain.height = 100; f.wdb.height = 100;
   const gate = deferred(); const entered = deferred();
   f.chain.db.scan = async () => {
@@ -152,17 +156,52 @@ test('progress keeps the original target across overlaps and completion does not
   gate.resolve(); await Promise.all([first, second]);
   t.equal(f.wdb.bobRescanState.status, 'complete');
 
-  const reply = deferred(); const completed = deferred();
-  f.chain.db.scan = async () => {
+  const reply = deferred();
+  f.chain.db.scan = async height => {
+    f.calls.push(height);
     f.wdb.height = 100; f.wdb.emit('block connect', {height: 100});
-    completed.resolve(); await reply.promise;
   };
-  let settled = false;
-  const third = f.wdb.rescan(0).then(() => {settled = true;});
-  await completed.promise;
-  t.notOk(settled, 'underlying promise is still unresolved');
-  t.equal(f.wdb.bobRescanState.status, 'complete', 'observed progress is available without awaiting the reply');
+  f.setRescanPostlude(async (result, call) => call === 1
+    ? reply.promise.then(() => result)
+    : result);
+  let completedStatus = false;
+  const third = f.wdb.rescan(0);
+  for (let i = 0; i < 20 && f.wdb.bobRescanState.status !== 'complete'; i++) await tick();
+  t.equal(f.wdb.bobRescanState.status, 'complete', 'scan success and durable journal acknowledgement mark completion');
+  t.notOk(f.wdb.txLock.busy, 'the completed scan released WalletDB before its wrapper reply');
+  const queued = f.wdb.rescan(0);
+  for (let i = 0; i < 20 && f.calls.length < 2; i++) await tick();
+  completedStatus = f.wdb.bobRescanState.status === 'complete';
+  t.ok(completedStatus, 'the second request completes while the first RPC promise remains unresolved');
+  await queued;
+  t.deepEqual(f.calls, [0, 0], 'the next queued scan starts before the first RPC reply settles');
   reply.resolve(); await third;
+  t.end();
+});
+
+test('scan failure or acknowledgement failure after the target never publishes completion', async t => {
+  for (const failure of ['scan-after-target', 'ack-write']) {
+    const f = fixture();
+    f.chain.height = 100;
+    let puts = 0;
+    const put = f.wdb.db.put;
+    if (failure === 'ack-write') {
+      f.wdb.db.put = async (...args) => {
+        puts++;
+        if (puts === 2) throw new Error('fixture acknowledgement failure');
+        return put(...args);
+      };
+    }
+    f.chain.db.scan = async () => {
+      f.wdb.height = 100;
+      f.wdb.emit('block connect', {height: 100});
+      if (failure === 'scan-after-target') throw new Error('fixture scan failed after target');
+    };
+    try {await f.wdb.rescan(0); t.fail('must reject');}
+    catch (error) {t.match(error.message, /fixture (scan failed|acknowledgement failure)/);}
+    t.equal(f.wdb.bobRescanState.status, 'failed', `${failure} remains visibly failed`);
+    t.equal(record(f.store).requests.length, 1, `${failure} keeps recovery pending on restart`);
+  }
   t.end();
 });
 

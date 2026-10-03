@@ -7,6 +7,8 @@ for (const [file, ...args] of [
   ['restore-overlap.cjs', '--lock-cycle'],
   ['spv-overlap.cjs', '--baseline'],
   ['spv-overlap.cjs'],
+  ['spv-startup.cjs', '--baseline'],
+  ['spv-startup.cjs'],
 ]) {
   console.log(`\nFixture: ${file} ${args.join(' ')}`);
   const result = spawnSync(process.execPath, [path.join(__dirname, file), ...args], {

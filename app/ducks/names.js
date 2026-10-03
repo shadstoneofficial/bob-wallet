@@ -785,6 +785,9 @@ export const sendBidMany = (entries, options = {}) => async (dispatch, getState)
   }
 
   const { wallet } = getState();
+  const rescanGenerationBefore = Number.isSafeInteger(wallet.rescanGeneration)
+    ? wallet.rescanGeneration
+    : 0;
   if (wallet.watchOnly) {
     throw new Error('Auction Basket bidding is not available for watch-only wallets.');
   }
@@ -819,6 +822,7 @@ export const sendBidMany = (entries, options = {}) => async (dispatch, getState)
       waitForSync: waitOptions => dispatch(waitForWalletSync(600, {
         ...waitOptions,
         requireRescanStart: true,
+        rescanGenerationBefore,
       })),
       findTransactions: names => walletClient.findBasketBidTransactions(names),
       prepare: (payload, attemptId) => {

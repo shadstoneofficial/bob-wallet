@@ -15,12 +15,15 @@ A restore/rescan racing a new block therefore creates a cycle:
 
 The fixtures park a real block-connect callback immediately before WalletDB delivery, start a rescan, observe its real chain-lock request, then release block delivery. Both real mutexes remain busy with one waiter each on the baseline. This is backend deadlock, not merely a frozen percentage. Five restores with no incoming block at that boundary finish normally: overlap increases opportunities for the race but does not invariably cause it.
 
-A separate reporting defect is confirmed by inspection and regression: Bob previously replaced `heightBeforeRescan` with the current partial wallet height on every new request. An original target of 100 could become 48 when another restore starts. The new embedded-backend state keeps the target, distinguishes waiting/scanning/failure, and prevents basket preparation from treating an earlier scan's final height as completion of a queued scan.
+A separate reporting defect is confirmed by inspection and regression: Bob previously replaced `heightBeforeRescan` with the current partial wallet height on every new request. An original target of 100 could become 48 when another restore starts. The new embedded-backend state keeps the target, distinguishes waiting/scanning/failure, and gives each recovery generation an identity so the basket waiter can detect a fast scan that starts and completes between polls.
+
+Arthur's packaged v2.3.13 report also reproduces a fresh-SPV startup assertion: `WalletDB.syncNode()` performs its first SPV `Chain.reset()` during `hsd.open()`, before `NodeService` calls `hsd.connect()`. The reset reaches `Pool.forceSync()` while `Pool.connected` is false and emits `Pool is not connected!`. The adapter now defers this initial local sync and `NodeService` resumes it after `hsd.connect()`. A real in-memory hsd SPVNode fixture reproduces the assertion without the adapter and completes cleanly with the new ordering. This explains Arthur's startup failure; it is separate from the overlap lock cycle and does not establish Oscar's reported cause.
 
 ## Scope and entry points
 
-- `ImportSeedFlow.finishFlow`: awaits `importSeed`, then starts `rescan` without waiting for completion. `importSeed` creates a wallet; it does not itself scan.
+- `ImportSeedFlow.finishFlow`: calls `importSeed` with its chosen rescan height. The wallet service creates the wallet, then starts the rescan under one import admission; it does not wait for the rescan to finish before opening the wallet UI.
 - `WalletService.rescan`: Settings rescan, restore onboarding, account recovery, `importName` and batched `importNames` ultimately reach the shared WalletDB.
+- Seed restores, single/bulk name imports, and account recovery reserve the shared recovery admission before mutating imported state. A second restore/import gets a clear busy or restart-required error while a recovery is queued, scanning, or failed. New empty-wallet creation and ordinary chain synchronization do not use this guard.
 - hsd wallet HTTP/RPC recovery/import paths also call `wdb.rescan`; patching only the onboarding component would miss them.
 - P2P full-node and SPV modes use the embedded plugin. The adapter is installed before plugin open and covers shared `rescan`, `syncNode` and close lifecycle. It retains hsd's own WalletDB lock and scan implementation.
 - Custom RPC creates a separate `WalletNode` using a remote node client. There is no local chain mutex to coordinate. Its behavior remains unchanged; this PR does not claim a Custom RPC fix or network-outage reproduction.
@@ -31,11 +34,11 @@ A separate reporting defect is confirmed by inspection and regression: Bob previ
 
 `localRescan.js` consistently acquires the chain mutex before WalletDB operations. An `AsyncLocalStorage` ownership token permits the embedded client to call hsd's unlocked `chain.db.scan` / `chain._reset` only while that operation actually owns the chain mutex. Tokens become inactive on exit, including for descendant callbacks. This adapter deliberately depends on hsd v6.1.1 internals: review it when upgrading hsd.
 
-The native lock queues remain the scheduler; no separate long-lived rescan-promise queue or UI timeout unlock is added. No navigation event cancels or rewinds a scan. Seeing the final block can complete progress reporting before the corresponding promise settles, but **never forcibly releases a backend mutex**. A genuinely broken backend promise that still owns a mutex cannot safely be bypassed based only on a displayed height.
+The native lock queues remain the scheduler; no UI timeout unlock is added. No navigation event cancels or rewinds a scan. A final block event updates displayed height only. Recovery becomes complete only after the backend scan succeeds, the journal acknowledgement is written, and WalletDB releases its transaction lock. At that safe boundary the chain lock is released even if a wrapper-level RPC reply remains pending, allowing the next queued scan to run without bypassing WalletDB's lock.
 
-Before waiting for a backend mutex, each accepted request writes its required height to WalletDB metadata under `ff626f622d72657363616e2d7631` (outside hsd's ASCII key layout). The record contains only monotonically increasing request numbers and heights. Success acknowledges that request; failure retains it. On startup/reconnect, unacknowledged requests are recovered from the earliest required height. SPV acknowledges after the durable rewind completes; ordinary hsd synchronization resumes the remaining download from its persisted WalletDB state. Shutdown drains owned locks and preserves accepted waiting requests for restart. New requests after shutdown begins reject explicitly.
+Before waiting for a backend mutex, each accepted request writes its required height to WalletDB metadata under `ff626f622d72657363616e2d7631` (outside hsd's ASCII key layout). The record contains only monotonically increasing request numbers and heights. Success acknowledges the request only after the scan and journal write succeed; failures in the scan, initial sync or journal read/parse/ack path publish failed state and retain pending records. On startup/reconnect, unacknowledged requests are recovered from the earliest required height. SPV acknowledges after the durable rewind completes; ordinary hsd synchronization resumes the remaining download from its persisted WalletDB state. Startup sync waits until the embedded pool is connected. Shutdown drains owned locks and preserves accepted waiting requests for restart. New requests after shutdown begins reject explicitly.
 
-No seed, key, wallet identifier, path or credential is added to metadata. No existing wallet/schema records are deleted or rewritten by a migration, and there is no database version bump. Normal rescans retain hsd's existing rollback/replay behavior. Older Bob versions ignore the additional metadata, but **do not resume it**: downgrading while recovery is pending is not an acceptance-tested workflow. A crash between wallet creation and the separate rescan IPC request remains outside this journal's accepted-request guarantee. Power-loss/fsync behavior has not been tested.
+No seed, key, wallet identifier, path or credential is added to metadata. No existing wallet/schema records are deleted or rewritten by a migration, and there is no database version bump. Normal rescans retain hsd's existing rollback/replay behavior. Older Bob versions ignore the additional metadata, but **do not resume it**: downgrading while recovery is pending is not an acceptance-tested workflow. A crash after imported wallet creation but before the rescan journal write can still leave that wallet without a recorded recovery request. Power-loss/fsync behavior has not been tested.
 
 Failure state remains visible until pending recovery succeeds during restart/reconnect. There is no automatic transaction retry. The UI uses two new English/Simplified Chinese strings; native-speaker review remains open.
 
@@ -49,7 +52,9 @@ node scripts/check-locale.test.js
 npm run build
 ```
 
-`npm run test:sync` runs both baseline and adapter variants in separate processes. All fixture keys are freshly generated; all chain/wallet data is in memory, with no existing profiles, sockets, transaction relay or external services. Fixtures mine disposable regtest coinbases solely to verify restored history. The baseline deadlock process exits only after asserting both sides of the real lock cycle; it does not force-unlock a database. Watchdogs fail a hung fixture.
+`npm run test:sync` runs baseline and adapter variants in separate processes. All fixture keys are freshly generated; all chain/wallet data is in memory, with no existing profiles, sockets, transaction relay or external services. Fixtures mine disposable regtest coinbases solely to verify restored history. The SPV startup fixture opens a real hsd node and WalletDB while blocking TCP/UDP listeners and peer connections; it reproduces the baseline assertion, then models the post-`Pool.connect()` readiness boundary in memory and verifies that deferred sync succeeds. The lock-cycle baseline exits only after asserting both sides of the real lock cycle; it does not force-unlock a database. Watchdogs fail a hung fixture.
+
+For PR #17 packaged scenarios, retain the same disposable-profile boundary: local regtest only, generated fixtures, no external/custom RPC, no supplied recovery phrase or key, and transaction construction/sign/broadcast disabled. The synthetic `Pool.connected` flip is limited to the source startup fixture; a packaged acceptance result must report the real local startup and bounded shutdown events. Source fixtures do not count as packaged acceptance.
 
 Verified results:
 
@@ -60,13 +65,15 @@ Verified results:
 | Stock SPV lock-cycle fixture | Chain 21, wallet 0; both mutexes waiting |
 | Patched SPV | Five restores during partial replay; WalletDB reconstructed at height 5; all histories recovered; incoming-block race completes; replay reaches 21 |
 | Full-node two/five overlap, five sequential, failed first scan | Every restored wallet finds its history; maximum one active scan |
-| Journal unit fixtures | Queued coverage, earliest-height restart recovery, failed scan/write, shutdown and rejected late request |
-| UI/action fixtures | Stable target, waiting/failure, A → B → A, unmount/reopen, final-block reporting with unresolved reply, queued scan cannot release transaction preparation |
-| Existing + new unit suite | 795 assertions passed, including basket no-late-broadcast/retry-lock regressions |
+| Startup-order fixture | Baseline reports `Pool is not connected!`; adapter defers sync until pool readiness and finishes without errors; memory database, zero sockets |
+| Journal unit fixtures | Queued coverage, earliest-height restart recovery, preliminary sync/journal/ack failures, shutdown and rejected late request |
+| Completion/queue fixtures | Final height alone never marks ready; scan and ack failures after target remain failed; a second queued scan runs after durable completion while the first wrapper reply is unresolved |
+| Import/action fixtures | Active/queued/failed recovery blocks another restore/import; empty wallet creation and normal chain sync remain available; generation detects fast start-to-complete cycles; switch/unmount remains safe |
+| Existing + new unit suite | 816 assertions passed, including basket no-late-broadcast/retry-lock regressions |
 | Locale | 1,278 English/Chinese keys valid; 12 validator regressions passed |
-| Local build | Renderer and main-process compile pass; 176 compiled files / 61 reachable main-process modules validated |
+| Local build | Not rerun for this review follow-up; packaged acceptance remains open |
 
-These are **fixture and local-build results**, not packaged application acceptance. WalletDB reconstruction reuses an in-memory database image; it is not an OS crash or filesystem durability test. No public binaries were built, signed, tagged, uploaded or published.
+These are **source fixture, unit, locale and earlier local-build results**, not packaged application acceptance. WalletDB reconstruction reuses an in-memory database image; it is not an OS crash or filesystem durability test. No public binaries were built, signed, tagged, uploaded or published.
 
 ## Remaining acceptance and safe support
 

@@ -87,3 +87,4 @@ require("./app/utils/tests/reviewText.spec");
 require('./app/pages/Addons/tests/catalog.spec');
 
 require('./app/background/wallet/tests/localRescan.spec');
+require('./app/background/wallet/tests/recoveryAdmission.spec');
