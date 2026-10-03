@@ -1,7 +1,10 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const {spawn} = require('child_process');
+const {
+  runChild,
+  validateSmokeResult,
+} = require('./lib/packaged-smoke-runner.cjs');
 
 const appPath = path.resolve(process.argv[2] || '');
 const smokeProfile = process.argv[3] || '';
@@ -15,14 +18,9 @@ const userData = path.join(tempRoot, 'user-data');
 const reportPath = path.join(tempRoot, 'report.json');
 fs.mkdirSync(userData);
 
-function cleanOutput(value) {
-  return value.replaceAll(tempRoot, '<smoke-temp>').slice(-12000);
-}
-
 async function main() {
-  let stdout = '';
-  let stderr = '';
-  const child = spawn(executable, [], {
+  const {result, stdout, stderr} = await runChild({
+    executable,
     env: {
       ...process.env,
       BOB_LEARNHNS_FORK: 'true',
@@ -31,52 +29,16 @@ async function main() {
       BOB_SMOKE_REPORT: reportPath,
       BOB_SMOKE_PROFILE: smokeProfile,
     },
-    stdio: ['ignore', 'pipe', 'pipe'],
+    timeoutMs: 120000,
   });
-
-  child.stdout.on('data', chunk => { stdout += chunk.toString(); });
-  child.stderr.on('data', chunk => { stderr += chunk.toString(); });
-
-  const exit = new Promise((resolve, reject) => {
-    child.once('error', reject);
-    child.once('exit', (code, signal) => resolve({code, signal}));
+  const {report} = validateSmokeResult({
+    result,
+    stdout,
+    stderr,
+    reportPath,
+    smokeProfile,
+    replacements: [[tempRoot, '<smoke-temp>']],
   });
-  const timeout = new Promise((resolve) => {
-    setTimeout(() => resolve({timeout: true}), 120000);
-  });
-  const result = await Promise.race([exit, timeout]);
-
-  if (result.timeout) {
-    child.kill('SIGTERM');
-    throw new Error(`Packaged app smoke test timed out.\nstdout:\n${cleanOutput(stdout)}\nstderr:\n${cleanOutput(stderr)}`);
-  }
-  if (!fs.existsSync(reportPath)) {
-    throw new Error(`Packaged app did not write a smoke report (exit ${result.code}, signal ${result.signal || 'none'}).\nstdout:\n${cleanOutput(stdout)}\nstderr:\n${cleanOutput(stderr)}`);
-  }
-
-  const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
-  const required = [
-    'ok',
-    'mainWindowCreated',
-    'rendererProcessStarted',
-    'appHtmlLoaded',
-    'servicesInitialized',
-    'dockReopenCreatedWindow',
-    'dockReopenLoaded',
-    'secondRendererProcessStarted',
-  ];
-  const failed = required.filter(key => report[key] !== true);
-  if (report.unhandledStartupRejection !== false) failed.push('unhandledStartupRejection');
-  if (smokeProfile === 'existing-p2p-spv') {
-    if (report.existingP2PSpvFixture !== true) failed.push('existingP2PSpvFixture');
-    if (report.localTransactionClientAbsent !== true) failed.push('localTransactionClientAbsent');
-  }
-  if (result.code !== 0) failed.push(`exitCode=${result.code}`);
-
-  if (failed.length) {
-    throw new Error(`Packaged app smoke test failed: ${failed.join(', ')}\nReport: ${JSON.stringify(report)}\nstderr:\n${cleanOutput(stderr)}`);
-  }
-
   console.log(`Packaged macOS smoke test passed: ${JSON.stringify(report)}`);
 }
 

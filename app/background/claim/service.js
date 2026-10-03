@@ -20,5 +20,11 @@ const methods = {
 
 
 export function start(server) {
-  server.withService(sName, methods);
+  const {wrapBlockedMethods} = require('../packagedAcceptance/policy');
+  server.withService(sName, wrapBlockedMethods(
+    methods,
+    ['airdropGenerateProofs'],
+    sName,
+    process.env.BOB_PACKAGED_ACCEPTANCE_TEST === 'true'
+  ));
 }

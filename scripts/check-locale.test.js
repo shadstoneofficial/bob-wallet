@@ -9,12 +9,14 @@ const {test} = require('node:test');
 const english = {
   message: 'Broadcast %s HNS via RPC',
   progress: 'Progress %s%',
+  catalog: 'ShakeX via shakex.fun',
   url: 'https://example.invalid/help',
   markup: '<b>Warning</b>\n**Keep** `HNS`',
 };
 const valid = {
   message: '通过 RPC 广播 %s HNS',
   progress: '进度 %s%',
+  catalog: '通过 shakex.fun 使用 ShakeX',
   url: 'https://example.invalid/help',
   markup: '<b>警告</b>\n**保留** `HNS`',
 };
@@ -29,6 +31,8 @@ const cases = [
   ['changed technical token', value => ({...value, message: '通过 RPC 广播 %s BTC'})],
   ['missing markup', value => ({...value, markup: '警告\n**保留** `HNS`'})],
   ['missing newline', value => ({...value, markup: '<b>警告</b>**保留** `HNS`'})],
+  ['changed bare domain', value => ({...value, catalog: '通过 shakex.fum 使用 ShakeX'})],
+  ['changed brand', value => ({...value, catalog: '通过 shakex.fun 使用 Shakex'})],
   ['empty value', value => ({...value, message: ''})],
   ['non-string value', value => ({...value, message: 42})],
 ];

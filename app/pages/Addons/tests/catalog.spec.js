@@ -26,3 +26,51 @@ test('Add Ons catalog registers ShakeX and preserves navigation and localized pr
   }
   t.end();
 });
+
+import React from 'react';
+import {renderToStaticMarkup} from 'react-dom/server';
+import {Addons} from '../index';
+import {I18nContext, translateLocale} from '../../../utils/i18n';
+import ru from '../../../../locales/ru-RU.json';
+import th from '../../../../locales/th-TH.json';
+
+class CatalogFixture extends Addons {
+  constructor(props) {
+    super(props);
+    this.state = {...this.state, pendingExternalAddon: ADDONS.find(a => a.id === 'liquidity-spot'),
+      liquiditySpotChannelError: 'addonLiquidityChannelInvalid'};
+  }
+}
+test('catalog presentation is localized without changing manifests or navigation', t => {
+  for (const [locale, strings] of [['en-US', en], ['zh-CN', zh], ['ru-RU', ru], ['th-TH', th]]) {
+    const tr = (key, ...args) => translateLocale(locale, null, key, ...args);
+    const html = renderToStaticMarkup(<I18nContext.Provider value={{t: tr}}>
+      <CatalogFixture location={{pathname: '/addons'}} history={{push: () => t.fail('must not navigate')}} deeplinkParams={{}} />
+    </I18nContext.Provider>);
+    for (const addon of ADDONS) {
+      for (const key of [addon.nameKey, addon.statusKey, addon.actionKey, addon.externalNoticeKey, ...(addon.detailKeys || [])].filter(Boolean)) {
+        t.ok(strings[key], `${locale}: ${key} exists`);
+        t.ok(html.includes(strings[key]), `${key} renders`);
+      }
+      if (addon.manifest) {
+        t.equal(addon.name, addon.manifest.name, 'localized name never overwrites manifest identity');
+        t.equal(addon.manifest, builtInAddonRegistry.get(addon.id));
+      }
+    }
+    t.ok(html.includes(tr('addonLiquidityChannelDescription', 'liquidity.spot')), 'host appears in translated description');
+    t.ok(html.includes(strings.addonLiquidityChannelInvalid), 'validation error translates at render time');
+    t.ok(html.includes(strings.addonExternalTitle));
+    if (locale !== 'en-US') for (const literal of ['Open External Add On?', 'Public Preview', 'Add/Save', 'Guest P2P:']) t.notOk(html.includes(literal), `no English catalog leak: ${literal}`);
+  }
+  const page = new Addons({location: {pathname: '/addons'}, history: {push: () => t.fail('external link must await confirmation')}});
+  page.setState = value => {page.state = {...page.state, ...value};};
+  page.state.liquiditySpotDraftHost = '';
+  page.saveLiquiditySpotChannel();
+  t.equal(page.state.liquiditySpotChannelError, 'addonLiquidityChannelInvalid', 'invalid host never reaches service');
+  const addon = ADDONS.find(a => a.id === 'liquidity-spot');
+  page.openAddon(addon);
+  t.equal(page.state.pendingExternalAddon, addon, 'opening external catalog only stages confirmation');
+  page.cancelExternalAddon();
+  t.equal(page.state.pendingExternalAddon, null, 'cancel clears pending external request');
+  t.end();
+});

@@ -2,7 +2,7 @@ import { clientStub } from '../background/node/client';
 import { clientStub as connClientStub } from '../background/connections/client';
 import { clientStub as settingClientStub } from '../background/setting/client';
 import { clientStub as walletClientStub } from '../background/wallet/client';
-import { ConnectionTypes } from '../background/connections/service';
+import { ConnectionTypes } from '../background/connections/types';
 import { getNetwork, setNetwork } from '../db/system';
 import { getWatching } from "./watching";
 import { throttle } from '../utils/throttle';

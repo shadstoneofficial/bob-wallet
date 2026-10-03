@@ -19,7 +19,7 @@ const props = {
   clearBasket: blocked, importBasketRows: blocked, sendBidMany: blocked,
   showError: blocked, showSuccess: blocked,
 };
-function renderState(fixtureState) {
+function renderState(fixtureState, translator = translate) {
   class Fixture extends AuctionBasket {
     constructor(p) {
       super(p);
@@ -32,7 +32,7 @@ function renderState(fixtureState) {
   }
   const element = document.createElement('div');
   element.innerHTML = renderToStaticMarkup(
-    <I18nContext.Provider value={{t: translate}}><Fixture {...props} /></I18nContext.Provider>,
+    <I18nContext.Provider value={{t: translator}}><Fixture {...props} /></I18nContext.Provider>,
   );
   return element;
 }
@@ -75,5 +75,27 @@ test('a proven pre-broadcast failure retains its safe retry message in Chinese',
   const retry = view.querySelectorAll('.auction-basket__footer-actions button')[1];
   t.equal(retry.textContent, '重试提交');
   t.equal(retry.disabled, false);
+  t.end();
+});
+
+
+import {translateLocale} from '../../../utils/i18n';
+import ru from '../../../../locales/ru-RU.json';
+import th from '../../../../locales/th-TH.json';
+test('Russian and Thai preserve actual local/broadcast phases and uncertainty retry lock', t => {
+  for (const [locale, strings] of [['ru-RU', ru], ['th-TH', th]]) {
+    const tr = (key, ...args) => translateLocale(locale, null, key, ...args);
+    for (const [phase, key] of [['building', 'basketBuildingStatus'], ['signing', 'basketSigningStatus'], ['broadcasting', 'basketBroadcastingStatus'], ['verifying', 'basketVerifyingStatus']]) {
+      const view = renderState({submissionPhase: phase}, tr);
+      t.ok(view.textContent.includes(strings[key]), `${locale} ${phase}`);
+      t.ok(view.querySelectorAll('.auction-basket__footer-actions button')[1].disabled, 'active phase cannot resubmit');
+    }
+    for (const uncertain of [true, false]) {
+      const view = renderState({submissionPhase: 'failed', submissionFailedStage: uncertain ? 'broadcasting' : 'signing', broadcastUncertain: uncertain, retryAllowed: !uncertain}, tr);
+      t.ok(view.textContent.includes(strings[uncertain ? 'basketRetryUncertain' : 'basketRetrySafe']));
+      t.notOk(view.textContent.includes(strings[uncertain ? 'basketRetrySafe' : 'basketRetryUncertain']));
+      t.equal(view.querySelectorAll('.auction-basket__footer-actions button')[1].disabled, uncertain, 'only proven pre-broadcast failure can retry');
+    }
+  }
   t.end();
 });

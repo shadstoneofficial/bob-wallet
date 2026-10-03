@@ -7,6 +7,30 @@
   width: 100vw;
   position: relative;
 
+  &--acceptance {
+    padding-top: 36px;
+    box-sizing: border-box;
+
+    .app__main-wrapper,
+    .app__uninitialized-wrapper {
+      height: calc(100vh - 36px);
+    }
+  }
+
+  &__acceptance-nav {
+    position: absolute;
+    inset: 0 0 auto;
+    height: 36px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 0 12px;
+    background: white;
+    border-bottom: 1px solid #ddd;
+    box-sizing: border-box;
+    z-index: 2;
+  }
+
   &__header {
     @extend %row-nowrap;
     box-sizing: border-box;

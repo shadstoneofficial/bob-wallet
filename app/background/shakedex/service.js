@@ -1408,7 +1408,25 @@ const methods = {
 
 export async function start(server) {
   await openDB();
-  server.withService(sName, methods);
+  const {wrapBlockedMethods} = require('../packagedAcceptance/policy');
+  server.withService(sName, wrapBlockedMethods(
+    methods,
+    [
+      'fulfillSwap',
+      'finalizeSwap',
+      'transferLock',
+      'finalizeLock',
+      'finalizeCancel',
+      'transferCancel',
+      'launchAuction',
+      'createPrivateAuction',
+      'listAuction',
+      'setShakedexChannelHost',
+      'resetShakedexChannelHost',
+    ],
+    sName,
+    process.env.BOB_PACKAGED_ACCEPTANCE_TEST === 'true'
+  ));
 }
 
 function ensureDB() {

@@ -8,7 +8,7 @@ const {decode: decodeIP, isRFC1918, isLocal} = require('binet/lib/ip');
 import * as nodeActions from "../../ducks/node";
 import * as walletActions from '../../ducks/walletActions';
 import {setCustomRPCStatus} from "../../ducks/node";
-import {ConnectionTypes} from "../../background/connections/service";
+import {ConnectionTypes} from "../../background/connections/types";
 import {clientStub as cClientStub} from "../../background/connections/client";
 import {clientStub as nClientStub} from "../../background/node/client";
 import Dropdown from "../../components/Dropdown";

@@ -1,0 +1,13 @@
+.acceptance-fixture {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  padding: 16px;
+  overflow: auto;
+  box-sizing: border-box;
+
+  pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+}

@@ -150,3 +150,31 @@ test('real App login route preserves typed state across locale context rerenders
   wrapper.unmount();
   t.end();
 });
+
+// New locales use exactly the shared Settings/header preference pipeline.
+test('Russian and Thai aliases hydrate, select and survive restart', async t => {
+  const original = {...settings};
+  let saved;
+  settings.getLocale = async () => saved;
+  settings.getCustomLocale = async () => '';
+  settings.setLocale = async value => {saved = value;};
+  try {
+    for (const [alias, canonical, label] of [['ru', 'ru-RU', 'Русский'], ['ru-RU', 'ru-RU', 'Русский'], ['th', 'th-TH', 'ไทย'], ['th-TH', 'th-TH', 'ไทย']]) {
+      saved = alias;
+      let store = makeStore();
+      await store.dispatch(fetchLocale());
+      t.equal(store.getState().app.locale, canonical, `${alias} hydrates`);
+      const wrapper = mount(<Provider store={store}><I18nContext.Provider value={tContext}><Picker /></I18nContext.Provider></Provider>);
+      const index = predefinedLanguageItems.findIndex(item => item.value === canonical);
+      t.equal(wrapper.find('option').at(index).text(), label, 'native label is selectable');
+      t.equal(wrapper.find('select').prop('value'), index);
+      act(() => {wrapper.find('select').simulate('change', {target: {value: String(index)}});});
+      await tick(); await tick();
+      t.equal(saved, canonical, 'header persists canonical locale');
+      wrapper.unmount();
+      store = makeStore(); await store.dispatch(fetchLocale());
+      t.equal(store.getState().app.locale, canonical, 'restart keeps choice');
+    }
+  } finally {Object.assign(settings, original);}
+  t.end();
+});

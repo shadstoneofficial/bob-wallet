@@ -9,7 +9,7 @@ import {connect} from "react-redux";
 import {I18nContext} from "../../utils/i18n";
 import {clientStub as nClientStub} from "../../background/node/client";
 import {clientStub as cClientStub} from "../../background/connections/client";
-import {ConnectionTypes} from "../../background/connections/service";
+import {ConnectionTypes} from "../../background/connections/types";
 import "./splash-screen.scss"
 
 const nodeClient = nClientStub(() => require('electron').ipcRenderer);

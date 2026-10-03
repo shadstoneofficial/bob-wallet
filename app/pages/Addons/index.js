@@ -37,51 +37,66 @@ export const ADDONS = createBuiltInCatalog([
   },
   {
     manifestId: 'shakedex-marketplace',
+    nameKey: 'learnHnsMarketplace',
+    statusKey: 'available',
+    descriptionKey: 'addonShakedexDescription',
+    actionKey: 'open',
     status: 'Available',
     description: 'Browse pending and active Shakedex channel listings from inside Bob.',
     action: 'Open',
   },
   {
     manifestId: 'send-name',
+    nameKey: 'sendNameTab',
+    statusKey: 'available',
+    descriptionKey: 'addonSendNameDescription',
+    actionKey: 'open',
     status: 'Available',
     description: 'Send or sell a domain directly to another user with a paid claim payload.',
     action: 'Open',
   },
   {
     manifestId: 'liquidity-spot',
+    statusKey: 'addonPublicPreview',
+    descriptionKey: 'addonLiquidityChannelDescription',
+    actionKey: 'open',
+    externalNoticeKey: 'addonLiquidityExternalNotice',
     status: 'Public Preview',
-    description: 'Human P2P coordination is available now. Atomic-swap tooling is the next build track and will need Bitcoin wallet integration research.',
     action: 'Open',
     docsHref: 'https://bobwallet.org/docs/liquidity-spot',
     externalNotice: 'Liquidity opens outside Bob. Bob will not share your seed phrase, private keys, wallet password, or signing permissions with this Add On.',
-    details: [
-      'Guest P2P: browse, create, accept, and coordinate trades.',
-      'GFAVIP optional: only needed for Gems and account benefits.',
-      'Atomic swaps: planned Bitcoin/Electrum compatibility work.',
-      'No Bob wallet permissions in this preview.',
-    ],
+    detailKeys: ['addonLiquidityGuestDetail', 'addonLiquidityAccountDetail', 'addonLiquiditySwapDetail', 'addonLiquidityPermissionsDetail'],
   },
   {
     id: 'resolver-directory',
+    nameKey: 'addonResolverDirectoryName',
+    descriptionKey: 'addonResolverDirectoryDescription',
+    statusKey: 'addonPlanned',
     name: 'Resolver Directory',
     status: 'Planned',
     description: 'Find working Handshake resolvers and see their health before changing your setup.',
   },
   {
     id: 'agentic-web',
+    nameKey: 'addonAgenticWebName',
+    descriptionKey: 'addonAgenticWebDescription',
+    statusKey: 'addonResearch',
     name: 'Agentic Web',
     status: 'Research',
     description: 'Agent-friendly tools built around HNS TXT records and the hns.bio standard.',
   },
   {
     id: 'sld-manager',
+    nameKey: 'addonSldManagerName',
+    descriptionKey: 'addonSldManagerDescription',
+    statusKey: 'addonResearch',
     name: 'SLD Manager',
     status: 'Research',
     description: 'Help TLD owners run nameservers and manage second-level domains without DNS guesswork.',
   },
 ]);
 
-class Addons extends Component {
+export class Addons extends Component {
   static propTypes = {
     history: PropTypes.object.isRequired,
     location: PropTypes.object.isRequired,
@@ -180,7 +195,7 @@ class Addons extends Component {
   saveLiquiditySpotChannel() {
     const host = normalizeLiquiditySpotHost(this.state.liquiditySpotDraftHost);
     if (!host) {
-      this.setState({liquiditySpotChannelError: 'Enter a valid channel host.'});
+      this.setState({liquiditySpotChannelError: 'addonLiquidityChannelInvalid'});
       return;
     }
 
@@ -692,12 +707,12 @@ class Addons extends Component {
       return {
         ...addon,
         href: getLiquiditySpotChannelUrl(liquiditySpotHost),
-        description: `Human P2P coordination from ${liquiditySpotHost}. Atomic-swap tooling is the next build track and will need Bitcoin wallet integration research.`,
+        descriptionValues: [liquiditySpotHost],
       };
     });
 
     return (
-      <div className="addons-page">
+      <div className={`addons-page${isLiquiditySwapPage ? '' : ' addons-page--catalog'}`}>
         {!isLiquiditySwapPage && (
           <>
             <div className="addons-page__intro">
@@ -713,18 +728,19 @@ class Addons extends Component {
               </button>
             </div>
             <DocsHelp
-              title="Add Ons"
+              title={t('headingAddOns')}
+              buttonLabel={t('learnMore')}
               href="https://bobwallet.org/docs/add-ons"
             >
-              Add Ons are reviewed tools surfaced inside Bob. Native Add Ons stay in Bob; external Add Ons open outside Bob and never receive wallet secrets.
+              {reviewText(t, 'addonsDocsHelp')}
             </DocsHelp>
           </>
         )}
         <div className="addons-page__channel-card">
           <div>
-            <h3>Liquidity Channel</h3>
+            <h3>{reviewText(t, 'addonLiquidityChannelTitle')}</h3>
             <p>
-              Active channel: <strong>{liquiditySpotHost}</strong>. Guest P2P should be available without GFAVIP; GFAVIP is optional for Gems and account benefits.
+              {t('activeChannel')}: <strong>{liquiditySpotHost}</strong>. {reviewText(t, 'addonLiquidityChannelHelp')}
             </p>
           </div>
           <div className="addons-page__channel-controls">
@@ -755,15 +771,15 @@ class Addons extends Component {
               placeholder="liquidity.spot"
             />
             <button onClick={() => this.saveLiquiditySpotChannel()}>
-              Add/Save
+              {reviewText(t, 'addonLiquidityChannelSave')}
             </button>
             <button onClick={() => this.resetLiquiditySpotChannel()}>
-              Reset
+              {t('reset')}
             </button>
           </div>
           {liquiditySpotChannelError && (
             <div className="addons-page__channel-error">
-              {liquiditySpotChannelError}
+              {reviewText(t, liquiditySpotChannelError)}
             </div>
           )}
         </div>
@@ -850,14 +866,14 @@ class Addons extends Component {
           {addons.map(addon => (
             <div className="addons-page__card" key={addon.id || addon.name}>
               <div className="addons-page__card-header">
-                <h3>{addon.name}</h3>
+                <h3>{addon.nameKey ? reviewText(t, addon.nameKey) : addon.name}</h3>
                 <span>{addon.statusKey ? reviewText(this.context.t, addon.statusKey) : addon.status}</span>
               </div>
-              <p>{addon.descriptionKey ? reviewText(this.context.t, addon.descriptionKey) : addon.description}</p>
-              {addon.details && (
+              <p>{addon.descriptionKey ? reviewText(t, addon.descriptionKey, ...(addon.descriptionValues || [])) : addon.description}</p>
+              {addon.detailKeys && (
                 <ul className="addons-page__details">
-                  {addon.details.map(detail => (
-                    <li key={detail}>{detail}</li>
+                  {addon.detailKeys.map(detail => (
+                    <li key={detail}>{reviewText(t, detail)}</li>
                   ))}
                 </ul>
               )}
@@ -875,14 +891,14 @@ class Addons extends Component {
               </div>
               {pendingExternalAddon?.id === addon.id && (
                 <div className="addons-page__external-notice">
-                  <h4>Open External Add On?</h4>
-                  <p>{addon.externalNotice || 'This Add On opens outside Bob.'}</p>
+                  <h4>{reviewText(t, 'addonExternalTitle')}</h4>
+                  <p>{reviewText(t, addon.externalNoticeKey || 'addonExternalNotice')}</p>
                   <div className="addons-page__notice-actions">
                     <button onClick={() => this.confirmExternalAddon()}>
-                      Continue
+                      {t('continue')}
                     </button>
                     <button onClick={() => this.cancelExternalAddon()}>
-                      Cancel
+                      {t('cancel')}
                     </button>
                   </div>
                 </div>
