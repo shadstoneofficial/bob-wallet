@@ -5,6 +5,7 @@ import {Link} from 'react-router-dom';
 import {shell} from 'electron';
 import {fetchListings, SHAKEX_ORIGIN} from './client';
 import './shakex.scss';
+import {displayName, matchesName} from './displayName';
 
 export default function ShakeX() {
   const {t, locale} = useContext(I18nContext);
@@ -48,7 +49,7 @@ export default function ShakeX() {
     }
   }
 
-  const filtered = listings.filter(item => item.name.includes(query.trim().toLowerCase()));
+  const filtered = listings.filter(item => matchesName(item.name, query));
   return <section className="shakex-addon">
     <Link to="/addons">{tr('shakexBackToAddons')}</Link>
     <h2>ShakeX</h2>
@@ -70,8 +71,9 @@ export default function ShakeX() {
       <p role="status">{tr(filtered.length === 1 ? 'shakexListingCountOne' : 'shakexListingCountMany', filtered.length)}</p>
       {!filtered.length && <p>{listings.length ? tr('shakexNoMatches') : tr('shakexEmpty')}</p>}
       <div className="shakex-addon__list">
-        {filtered.map(item => <article key={item.name}>
-          <h3>{item.name}/</h3>
+        {filtered.map(item => <article key={item.name} data-name={item.name}>
+          <h3 className="shakex-addon__name" dir="ltr"><bdi dir="auto">{displayName(item.name)}</bdi>/</h3>
+          {displayName(item.name) !== item.name && <p className="shakex-addon__ascii" dir="ltr">{item.name}/</p>}
           <p>{item.prices.length ? item.prices.map(price => `${price.amount} ${price.unit}`).join(' · ') : tr('shakexContactForPrice')}</p>
           <ul>{item.contacts.map((contact, index) => <li key={index}>{contact}</li>)}</ul>
           <small>{tr('shakexLastVerified', item.verifiedAt ? reviewDate(item.verifiedAt, locale) : tr('shakexVerifiedUnknown'))}</small>
