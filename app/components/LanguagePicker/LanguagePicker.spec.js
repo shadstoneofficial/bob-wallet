@@ -7,6 +7,10 @@ import {createStore, applyMiddleware} from 'redux';
 import thunk from 'redux-thunk';
 import Picker, {LanguagePicker} from './index';
 import Dropdown from '../Dropdown';
+import App from '../../pages/App';
+import reducers from '../../ducks';
+import {createMemoryHistory} from 'history';
+import {MemoryRouter} from 'react-router-dom';
 import {I18nContext, predefinedLanguageItems} from '../../utils/i18n';
 import reducer, {fetchLocale, setLocale, setCustomLocale} from '../../ducks/app';
 import settings from '../../utils/settingsClient';
@@ -109,4 +113,40 @@ test('header language uses shared store, preserves sibling form, and represents 
   select.find('select').simulate('change', {target: {value: '1'}});
   t.equal(calls[calls.length - 1], 1, 'index callback contract retained');
   select.unmount(); t.end();
+});
+
+
+test('real App login route preserves typed state across locale context rerenders', t => {
+  let RawApp = App;
+  while (RawApp.WrappedComponent) RawApp = RawApp.WrappedComponent;
+  const app = new RawApp({isLocked: true, wallets: ['fixture'], walletInitialized: true});
+  const findLogin = element => {
+    if (!element) return null;
+    if (element.props?.path === '/login') return element;
+    for (const child of React.Children.toArray(element.props?.children)) {
+      const found = findLogin(child);
+      if (found) return found;
+    }
+    return null;
+  };
+  const content = () => {
+    const page = findLogin(app.renderContent()).props.render();
+    // Mount the actual route's form subtree, excluding network/header services.
+    return page.props.children[1].props.children;
+  };
+  const state = reducers(createMemoryHistory())(undefined, {type: 'fixture'});
+  Object.assign(state.wallet, {wallets: ['fixture'], walletsDetails: {fixture: {type: 'standard'}}});
+  const store = createStore(() => state, applyMiddleware(thunk));
+  app.context = {t: key => key};
+  const render = () => <MemoryRouter><I18nContext.Provider value={app.context}>{content()}</I18nContext.Provider></MemoryRouter>;
+  const wrapper = mount(<Provider store={store}>{render()}</Provider>);
+  wrapper.find('input[type="password"]').simulate('change', {target: {value: 'fixture-only-input'}});
+  const input = wrapper.find('input[type="password"]').getDOMNode();
+  app.context = {t: key => `中文 ${key}`};
+  wrapper.setProps({children: render()});
+  t.equal(wrapper.find('input[type="password"]').getDOMNode(), input, 'same DOM input survives actual route rerender');
+  t.equal(wrapper.find('input[type="password"]').prop('value'), 'fixture-only-input', 'component form state survives');
+  t.ok(wrapper.find('input[type="password"]').prop('placeholder').startsWith('中文'), 'translation changes in place');
+  wrapper.unmount();
+  t.end();
 });

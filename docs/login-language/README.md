@@ -22,6 +22,10 @@ save/import failures instead of leaving an unhandled rejection.
 
 Startup hydration is read-only, validates custom data, falls back to English for
 missing/unsupported/corrupt preferences, and cannot overwrite a newer selection.
+The login route uses a stable component identity so App context rerenders do not
+remount its form. A regression mounts the actual App route form subtree, checks
+the same DOM input and typed state survive, and confirms text updates in place.
+
 Header and Settings writes are serialized to keep persisted and displayed order
 consistent. The header shows a save error and retains the last committed selection
 on rejection. No network, node, wallet, rescan, routing, or form-reset action is
@@ -29,7 +33,7 @@ part of a language change.
 
 ## Verification
 
-- Full `npm test`: **773/773 assertions pass**, process exits successfully.
+- Full `npm test`: **776/776 assertions pass**, process exits successfully.
 - zh-CN parity/token/placeholder/format validation: **1,278/1,278 keys pass**.
 - Locale-validator regression suite: **12/12 pass**.
 - Production renderer compilation, interactive fixture compilation and
