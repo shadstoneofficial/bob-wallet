@@ -24,30 +24,40 @@
     "en": "Development only",
     "ru-RU": "Только для разработки",
     "th-TH": "สำหรับการพัฒนาเท่านั้น",
-    "sourceHead": "50cc6135bbd57df15c9a256f573a27411d409877"
+    "sourceHead": "50cc6135bbd57df15c9a256f573a27411d409877",
+    "zh-CN": "仅限开发版本",
+    "zhSourceHead": "4e35a77ab5e9424fd92d117b9b0501049e994a0a"
   },
   "systemDnsDevelopmentDescription": {
     "en": "Checks whether Bob's local resolver is ready. It cannot change system DNS.",
     "ru-RU": "Проверяет готовность локального резолвера Bob. Изменять системные настройки DNS эта функция не может.",
     "th-TH": "ตรวจสอบว่าตัวแก้ชื่อในเครื่องของ Bob พร้อมหรือไม่ โดยไม่สามารถเปลี่ยน DNS ของระบบได้",
-    "sourceHead": "50cc6135bbd57df15c9a256f573a27411d409877"
+    "sourceHead": "50cc6135bbd57df15c9a256f573a27411d409877",
+    "zh-CN": "检查 Bob 的本地解析器是否就绪。此功能无法更改系统 DNS。",
+    "zhSourceHead": "4e35a77ab5e9424fd92d117b9b0501049e994a0a"
   },
   "systemDnsResolverReady": {
     "en": "Bob's local resolver is ready for read-only checks.",
     "ru-RU": "Локальный резолвер Bob готов к проверкам только для чтения.",
     "th-TH": "ตัวแก้ชื่อในเครื่องของ Bob พร้อมสำหรับการตรวจสอบแบบอ่านอย่างเดียว",
-    "sourceHead": "50cc6135bbd57df15c9a256f573a27411d409877"
+    "sourceHead": "50cc6135bbd57df15c9a256f573a27411d409877",
+    "zh-CN": "Bob 的本地解析器已准备好进行只读检查。",
+    "zhSourceHead": "4e35a77ab5e9424fd92d117b9b0501049e994a0a"
   },
   "systemDnsResolverUnavailable": {
     "en": "Bob's local resolver is not currently eligible.",
     "ru-RU": "Локальный резолвер Bob сейчас не соответствует условиям допуска.",
     "th-TH": "ตัวแก้ชื่อในเครื่องของ Bob ยังไม่เข้าเงื่อนไขที่กำหนดในขณะนี้",
-    "sourceHead": "50cc6135bbd57df15c9a256f573a27411d409877"
+    "sourceHead": "50cc6135bbd57df15c9a256f573a27411d409877",
+    "zh-CN": "Bob 的本地解析器当前不符合使用条件。",
+    "zhSourceHead": "4e35a77ab5e9424fd92d117b9b0501049e994a0a"
   },
   "systemDnsRunTest": {
     "en": "Run resolver test",
     "ru-RU": "Запустить проверку резолвера",
     "th-TH": "ทดสอบตัวแก้ชื่อ",
-    "sourceHead": "50cc6135bbd57df15c9a256f573a27411d409877"
+    "sourceHead": "50cc6135bbd57df15c9a256f573a27411d409877",
+    "zh-CN": "运行解析器测试",
+    "zhSourceHead": "4e35a77ab5e9424fd92d117b9b0501049e994a0a"
   }
 }
