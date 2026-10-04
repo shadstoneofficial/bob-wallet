@@ -35,16 +35,50 @@ async function configureLocalRegtest(services, profileName, {profileRoot, nodeMo
 
 async function waitForWalletService(walletService, timeoutMs = 30000) {
   const deadline = Date.now() + timeoutMs;
+  let node = null;
+  let backendGeneration = null;
   while (Date.now() < deadline) {
-    if (walletService.node && walletService.node.wdb && walletService.node.wdb.db.loaded) return;
+    const currentNode = walletService.node;
+    if (currentNode) {
+      if (node == null) {
+        node = currentNode;
+        backendGeneration = walletService.rescanBackendGeneration;
+      } else if (node !== currentNode
+          || backendGeneration !== walletService.rescanBackendGeneration) {
+        throw new Error('Disposable wallet fixture backend changed during startup.');
+      }
+    }
+
+    if (node && node.wdb) {
+      const state = node.wdb.bobRescanState;
+      if (state && state.status === 'failed') {
+        throw new Error('Disposable wallet fixture recovery sync failed.');
+      }
+      if (node.wdb.db.loaded && state && state.managed === true && state.journalReady === true) {
+        return {node, wdb: node.wdb, backendGeneration, state};
+      }
+    }
     await new Promise(resolve => setTimeout(resolve, 100));
   }
-  throw new Error('Disposable wallet fixture did not become ready.');
+  throw new Error('Disposable wallet fixture recovery journal did not become ready.');
+}
+
+function assertWalletServiceReady(walletService, readiness) {
+  if (walletService.node !== readiness.node
+      || walletService.rescanBackendGeneration !== readiness.backendGeneration
+      || readiness.node.wdb !== readiness.wdb) {
+    throw new Error('Disposable wallet fixture backend changed after startup.');
+  }
+  const state = readiness.wdb.bobRescanState;
+  if (!state || state.status === 'failed' || state.managed !== true || state.journalReady !== true) {
+    throw new Error('Disposable wallet fixture recovery journal is no longer ready.');
+  }
 }
 
 async function seedDisposableMultiwallet(services, config) {
   const walletService = services.wallet.service;
-  await waitForWalletService(walletService);
+  const readiness = await waitForWalletService(walletService);
+  assertWalletServiceReady(walletService, readiness);
   const wanted = config.scenario.startsWith('restore-')
     ? require('./embeddedRestore').WALLET_IDS
     : ['acceptance-primary', 'acceptance-secondary'];
@@ -52,10 +86,12 @@ async function seedDisposableMultiwallet(services, config) {
   const created = [];
 
   for (const walletId of wanted) {
+    assertWalletServiceReady(walletService, readiness);
     if (existing.has(walletId)) continue;
     await walletService.createNewWallet(walletId, config.fixturePassphrase, false, null, 1, 1);
     created.push(walletId);
   }
+  assertWalletServiceReady(walletService, readiness);
   walletService.setWallet(wanted[0]);
   const scenarioPlan = buildControlledScenarioPlan(config.scenario);
   const runtime = require('./productRuntime').getProductRuntime();
@@ -81,4 +117,5 @@ module.exports = {
   configureLocalRegtest,
   seedDisposableMultiwallet,
   waitForWalletService,
+  assertWalletServiceReady,
 };

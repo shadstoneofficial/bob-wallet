@@ -20,6 +20,7 @@ export function installLocalRescan(wdb, node) {
   let active = false;
   let replaying = false;
   let failed = false;
+  let journalReady = false;
   let target = null;
   let generation = 0;
   let ready = !(node.pool && node.pool.connected === false);
@@ -41,6 +42,7 @@ export function installLocalRescan(wdb, node) {
     const state = {
       status,
       managed: true,
+      journalReady,
       height: wdb.height,
       target,
       generation,
@@ -55,6 +57,7 @@ export function installLocalRescan(wdb, node) {
         && previous.height === state.height
         && previous.target === state.target
         && previous.generation === state.generation
+        && previous.journalReady === state.journalReady
         && previous.ready === state.ready
         && previous.activeRequestIds?.join(',') === state.activeRequestIds.join(',')
         && previous.completedRequestIds?.join(',') === state.completedRequestIds.join(',')) return;
@@ -72,6 +75,7 @@ export function installLocalRescan(wdb, node) {
   wdb.bobRescanState = {
     status: ready ? 'idle' : 'waiting',
     managed: true,
+    journalReady: false,
     height: wdb.height,
     target: null,
     generation: 0,
@@ -285,10 +289,12 @@ export function installLocalRescan(wdb, node) {
     if (node.pool && typeof node.pool.connected === 'boolean' && !node.pool.connected) {
       startupSyncDeferred = true;
       ready = false;
+      journalReady = false;
       publish('waiting');
       return;
     }
     ready = false;
+    journalReady = false;
     publish('waiting');
     try {
       // A profile created by an older Bob version has no recovery journal.
@@ -332,6 +338,7 @@ export function installLocalRescan(wdb, node) {
           failed = false;
           replaying = false;
           ready = true;
+          journalReady = true;
           target = null;
           publish('idle');
           return;
@@ -344,11 +351,13 @@ export function installLocalRescan(wdb, node) {
         if (node.spv && requests.every(request => request.rewound === true)) {
           replaying = true;
           ready = false;
+          journalReady = true;
           publish('scanning');
           return;
         }
         active = true;
         owner.requestIds = requests.map(r => r.id);
+        journalReady = true;
         publish('scanning');
         await originalRescan.call(this, height);
         if (node.spv && owner.rewindAccepted) {

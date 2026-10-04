@@ -100,6 +100,7 @@ test('SPV rewind stays pending through partial replay and restart until preserve
     f.chain.height = height;
     f.wdb.height = height;
   };
+  await f.wdb.syncNode();
   let admission = require('../recoveryAdmission').createRecoveryAdmission(() => f.wdb.bobRescanState);
   f.wdb.on('bob rescan', state => {
     f.wdb.bobRescanState = state;
@@ -109,6 +110,7 @@ test('SPV rewind stays pending through partial replay and restart until preserve
   catch (error) {t.match(error.message, /not ready/);}
   await scan;
   t.deepEqual(f.calls, [0], 'SPV performs one rewind');
+  t.equal(f.wdb.bobRescanState.journalReady, true, 'request target and identity are hydrated before replay remains pending');
   t.equal(record(f.store).requests[0].target, 20, 'replay target is durable');
   t.equal(record(f.store).requests[0].rewound, true, 'journal records that rewind completed');
   t.equal(f.wdb.bobRescanState.status, 'scanning');
@@ -123,9 +125,11 @@ test('SPV rewind stays pending through partial replay and restart until preserve
   const restarted = fixture({store: saved, spv: true});
   admission = require('../recoveryAdmission').createRecoveryAdmission(() => restarted.wdb.bobRescanState);
   restarted.chain.height = 5; restarted.wdb.height = 5;
+  t.equal(restarted.wdb.bobRescanState.journalReady, false, 'a new adapter starts closed until its journal is read');
   await restarted.wdb.syncNode();
   t.deepEqual(restarted.calls, [], 'restart resumes replay without resetting the partial tip');
   t.equal(restarted.wdb.bobRescanState.target, 20, 'partial tip does not replace original target');
+  t.equal(restarted.wdb.bobRescanState.journalReady, true, 'restart publishes the hydrated target before replay');
   t.equal(restarted.wdb.bobRescanState.ready, false);
   restarted.chain.height = 19; restarted.wdb.height = 19;
   restarted.wdb.emit('block connect', {height: 19});
@@ -151,6 +155,7 @@ test('SPV startup journals a legacy profile catch-up target before rewind and re
     f.wdb.height = height;
   };
   await f.wdb.syncNode();
+  t.equal(f.wdb.bobRescanState.journalReady, true, 'legacy no-journal catch-up is persisted before readiness');
   const pending = record(f.store).requests[0];
   t.equal(pending.height, 5, 'legacy catch-up starts at the stored wallet tip');
   t.equal(pending.target, 20, 'the known chain target is saved before native sync rewinds it');
@@ -163,9 +168,11 @@ test('SPV startup journals a legacy profile catch-up target before rewind and re
   const saved = new Map([...f.store].map(([k, v]) => [k, Buffer.from(v)]));
   const restarted = fixture({store: saved, spv: true});
   restarted.chain.height = 10; restarted.wdb.height = 10;
+  t.equal(restarted.wdb.bobRescanState.journalReady, false, 'legacy catch-up restart begins unhydrated');
   await restarted.wdb.syncNode();
   t.deepEqual(restarted.calls, [], 'partial-replay restart does not rewind the chain again');
   t.equal(restarted.wdb.bobRescanState.target, 20);
+  t.equal(restarted.wdb.bobRescanState.journalReady, true, 'legacy target survives restart journal hydration');
   t.equal(restarted.wdb.bobRescanState.ready, false);
   restarted.chain.height = 20; restarted.wdb.height = 20;
   restarted.wdb.emit('block connect', {height: 20});
@@ -190,6 +197,7 @@ test('bad heights and journal write failures do not start a scan', async t => {
 test('deferred startup recovery keeps the backend unready until post-connect sync succeeds', async t => {
   const f = fixture({poolConnected: false});
   t.equal(f.wdb.bobRescanState.status, 'waiting');
+  t.equal(f.wdb.bobRescanState.journalReady, false, 'pool-disconnected profile has not inspected its journal');
   t.equal(f.wdb.bobRescanState.ready, false, 'pool-disconnected startup is explicitly unready');
   try {
     await f.wdb.rescan(3);
@@ -201,9 +209,26 @@ test('deferred startup recovery keeps the backend unready until post-connect syn
   f.node.pool.connected = true;
   await f.wdb.resumeLocalSync();
   t.equal(f.wdb.bobRescanState.status, 'idle');
+  t.equal(f.wdb.bobRescanState.journalReady, true, 'fresh no-journal profile is ready after inspection');
   t.equal(f.wdb.bobRescanState.ready, true, 'backend becomes ready only after sync and journal inspection');
   await f.wdb.rescan(3);
   t.deepEqual(f.calls, [3]);
+  t.end();
+});
+
+test('startup journal failure remains closed and fails packaged fixture readiness', async t => {
+  const f = fixture({poolConnected: false});
+  f.node.pool.connected = true;
+  f.wdb.db.get = async () => {throw new Error('fixture journal read failed');};
+  try {
+    await f.wdb.resumeLocalSync();
+    t.fail('sync must reject when the durable journal cannot be inspected');
+  } catch (error) {
+    t.equal(error.message, 'fixture journal read failed');
+  }
+  t.equal(f.wdb.bobRescanState.status, 'failed');
+  t.equal(f.wdb.bobRescanState.journalReady, false, 'fixture admission never opens on failed journal inspection');
+  t.equal(f.wdb.bobRescanState.ready, false);
   t.end();
 });
 
@@ -219,6 +244,7 @@ test('shutdown preserves accepted waiting recovery and rejects new requests', as
   t.match((await pending).message, /pending for restart/); await closing;
   t.deepEqual(record(f.store).requests.map(r => r.height), [0]);
   const restarted = fixture({store: f.store}); await restarted.wdb.syncNode();
+  t.equal(restarted.wdb.bobRescanState.journalReady, true, 'closed adapter rehydrates the durable request on restart');
   t.deepEqual(restarted.calls, [0]);
   t.deepEqual(record(f.store).requests, []);
   t.end();

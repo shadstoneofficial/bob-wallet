@@ -1,5 +1,7 @@
 const assert = require('node:assert/strict');
+const EventEmitter = require('events');
 const fs = require('fs');
+const Module = require('module');
 const os = require('os');
 const path = require('path');
 const test = require('node:test');
@@ -25,6 +27,11 @@ const {
 const {
   initializeAcceptanceAfterWindow,
 } = require('../../app/background/packagedAcceptance/startup');
+const {
+  assertWalletServiceReady,
+  seedDisposableMultiwallet,
+  waitForWalletService,
+} = require('../../app/background/packagedAcceptance/fixture');
 const {
   BASKET_NAMES,
   SCENARIO_DEFINITIONS,
@@ -58,6 +65,92 @@ function acceptanceManifest(root) {
   fs.writeFileSync(manifestPath, JSON.stringify(manifest));
   return {manifest, manifestPath};
 }
+
+function fixtureWalletService(state) {
+  const wdb = new EventEmitter();
+  wdb.db = {loaded: true};
+  wdb.bobRescanState = state;
+  const calls = [];
+  const node = {wdb};
+  const service = {
+    node,
+    rescanBackendGeneration: 3,
+    calls,
+    async listWallets() { calls.push('list'); return []; },
+    async createNewWallet(id) { calls.push(`create:${id}`); },
+    setWallet(id) { calls.push(`select:${id}`); },
+  };
+  return {service, calls, node, wdb};
+}
+
+test('packaged restore fixture waits for hydrated SPV target and request identity, not replay completion', async () => {
+  const initial = {managed: true, journalReady: false, status: 'waiting', ready: false,
+    target: null, activeRequestIds: []};
+  const {service, calls, wdb} = fixtureWalletService(initial);
+  let restoreObserved = false;
+  const fixturePath = require.resolve('../../app/background/packagedAcceptance/fixture');
+  const originalLoad = Module._load;
+  Module._load = function(request, parent, isMain) {
+    if (request === './embeddedRestore' && parent?.filename === fixturePath) {
+      return {WALLET_IDS: ['fixture-wallet-a', 'fixture-wallet-b']};
+    }
+    if (request === './productRuntime' && parent?.filename === fixturePath) {
+      return {getProductRuntime: () => ({
+        async initializeRestore() {
+          restoreObserved = true;
+          const state = wdb.bobRescanState;
+          assert.equal(state.journalReady, true);
+          assert.equal(state.target, 20);
+          assert.deepEqual(state.activeRequestIds, ['restore-request-20']);
+          assert.equal(state.ready, false, 'fixture must proceed while replay remains pending');
+          return {status: 'fixture-observed'};
+        },
+      })};
+    }
+    return originalLoad.call(this, request, parent, isMain);
+  };
+
+  try {
+    const seeding = seedDisposableMultiwallet({wallet: {service}}, {
+      scenario: 'restore-spv', nodeMode: 'spv', fixturePassphrase: 'disposable-only-test',
+    });
+    await new Promise(resolve => setTimeout(resolve, 15));
+    assert.deepEqual(calls, [], 'db.loaded alone must not start fixture wallet mutations');
+    assert.equal(restoreObserved, false);
+    wdb.bobRescanState = {...initial, journalReady: true, status: 'scanning', target: 20,
+      activeRequestIds: ['restore-request-20']};
+    wdb.emit('bob rescan', wdb.bobRescanState);
+    const result = await seeding;
+    assert.equal(restoreObserved, true);
+    assert.equal(result.sourceFixture.status, 'fixture-observed');
+  } finally {
+    Module._load = originalLoad;
+  }
+});
+
+test('packaged fixture accepts hydrated fresh profiles and rejects failed or stale backend readiness', async () => {
+  const fresh = fixtureWalletService({managed: true, journalReady: true, status: 'idle', ready: true,
+    target: null, activeRequestIds: []});
+  const readiness = await waitForWalletService(fresh.service, 100);
+  assert.equal(readiness.state.target, null);
+  assert.doesNotThrow(() => assertWalletServiceReady(fresh.service, readiness));
+
+  const failed = fixtureWalletService({managed: true, journalReady: false, status: 'failed', ready: false,
+    target: null, activeRequestIds: []});
+  await assert.rejects(waitForWalletService(failed.service, 500), /sync failed/);
+
+  const delayed = fixtureWalletService({managed: true, journalReady: false, status: 'waiting', ready: false,
+    target: null, activeRequestIds: []});
+  const waiting = waitForWalletService(delayed.service, 1000);
+  setTimeout(() => { delayed.service.rescanBackendGeneration++; }, 10);
+  await assert.rejects(waiting, /backend changed during startup/);
+
+  const stale = fixtureWalletService({managed: true, journalReady: true, status: 'scanning', ready: false,
+    target: 20, activeRequestIds: ['restore-request-20']});
+  const staleReadiness = await waitForWalletService(stale.service, 100);
+  stale.service.node = {wdb: stale.wdb};
+  assert.throws(() => assertWalletServiceReady(stale.service, staleReadiness), /backend changed after startup/);
+});
 
 test('acceptance manifest selects only an isolated regtest profile', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bob-acceptance-config-'));
