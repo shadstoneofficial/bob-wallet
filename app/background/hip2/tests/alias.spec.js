@@ -255,7 +255,7 @@ test('secure TXT lookup requires AD and joins TXT chunks', async t => {
   t.end();
 });
 
-test('delegated TXT lookup validates through an authenticated parent DS', async t => {
+test('main-process DNSSEC ECDSA verification survives renderer crypto polyfill removal', async t => {
   const resolveRaw = sinon.stub(hdns, 'resolveRaw');
   const records = [
     txtRecord('janice.agent.', 'name:Janice'),

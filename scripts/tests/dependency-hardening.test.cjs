@@ -2,9 +2,11 @@ const assert = require('node:assert/strict');
 const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
+const {createRequire} = require('node:module');
 const fs = require('node:fs/promises');
 const {test} = require('node:test');
-const fetch = require('node-fetch');
+const shakedexRequire = createRequire(require.resolve('shakedex/src/swapService.js'));
+const fetch = shakedexRequire('node-fetch');
 
 function listen(server) {
   return new Promise((resolve, reject) => {
@@ -26,7 +28,7 @@ function close(server) {
 }
 
 test('Shakedex node-fetch strips credentials across host redirects', async () => {
-  assert.equal(require('node-fetch/package.json').version, '2.7.0');
+  assert.equal(shakedexRequire('node-fetch/package.json').version, '2.7.0');
 
   let forwardedHeaders;
   const destination = http.createServer((request, response) => {

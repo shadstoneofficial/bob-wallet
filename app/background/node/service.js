@@ -14,6 +14,7 @@ import FullNode from 'hsd/lib/node/fullnode';
 import SPVNode from 'hsd/lib/node/spvnode';
 import plugin from 'hsd/lib/wallet/plugin';
 import {installLocalRescan} from '../wallet/localRescan';
+import {installHsdWebSocketUpgradePolicies} from './websocketPolicy';
 import { prefixHash } from '../../db/names';
 import { del, get, put } from '../db/service';
 import {dispatchToMainWindow} from "../../mainWindow";
@@ -377,6 +378,7 @@ export class NodeService extends EventEmitter {
     this.hsd = new Node(nodeOptions);
 
     this.hsd.use(plugin);
+    installHsdWebSocketUpgradePolicies(this.hsd);
     installLocalRescan(this.hsd.get('walletdb').wdb, this.hsd);
 
     const reportStorageError = error => {
