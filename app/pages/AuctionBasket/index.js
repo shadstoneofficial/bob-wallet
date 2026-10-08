@@ -180,7 +180,7 @@ export class AuctionBasket extends Component {
         walletId: this.props.walletId,
         network: this.props.network,
       });
-      if (draft?.rows?.length) {
+      if (draft?.rows?.length || draft?.formState?.broadcastUncertain) {
         const currentRows = this.props.order.map(name => this.props.items[name]);
         const currentMatchesDraft = currentRows.length === draft.rows.length
           && draft.rows.every((row, index) => (
@@ -225,12 +225,45 @@ export class AuctionBasket extends Component {
     }
   };
 
-  clearSavedDraft = () => {
+  hasUnresolvedSubmission = () => {
+    if (this.state.broadcastUncertain || this._submitRunning || this.isSubmissionActive()) return true;
+    const key = this.getDraftKey();
+    if (!key || typeof window === 'undefined' || !window.localStorage) return false;
+    try {
+      const draft = parseBasketDraft(window.localStorage.getItem(key), {
+        walletId: this.props.walletId, network: this.props.network,
+      });
+      return !!draft?.formState?.broadcastUncertain;
+    } catch (_) {
+      return true;
+    }
+  };
+
+  clearSavedDraft = verifiedResult => {
+    const verifiedSuccess = verifiedResult && verifiedResult === this._verifiedSuccessfulSubmission && this._mounted
+      && /^[a-f0-9]{64}$/.test(verifiedResult.txid || '')
+      && verifiedResult.txid === this.state.submissionTxid
+      && this.state.reviewedScope && this.state.transactionScope
+      && JSON.stringify(verifiedResult.scope) === JSON.stringify(this.state.transactionScope)
+      && JSON.stringify(verifiedResult.scope) === JSON.stringify({
+        ...this.state.reviewedScope, fee: this.state.transactionScope.fee,
+      });
+    if (this.hasUnresolvedSubmission() && !verifiedSuccess) return false;
     const key = this.getDraftKey();
     if (key && typeof window !== 'undefined' && window.localStorage) {
       window.localStorage.removeItem(key);
     }
     this.safeSetState({savedDraft: null});
+    return true;
+  };
+
+  onClearBasket = () => {
+    if (!this.clearSavedDraft()) {
+      this.props.showError(this.context.t('basketRetryUncertain'));
+      return;
+    }
+    this.props.clearBasket();
+    this.setState({rowMeta: {}, step: 'edit'});
   };
 
   restoreSavedDraft = () => {
@@ -890,12 +923,14 @@ export class AuctionBasket extends Component {
         if (this._mounted && runId === this.submissionRunId) {
           // A late success must not erase edits made after the reviewed request.
           if (JSON.stringify(this.currentBasketScope()) !== JSON.stringify(reviewedScope)) return;
+          this._verifiedSuccessfulSubmission = res;
           if (entries.length === this.props.order.length) {
-            this.clearSavedDraft();
+            this.clearSavedDraft(res);
             clearBasket();
           } else {
             entries.forEach(entry => this.props.removeFromBasket(entry.name));
           }
+          this._verifiedSuccessfulSubmission = null;
           showSuccess(t('basketSubmitSuccess', String(entries.length)));
           const tracking = analytics.track('auction basket bid', { count: entries.length });
           if (tracking?.catch) tracking.catch(() => {});
@@ -1057,11 +1092,8 @@ export class AuctionBasket extends Component {
             <button
               type="button"
               className="auction-basket__btn auction-basket__btn--danger"
-              onClick={() => {
-                this.clearSavedDraft();
-                this.props.clearBasket();
-                this.setState({ rowMeta: {}, step: 'edit' });
-              }}
+              onClick={this.onClearBasket}
+              disabled={this.state.broadcastUncertain || this.isSubmissionActive() || this._submitRunning}
             >
               {t('basketClear')}
             </button>

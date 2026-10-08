@@ -636,3 +636,58 @@ test('exact success unlocks the persisted residual draft without removing empty 
   }
   t.end();
 });
+
+test('clear, replacement and removal cannot erase a durable uncertain submission across restart', t => {
+  const descriptor = Object.getOwnPropertyDescriptor(window, 'localStorage');
+  const values = new Map();
+  Object.defineProperty(window, 'localStorage', {configurable: true, value: {
+    getItem: key => values.get(key), setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key),
+  }});
+  let clears = 0;
+  const props = {
+    order: ['harm', 'backrub'],
+    items: {harm: {bidAmount: '2400', blindAmount: '2600'}, backrub: {bidAmount: '50', blindAmount: '250'}},
+    walletId: 'disposable', network: 'regtest', clearBasket: () => {clears++;}, showError() {}, showSuccess() {},
+  };
+  const makeComponent = nextProps => {
+    const component = new AuctionBasket(nextProps);
+    component.context = {t: key => key}; component._mounted = true;
+    component.setState = patch => {component.state = {...component.state, ...patch};};
+    return component;
+  };
+  try {
+    const original = makeComponent(props);
+    original.state = {...original.state, broadcastUncertain: true, submissionTxid: TXID,
+      reviewedScope: basketScope(twoNames), transactionScope: basketScope(twoNames, 21600)};
+    original.persistDraft();
+    original.onBackToBasket();
+    original.onClearBasket();
+    t.equal(clears, 0, 'Clear cannot remove uncertain basket entries');
+    t.equal(original.clearSavedDraft(), false, 'deletion method itself fails closed');
+    t.equal(original.clearSavedDraft({txid: TXID, scope: basketScope(twoNames, 21600)}), false,
+      'a candidate ID and scope are not proof of successful broadcast');
+    const restarted = makeComponent(props);
+    restarted.loadSavedDraft();
+    t.equal(restarted.state.broadcastUncertain, true, 'restart retains the lock after attempted Clear');
+    restarted.props = {...restarted.props, importBasketRows: rows => {
+      restarted.props = {...restarted.props, order: rows.map(row => row.name),
+        items: Object.fromEntries(rows.map(row => [row.name, row]))};
+    }};
+    restarted.state.importPreview = [{name: 'replacement', bidAmount: '1', blindAmount: '2', errors: []}];
+    restarted.applyCompleteBasket('replace');
+    restarted.persistDraft();
+    const replaced = makeComponent(restarted.props);
+    replaced.loadSavedDraft();
+    t.equal(replaced.state.broadcastUncertain, true, 'replacing names preserves the wallet safety lock');
+    replaced.props = {...replaced.props, order: [], items: {}};
+    replaced.persistDraft();
+    const empty = makeComponent(replaced.props);
+    empty.loadSavedDraft();
+    t.equal(empty.state.broadcastUncertain, true, 'even an empty persisted draft retains uncertainty');
+    t.equal(empty.clearSavedDraft(), false, 'empty rows do not authorize lock deletion');
+  } finally {
+    if (descriptor) Object.defineProperty(window, 'localStorage', descriptor);
+    else delete window.localStorage;
+  }
+  t.end();
+});
