@@ -13,7 +13,7 @@ const WALLET_IDS = ['acceptance-primary', 'acceptance-secondary',
 const waitForDisk = () => new Promise(resolve => setTimeout(resolve, 10));
 
 async function initializeEmbeddedRestore(services, config) {
-  assert(['restore-full', 'restore-spv'].includes(config.scenario), 'Fixed restore scenario required.');
+  assert(['restore-full', 'restore-spv', 'restore-overlap'].includes(config.scenario), 'Fixed restore scenario required.');
   const nodeService = services.node?.service;
   const walletService = services.wallet?.service;
   assert(nodeService?.hsd && walletService?.node?.wdb,
@@ -80,10 +80,28 @@ async function initializeEmbeddedRestore(services, config) {
     target: state.target, height: wdb.height, backendState: {...wdb.bobRescanState},
     recoveryAdmissionClosed: walletService.recoveryAdmission.isBusy(),
     pendingRequestIds: (await pending()).map(request => request.requestId), balances: await balances(),
+    overlapEvidence: state.overlapEvidence || null,
     rawSigningAllowed: false, liveBroadcastCalls: 0, packagedBackendStatus: 'NOT TESTED'});
   if (state.phase === 'generated') {
     if (node.spv) {
       await wdb.rescan(0, {requestId: state.requestId});
+      if (config.scenario === 'restore-overlap') {
+        assert(walletService.recoveryAdmission.isBusy());
+        const overlaps = await Promise.allSettled(Array.from({length: 5}, () => walletService.rescan(0)));
+        assert(overlaps.every(result => result.status === 'rejected' && /not ready/.test(result.reason.message)));
+        await assert.rejects(
+          walletService.importSeed('acceptance-overlap', '', 'phrase', '', 1, 1, 0),
+          {code: 'WALLET_RECOVERY_BUSY'},
+        );
+        await assert.rejects(walletService.importNames([{name: 'acceptance-overlap', height: 0}]),
+          {code: 'WALLET_RECOVERY_BUSY'});
+        assert(!await wdb.get('acceptance-overlap'));
+        state.overlapEvidence = {rescanRejections: overlaps.length,
+          importSeedAdmissionRejected: true, importNamesAdmissionRejected: true,
+          noExtraWallet: true, backend: 'actual-WalletService-admission',
+          importSeedContentsRead: false, liveBroadcastCalls: 0};
+        await services.db.put(STATE_KEY, state);
+      }
       for (const raw of state.history.slice(0, 5)) await chain.add(Block.fromRaw(Buffer.from(raw, 'hex')));
     } else {
       const originalScan = chain.db.scan;

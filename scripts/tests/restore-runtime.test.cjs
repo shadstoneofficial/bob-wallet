@@ -21,7 +21,8 @@ for (const scenario of ['restore-full', 'restore-spv']) {
       assert.equal(name, 'Acceptance'); exposed = Object.keys(methods);
     }});
     const evidence = await getProductRuntime().initializeRestore();
-    assert.deepEqual(exposed, ['describe']);
+    assert.deepEqual(exposed, ['describe', 'advance']);
+    await assert.rejects(getProductRuntime().advance(), {code: 'ERR_PACKAGED_ACCEPTANCE_POLICY'});
     assert.equal(evidence.status, 'SOURCE REVIEWED REPLAY PASSED');
     assert.equal(evidence.reviewedAdapter, 'installLocalRescan');
     assert.equal(evidence.sequentialRestores, 5);

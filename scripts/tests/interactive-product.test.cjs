@@ -2,7 +2,7 @@ const assert=require('node:assert/strict');
 const test=require('node:test');
 const Module=require('node:module');
 const {EventEmitter}=require('node:events');
-require('@babel/register')({extensions:['.js'],configFile:false,babelrc:false,presets:[['@babel/preset-env',{targets:{node:'current'}}],'@babel/preset-react'],plugins:['@babel/plugin-proposal-class-properties']});
+require('@babel/register')({extensions:['.js'],configFile:false,babelrc:false,presets:[['@babel/preset-env',{targets:{node:'current'}}],'@babel/preset-react'],plugins:[['@babel/plugin-proposal-decorators',{legacy:true}],'@babel/plugin-proposal-class-properties']});
 require.extensions['.scss']=()=>{};
 const React=require('react');
 const {JSDOM}=require('jsdom');
@@ -49,9 +49,14 @@ function startBackend(scenario,values=new Map()){
   return runtime;
 }
 const tick=async()=>act(async()=>{await new Promise(resolve=>setTimeout(resolve,30));});
+async function waitFor(predicate,label,timeout=5000){
+  const deadline=Date.now()+timeout;
+  while(Date.now()<deadline){if(await predicate())return;await tick();}
+  assert.fail(`Timed out waiting for ${label}`);
+}
 async function mount(){
   const root=createRoot(document.getElementById('root'));
-  await act(async()=>root.render(React.createElement(Provider,{store:createStore((state={wallet:{}},action)=>state)},React.createElement(context.Provider,{value:{t}},React.createElement(MemoryRouter,null,React.createElement(InteractiveFixture))))));
+  await act(async()=>root.render(React.createElement(Provider,{store:createStore((state={wallet:{},node:{chain:{height:1000}}},action)=>state)},React.createElement(context.Provider,{value:{t}},React.createElement(MemoryRouter,null,React.createElement(InteractiveFixture))))));
   await tick();return root;
 }
 async function click(text){
@@ -68,6 +73,18 @@ async function reviewAndAccept(){
 async function submit(){
   const button=document.querySelector('.auction-basket__footer-actions button:last-child');assert(button&&!button.disabled);
   await act(async()=>button.click());await tick();
+}
+function isolateBasketCase(name){
+  if(process.env.BOB_BASKET_CASE_CHILD === name)return false;
+  const {spawnSync}=require('node:child_process');
+  const environment={...process.env,BOB_BASKET_CASE_CHILD:name};
+  delete environment.NODE_TEST_CONTEXT;
+  const result=spawnSync(process.execPath,['--test',`--test-name-pattern=${name}`,__filename],{
+    env:environment,encoding:'utf8',timeout:45000,
+  });
+  assert.equal(result.status,0,result.stdout+result.stderr);
+  assert.match(result.stdout,/# pass 1\b/);
+  return true;
 }
 
 test('real renderer, IPC and fixed backend show pre-signing failure and Retry',async()=>{
@@ -117,6 +134,63 @@ test('real renderer ambiguous result stays locked through navigation and remount
     assert.equal((await runtime.describe()).state.preparationCalls,1);
   }finally{await act(async()=>root.unmount());window.localStorage.clear();}
 });
+
+for(const [scenario,label] of [['basket-expired','Expire first reviewed name'],['basket-scope-mismatch','Change first reviewed bid']]){
+  test(`${scenario} stops the reviewed basket before construction`,async()=>{
+    if(isolateBasketCase(`${scenario} stops the reviewed basket before construction`))return;
+    const runtime=startBackend(scenario);const root=await mount();
+    try{
+      await reviewAndAccept();await click(label);await submit();
+      await waitFor(()=>document.body.textContent.includes(scenario==='basket-expired'
+        ? 'fixture-01/ is CLOSED' : 'The names, amounts, fee or transaction count changed.'),scenario);
+      const value=(await runtime.describe()).state;
+      assert.equal(value.controlStep,1);assert.equal(value.preparationCalls,0);
+      assert.equal(value.inertBoundaryCalls,0);assert.equal(value.liveBroadcastCalls,0);
+      assert.equal(document.querySelectorAll('.auction-basket tbody tr').length,20);
+    }finally{await act(async()=>root.unmount());window.localStorage.clear();}
+  });
+}
+
+test('wallet A-B-A during delayed basket preflight cancels without a late boundary',{timeout:30000},async()=>{
+  if(isolateBasketCase('wallet A-B-A during delayed basket preflight'))return;
+  const runtime=startBackend('basket-wallet-switch');const root=await mount();
+  try{
+    await reviewAndAccept();await submit();
+    assert.equal((await runtime.describe()).state.preparationCalls,1);
+    await click('Switch fixed fixture wallet');
+    await waitFor(async()=>(await runtime.describe()).state.cancellationCalls>=1,'wallet-switch cancellation');
+    await click('Switch fixed fixture wallet');
+    await act(async()=>{await new Promise(resolve=>setTimeout(resolve,10200));});
+    const value=(await runtime.describe()).state;
+    assert.equal(value.selectedWallet,'acceptance-primary');
+    assert.equal(value.preparationCalls,1);assert.equal(value.inertBoundaryCalls,0);
+    assert.equal(value.liveBroadcastCalls,0);
+    assert.equal(document.querySelectorAll('.auction-basket tbody tr').length,20);
+  }finally{await act(async()=>root.unmount());window.localStorage.clear();}
+});
+
+for(const [scenario,exact] of [['basket-reconcile-exact',true],['basket-reconcile-wrong',false]]){
+  test(`${scenario} accepts only the exact history ID after one inert boundary`,async()=>{
+    if(isolateBasketCase(`${scenario} accepts only the exact history ID after one inert boundary`))return;
+    const runtime=startBackend(scenario);const root=await mount();
+    try{
+      await reviewAndAccept();await submit();
+      await waitFor(()=>document.body.textContent.includes(t('basketExactReview')),'exact-fee review');
+      await act(async()=>document.querySelector('.auction-basket__confirm input').click());await tick();
+      await submit();
+      await waitFor(async()=>(await runtime.describe()).state.inertBoundaryCalls===1,'inert boundary');
+      if(exact){
+        await waitFor(()=>document.querySelector('[data-testid="acceptance-basket-clears"]').textContent==='1','exact-ID completion');
+      }else{
+        await waitFor(()=>document.querySelector('.auction-basket__footer-actions button:last-child').disabled,'wrong-ID retry lock');
+        assert.equal(document.querySelector('[data-testid="acceptance-basket-clears"]').textContent,'0');
+      }
+      const value=(await runtime.describe()).state;
+      assert.equal(value.preparationCalls,1);assert.equal(value.inertBoundaryCalls,1);
+      assert(value.historyLookupCalls>=2);assert.equal(value.liveBroadcastCalls,0);
+    }finally{await act(async()=>root.unmount());window.localStorage.clear();}
+  });
+}
 
 test('actual ShakeX form reviews changes and removal while preserving unrelated DNS records',async()=>{
   const runtime=startBackend('multiwallet');const root=await mount();
@@ -255,6 +329,66 @@ test('actual Register All Stop and navigation cancel inert delayed work with no 
     assert.equal(document.querySelectorAll('.register-all tbody tr').length,38);
     assert.equal(document.querySelectorAll('.register-all code').length,0);
   }finally{await act(async()=>root.unmount());window.localStorage.clear();}
+});
+
+for(const [scenario,exact] of [['register-reconcile-exact',true],['register-reconcile-wrong',false]]){
+  test(`${scenario} changes only the exact candidate-ID journal result`,{timeout:10000},async()=>{
+    const runtime=startBackend(scenario);const root=await mount();
+    try{
+      await click(t('registerAll'));
+      await waitFor(async()=>(await runtime.describe()).registration.inertBoundaryCalls===1,'registration inert boundary');
+      assert(document.querySelector('.register-all button').disabled);
+      await click(exact?'Offer exact candidate ID':'Offer wrong candidate ID');
+      const candidate=exact ? document.querySelector('.register-all code').textContent : 'bd'.repeat(32);
+      await waitFor(async()=>(await runtime.describe()).registration.historyCandidateTxid===candidate,
+        'post-transition registration candidate lookup',7000);
+      await waitFor(()=>exact
+        ? document.querySelector('.register-all button').textContent===t('registrationResume')
+          && !document.querySelector('.register-all button').disabled
+        : document.querySelector('.register-all button').disabled,'registration reconciliation',7000);
+      const registration=(await runtime.describe()).registration;
+      assert.equal(registration.constructionCalls,1);
+      assert.equal(registration.inertBoundaryCalls,1);
+      assert.equal(registration.liveBroadcastCalls,0);
+      assert.equal(registration.signatureCalls,0);
+      assert.equal(registration.historyCandidateTxid,candidate);
+      assert.equal(document.querySelectorAll('.register-all code').length,1);
+    }finally{await act(async()=>root.unmount());window.localStorage.clear();}
+  });
+}
+
+test('active Register All A-B-A cancels delayed work without stale receipts',{timeout:30000},async()=>{
+  const runtime=startBackend('register-wallet-switch');const root=await mount();
+  try{
+    await click(t('registerAll'));
+    await waitFor(async()=>(await runtime.describe()).registration.constructionCalls===1,'registration construction');
+    await click('Switch fixed fixture wallet');
+    await waitFor(async()=>(await runtime.describe()).state.selectedWallet==='acceptance-secondary','secondary wallet');
+    await click('Switch fixed fixture wallet');
+    await act(async()=>{await new Promise(resolve=>setTimeout(resolve,10200));});
+    const result=await runtime.describe();
+    assert.equal(result.walletId,'acceptance-primary');
+    assert.equal(result.registration.constructionCalls,1);
+    assert.equal(result.registration.inertBoundaryCalls,0);
+    assert.equal(result.registration.liveBroadcastCalls,0);
+    assert.equal(document.querySelectorAll('.register-all code').length,0);
+  }finally{await act(async()=>root.unmount());window.localStorage.clear();}
+});
+
+test('actual owned-name Records chooser keeps Shakedex and ShakeX separate without a write',async()=>{
+  startBackend('owned-name-sell');const originalFetch=global.fetch;
+  global.fetch=()=>assert.fail('No marketplace HTTP in owned-name chooser fixture');
+  const root=await mount();
+  try{
+    assert.equal(document.querySelectorAll('.name-selling__options button').length,2);
+    await click(t('sellNameShakedexAction'));
+    const route=JSON.parse(document.querySelector('[data-testid="acceptance-sell-state"]').textContent);
+    assert.equal(route.saleRoute,'/exchange?createListing=1&name=fixture-owned');
+    assert.equal(route.blockedWrites,0);
+    await click(t('sellNameShakexAction'));
+    assert(document.querySelector('.name-selling .shakex-listing-form'));
+    assert.equal(JSON.parse(document.querySelector('[data-testid="acceptance-sell-state"]').textContent).blockedWrites,0);
+  }finally{await act(async()=>root.unmount());global.fetch=originalFetch;window.localStorage.clear();}
 });
 
 test('registration fixture refuses non-fixed contexts and protects durable records from renderer writes',async()=>{

@@ -3,6 +3,7 @@ const crypto = require('crypto');
 
 const STATE_KEY = 'acceptance-register-state-v1';
 const JOURNAL_PREFIX = 'acceptance-register-journal:';
+const CONTROL_KEY = 'acceptance-fixed-product-state-v1';
 
 function createRegisterRuntime(plan, db) {
   if (!plan.fixtureType.startsWith('register-') || plan.network !== 'regtest') {
@@ -18,13 +19,15 @@ function createRegisterRuntime(plan, db) {
   const load = async () => {
     if (!state) state = await db.get(STATE_KEY) || {scenario: plan.scenario,
       constructionCalls: 0, inertBoundaryCalls: 0, liveBroadcastCalls: 0,
-      signatureCalls: 0, acceptedNames: [], injectedFailure: false};
+      signatureCalls: 0, acceptedNames: [], injectedFailure: false, historyLookupCalls: 0};
     if (state.scenario !== plan.scenario) throw new Error('Cannot change a disposable registration scenario.');
     return state;
   };
   const save = () => db.put(STATE_KEY, state);
   const check = (context, requireId = false) => {
-    if (context?.network !== 'regtest' || context?.walletId !== walletId
+    const allowedWallets = plan.fixtureType === 'register-wallet-switch'
+      ? [walletId, 'acceptance-secondary'] : [walletId];
+    if (context?.network !== 'regtest' || !allowedWallets.includes(context?.walletId)
         || (requireId && !/^[a-zA-Z0-9-]{1,100}$/.test(context.operationId || ''))) {
       throw new Error('Controlled Register All fixture refused non-fixture context.');
     }
@@ -32,8 +35,19 @@ function createRegisterRuntime(plan, db) {
   const walletMethods = {
     async getRegisterAllStatus(context) {
       check(context);
-      // Deliberately negative evidence: absence cannot release uncertainty.
-      return journal.status(context, async () => false);
+      await load();
+      return journal.status(context, async txid => {
+        state.historyLookupCalls += 1;
+        const control = await db.get(CONTROL_KEY);
+        const offered = control?.controlStep === 1 && plan.fixtureType.startsWith('register-reconcile-')
+          ? plan.fixtureType === 'register-reconcile-exact'
+            ? crypto.createHash('sha256').update(`inert-register:${plan.registrationNames[0]}`).digest('hex')
+            : 'bd'.repeat(32)
+          : null;
+        state.historyCandidateTxid = offered;
+        await save();
+        return offered === txid;
+      });
     },
     async cancelRegisterAll(context) {
       check(context, true);
@@ -58,7 +72,7 @@ function createRegisterRuntime(plan, db) {
           if (!plan.registrationNames.includes(name)) throw new Error('Non-fixture registration blocked.');
           state.constructionCalls++;
           await save();
-          if (plan.fixtureType === 'register-cancel') {
+          if (plan.fixtureType === 'register-cancel' || plan.fixtureType === 'register-wallet-switch') {
             await new Promise(resolve => {
               const timer = setTimeout(() => {delay = null; resolve();}, 10000);
               delay = {timer, resolve, operationId: context.operationId};
@@ -77,7 +91,7 @@ function createRegisterRuntime(plan, db) {
           state.inertBoundaryCalls++;
           if (plan.fixtureType !== 'register-ambiguous') state.acceptedNames.push(name);
           await save();
-          if (plan.fixtureType === 'register-ambiguous') {
+          if (plan.fixtureType === 'register-ambiguous' || plan.fixtureType.startsWith('register-reconcile-')) {
             throw new Error('Controlled ambiguous registration result; no real signature or broadcast occurred.');
           }
           return {txid: () => txid};

@@ -37,6 +37,7 @@ function createProductRuntime(config, db) {
       state = await db.get(STATE_KEY) || {
         scenario: config.scenario, preparationCalls: 0, cancellationCalls: 0,
         inertBoundaryCalls: 0, uncertain: false, liveBroadcastCalls: 0,
+        controlStep: 0, selectedWallet: 'acceptance-primary', historyLookupCalls: 0,
       };
       if (state.scenario !== config.scenario) reject('profile scenario change');
     }
@@ -54,10 +55,18 @@ function createProductRuntime(config, db) {
     async getPendingTransactions() {return [];},
     async getAuctionInfo(name) {
       if (!names.includes(name)) reject('non-fixture auction');
-      return {name, state: 'BIDDING'};
+      await load();
+      return {name, state: plan.fixtureType === 'basket-expired' && state.controlStep === 1 && name === names[0]
+        ? 'CLOSED' : 'BIDDING'};
     },
     async findBasketBidTransactions(values) {
       assertNames(values);
+      await load();
+      state.historyLookupCalls += 1;
+      await save();
+      if (!state.inertBoundaryCalls) return [];
+      if (plan.fixtureType === 'basket-reconcile-exact') return [{txid: 'ac'.repeat(32)}];
+      if (plan.fixtureType === 'basket-reconcile-wrong') return [{txid: 'bd'.repeat(32)}];
       return [];
     },
     async prepareBidMany(payload, attemptId) {
@@ -73,6 +82,8 @@ function createProductRuntime(config, db) {
         await load();
         if (state.uncertain || state.inertBoundaryCalls) reject('persisted inert boundary duplicate');
         if (pending) reject('overlapping preparation');
+        if (plan.fixtureType === 'basket-expired' && state.controlStep) reject('expired reviewed name');
+        if (plan.fixtureType === 'basket-wallet-switch' && state.controlStep) reject('stale wallet context');
         state.preparationCalls += 1;
         preparedAttempt = null;
         approvedAttempt = null;
@@ -82,17 +93,23 @@ function createProductRuntime(config, db) {
           error.code = 'BASKET_BUILD_FAILED';
           throw error;
         }
-        if (plan.fixtureType === 'basket-delayed') {
+        if (plan.fixtureType === 'basket-delayed' || plan.fixtureType === 'basket-wallet-switch') {
           delayed = new Promise((resolve, rejectPromise) => {
             const timer = setTimeout(() => {
               pending = null;
+              if (plan.fixtureType === 'basket-wallet-switch' && state.controlStep) {
+                rejectPromise(new Error('Controlled wallet switch invalidated preparation.'));
+                return;
+              }
               preparedAttempt = attemptId;
               resolve({attemptId, scope: fixedScope()});
             }, 10000);
             pending = {attemptId, timer, reject: rejectPromise};
           });
         }
-        if (plan.fixtureType === 'basket-ambiguous') preparedAttempt = attemptId;
+        if (plan.fixtureType === 'basket-ambiguous' || plan.fixtureType.startsWith('basket-reconcile-')) {
+          preparedAttempt = attemptId;
+        }
       });
       return delayed || {attemptId, scope: fixedScope()};
     },
@@ -131,11 +148,11 @@ function createProductRuntime(config, db) {
       assertAttempt(attemptId);
       return serialized(async () => {
         await load();
-        if (!['basket-ambiguous', 'basket-delayed'].includes(plan.fixtureType) || state.inertBoundaryCalls
+        if (!['basket-ambiguous', 'basket-delayed', 'basket-reconcile-exact', 'basket-reconcile-wrong'].includes(plan.fixtureType) || state.inertBoundaryCalls
             || preparedAttempt !== attemptId || approvedAttempt !== attemptId) reject('broadcast boundary');
         // Journal either inert outcome before returning; never sign or relay.
         state.inertBoundaryCalls = 1;
-        state.uncertain = plan.fixtureType === 'basket-ambiguous';
+        state.uncertain = plan.fixtureType === 'basket-ambiguous' || plan.fixtureType.startsWith('basket-reconcile-');
         if (!state.uncertain) state.inertTxid = 'ac'.repeat(32);
         preparedAttempt = null;
         approvedAttempt = null;
@@ -152,9 +169,30 @@ function createProductRuntime(config, db) {
     nodeMethods: names.length ? {
       async getNameInfo(name) {
         if (!names.includes(name)) reject('non-fixture name');
-        return {start: {reserved: false}, info: {state: 'BIDDING', height: 100, stats: {hoursUntilReveal: 10}}};
+        await load();
+        const expired = plan.fixtureType === 'basket-expired' && state.controlStep === 1 && name === names[0];
+        return {start: {reserved: false}, info: {state: expired ? 'CLOSED' : 'BIDDING', height: 100,
+          stats: {hoursUntilReveal: expired ? 0 : 10}}};
       },
     } : {},
+    async advance(...args) {
+      if (typeof args[args.length - 1] === 'function') args.pop();
+      if (args.length) reject('caller-controlled transition arguments');
+      return serialized(async () => {
+        await load();
+        const switching = ['basket-wallet-switch', 'register-wallet-switch'].includes(plan.fixtureType);
+        const oneStep = ['basket-expired', 'basket-scope-mismatch',
+          'register-reconcile-exact', 'register-reconcile-wrong'].includes(plan.fixtureType);
+        if ((!switching && !oneStep) || state.controlStep >= (switching ? 2 : 1)) {
+          reject('unsupported or repeated fixture transition');
+        }
+        state.controlStep += 1;
+        if (switching) state.selectedWallet = state.controlStep === 1
+          ? 'acceptance-secondary' : 'acceptance-primary';
+        await save();
+        return {controlStep: state.controlStep, selectedWallet: state.selectedWallet};
+      });
+    },
     initializeRestore(services) {
       if (plan.fixtureType !== 'restore-history') reject('non-restore initialization');
       if (!restoreInitialization) {
@@ -169,9 +207,9 @@ function createProductRuntime(config, db) {
     async describe() {
       await queue;
       await load();
-      return {plan, walletId: 'acceptance-primary', state: {...state}, registration: registration ? await registration.describe() : null,
-        restoreEvidence, listings: FIXED_LISTINGS,
-        packagedStatus: 'NOT TESTED'};
+      return {plan, walletId: state.selectedWallet || 'acceptance-primary', state: {...state},
+        registration: registration ? await registration.describe() : null,
+        restoreEvidence, listings: FIXED_LISTINGS, packagedStatus: 'NOT TESTED'};
     },
   };
 }
@@ -179,7 +217,7 @@ function createProductRuntime(config, db) {
 function installProductRuntime(config, db, server) {
   if (!config) return;
   runtime = createProductRuntime(config, db);
-  server.withService('Acceptance', {describe: runtime.describe});
+  server.withService('Acceptance', {describe: runtime.describe, advance: runtime.advance});
 }
 
 module.exports = {createProductRuntime, installProductRuntime, getProductRuntime: () => runtime};

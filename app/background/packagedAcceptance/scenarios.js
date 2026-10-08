@@ -11,12 +11,22 @@ const SCENARIO_DEFINITIONS = Object.freeze({
   multiwallet: Object.freeze({nodeMode: 'spv', fixtureType: 'multiwallet'}),
   'restore-spv': Object.freeze({nodeMode: 'spv', fixtureType: 'restore-history'}),
   'restore-full': Object.freeze({nodeMode: 'full', fixtureType: 'restore-history'}),
+  'restore-overlap': Object.freeze({nodeMode: 'spv', fixtureType: 'restore-history'}),
   'auction-retry': Object.freeze({nodeMode: 'spv', fixtureType: 'auction-retry'}),
   'basket-20-delayed': Object.freeze({nodeMode: 'spv', fixtureType: 'basket-delayed'}),
   'basket-ambiguous': Object.freeze({nodeMode: 'spv', fixtureType: 'basket-ambiguous'}),
+  'basket-expired': Object.freeze({nodeMode: 'spv', fixtureType: 'basket-expired'}),
+  'basket-scope-mismatch': Object.freeze({nodeMode: 'spv', fixtureType: 'basket-scope-mismatch'}),
+  'basket-wallet-switch': Object.freeze({nodeMode: 'spv', fixtureType: 'basket-wallet-switch'}),
+  'basket-reconcile-exact': Object.freeze({nodeMode: 'spv', fixtureType: 'basket-reconcile-exact'}),
+  'basket-reconcile-wrong': Object.freeze({nodeMode: 'spv', fixtureType: 'basket-reconcile-wrong'}),
   'register-partial': Object.freeze({nodeMode: 'spv', fixtureType: 'register-partial'}),
   'register-ambiguous': Object.freeze({nodeMode: 'spv', fixtureType: 'register-ambiguous'}),
   'register-cancel': Object.freeze({nodeMode: 'spv', fixtureType: 'register-cancel'}),
+  'register-reconcile-exact': Object.freeze({nodeMode: 'spv', fixtureType: 'register-reconcile-exact'}),
+  'register-reconcile-wrong': Object.freeze({nodeMode: 'spv', fixtureType: 'register-reconcile-wrong'}),
+  'register-wallet-switch': Object.freeze({nodeMode: 'spv', fixtureType: 'register-wallet-switch'}),
+  'owned-name-sell': Object.freeze({nodeMode: 'spv', fixtureType: 'owned-name-sell'}),
 });
 
 function getScenarioDefinition(scenario) {
@@ -79,6 +89,11 @@ function buildControlledScenarioPlan(scenario) {
   }
   if (definition.fixtureType === 'basket-delayed') {
     return {...base, names: [...BASKET_NAMES], constructionBoundary: 'inert-delayed'};
+  }
+  if (definition.fixtureType === 'basket-expired' || definition.fixtureType === 'basket-scope-mismatch'
+      || definition.fixtureType === 'basket-wallet-switch'
+      || definition.fixtureType.startsWith('basket-reconcile-')) {
+    return {...base, names: [...BASKET_NAMES], constructionBoundary: 'inert-fixed-transition'};
   }
   if (definition.fixtureType === 'basket-ambiguous') {
     return {

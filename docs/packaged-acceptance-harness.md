@@ -1,5 +1,30 @@
 # Packaged acceptance harness
 
+## v2.3.15 gap-closure source branch (not packaged acceptance)
+
+This branch adds fixed, disposable regtest scenarios for Arthur's seven remaining acceptance gaps. It changes only the opt-in harness, tests and handoff docs; it does not authorize a release, a tag move, a paid packaging job, or access to an existing Bob profile. Run `npm run test:packaged-harness` and the full product suite before requesting a reviewed merge. The new packaged gap rows remain **NOT TESTED** until the exact signed executable is launched with the isolated profile below and its evidence is recorded.
+
+| Gap | Fixed scenario | Source assertion | External packaged check still required |
+| --- | --- | --- | --- |
+| Overlapping restore/import | `restore-overlap` | Actual disposable SPV WalletService rejects five rescans, one seed import and one non-empty name import during 5/20 replay; a second source process reaches 20/20 | Repeat quit/reuse with the signed app; inspect admission, request ID, balances, backend events |
+| Reviewed name expires | `basket-expired` | Real basket UI/action refuses the 20-name send before construction | Review, advance the fixed state, submit; confirm all rows remain and no signing/transport occurs |
+| Reviewed scope changes | `basket-scope-mismatch` | First fixed bid changes after review; real UI/action refuses old scope | Verify no silent subset or amount substitution and a fresh review is required |
+| Wallet changes during preflight | `basket-wallet-switch` | Real A-B-A component/action path cancels delayed construction with no late inert boundary | Run fixed A-B-A during delay and inspect counters after 10 seconds |
+| Exact candidate-ID reconciliation | `basket-reconcile-exact`, `basket-reconcile-wrong`, `register-reconcile-exact`, `register-reconcile-wrong` | Real basket coordinator and Register All journal accept only the exact candidate; wrong candidate stays locked | Verify exact and wrong runs in separate disposable profiles; no duplicate construction or boundary |
+| Active Register All A-B-A | `register-wallet-switch` | Real component/journal cancels delayed work and shows no stale receipt | Repeat A-B-A during delay, wait 10 seconds, inspect fixed counters |
+| Owned-name sell chooser | `owned-name-sell` | Actual `Records` component offers distinct Shakedex and ShakeX routes without a write | Confirm both routes visually in signed app, with no DNS/listing publication |
+
+Use one new disposable profile root per scenario. Only `--reuse` the *same* root for its intended restart test. For example:
+
+```sh
+node scripts/launch-packaged-acceptance-macos.js \
+  "/absolute/path/to/verified/Bob LearnHNS.app" \
+  --profile-root "/tmp/bob-acceptance-basket-expired" \
+  --initialize --scenario basket-expired --accept-disposable-profile
+```
+
+The launcher waits for a clean shutdown. For each run, record the exact executable path, source SHA, app/DMG SHA-256, scenario, `runtime-status-*.json`, `backend-events-*.jsonl`, fixed fixture counters, visible UI outcome and any failure. For restore, quit after 5/20 and relaunch with `--reuse`; for both A-B-A cases wait beyond the fixed 10-second delay before checking that no late boundary or stale receipt appeared. Repeat full-node recovery with `restore-full`, then manually select and restart each of English, Simplified Chinese, Russian and Thai with a separate disposable profile; inspect narrow and wide layout. Neither source unit tests nor static locale screenshots substitute for those packaged runs. Keep all evidence private and do not use a real wallet or broadcast.
+
 This harness exists because v2.3.13 could print a backend assertion during a fresh isolated SPV startup while its packaged smoke process still returned success. It is test-only and disabled during ordinary Bob launches.
 
 ## Smoke behavior
@@ -37,9 +62,9 @@ node scripts/launch-packaged-acceptance-macos.js \
   --accept-disposable-profile
 ```
 
-The launcher requires an absolute profile root, refuses the normal `~/Library/Application Support/Bob LearnHNS` profile, sets `userData` before services initialize, and uses local regtest with DNS peers and outbound P2P sockets disabled. Only HTTP services bind to loopback. It generates new API keys and two disposable encrypted wallets (five for restore scenarios), and enables no signing or live transaction fixture. The only added IPC is read-only `Acceptance.describe`, not generic RPC or file access. The local activation token and disposable wallet passphrase remain in the mode-0600 manifest and are never production credentials.
+The launcher requires an absolute profile root, refuses the normal `~/Library/Application Support/Bob LearnHNS` profile, sets `userData` before services initialize, and uses local regtest with DNS peers and outbound P2P sockets disabled. Only HTTP services bind to loopback. It generates new API keys and two disposable encrypted wallets (five for restore scenarios), and enables no signing or live transaction fixture. Acceptance IPC exposes read-only `describe` and one bounded, argument-free `advance` transition only for fixed scenario IDs; it provides no generic RPC or file access. The local activation token and disposable wallet passphrase remain in the mode-0600 manifest and are never production credentials.
 
-Initialization accepts only these built-in scenario IDs: `multiwallet`, `restore-spv`, `restore-full`, `auction-retry`, `basket-20-delayed`, and `basket-ambiguous`. The scenario fixes its node mode; callers cannot choose a different network, seed, history, name list, transaction payload, or filesystem path. Reuse cannot change scenarios.
+Initialization accepts only the built-in IDs in `app/background/packagedAcceptance/scenarios.js`; the newly added IDs are listed in the table above. The scenario fixes its node mode; callers cannot choose a different network, seed, history, name list, transaction payload, or filesystem path. Reuse cannot change scenarios.
 
 The main process opens the renderer before waiting for the disposable WalletDB fixture. This ordering is required because the renderer starts the local node and wallet plugin; waiting for WalletDB first would deadlock a clean launch. A regression test withholds wallet readiness until the window exists.
 
@@ -109,7 +134,7 @@ Each scenario now has a source-level plan or remains explicitly unsupported, and
 
 ## Persistent runtime integration
 
-Validated acceptance startup installs only a read-only `Acceptance.describe` IPC method. Private fixture initialization cannot be invoked through renderer IPC. Existing basket Wallet endpoints receive fixed inert implementations; every other raw signing/import/broadcast deny remains in place. Seed and master-key export and arbitrary block generation are denied too. Exact fixed names and amounts (`1000000`/`2000000`, number or canonical base-unit string) are required. A prepared attempt must match before either inert outcome can run.
+Validated acceptance startup installs read-only `Acceptance.describe` plus a bounded, argument-free `Acceptance.advance` for fixed transitions. Private fixture initialization cannot be invoked through renderer IPC. Existing basket Wallet endpoints receive fixed inert implementations; every other raw signing/import/broadcast deny remains in place. Seed and master-key export and arbitrary block generation are denied too. Exact fixed names and amounts (`1000000`/`2000000`, number or canonical base-unit string) are required. A prepared attempt must match before either inert outcome can run.
 
 The ambiguity state is persisted before the error is returned under a protected disposable DB key. Renderer writes/deletes to that key are rejected. A real bdb test uses two separate source Node processes to prove profile reuse retains the one-boundary lock. Effective cancellation is idempotent when both the component and coordinator cancel the same attempt; request and effective-cancellation counters are reported separately.
 

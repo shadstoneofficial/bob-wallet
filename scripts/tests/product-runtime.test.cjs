@@ -87,6 +87,62 @@ test('runtime accepts only exact numeric or base-unit string fixture amounts',as
   }
 });
 
+test('fixed fixture transitions reject arguments, repetition, and unsupported scenarios',async()=>{
+  const expired=createProductRuntime({scenario:'basket-expired'},memoryDb());
+  await assert.rejects(expired.advance('CLOSED'),{code:'ERR_PACKAGED_ACCEPTANCE_POLICY'});
+  assert.equal((await expired.nodeMethods.getNameInfo('fixture-01')).info.state,'BIDDING');
+  assert.deepEqual(await expired.advance(),{controlStep:1,selectedWallet:'acceptance-primary'});
+  assert.equal((await expired.nodeMethods.getNameInfo('fixture-01')).info.state,'CLOSED');
+  assert.equal((await expired.nodeMethods.getNameInfo('fixture-02')).info.state,'BIDDING');
+  await assert.rejects(expired.advance(),{code:'ERR_PACKAGED_ACCEPTANCE_POLICY'});
+  const ordinary=createProductRuntime({scenario:'multiwallet'},memoryDb());
+  await assert.rejects(ordinary.advance(),{code:'ERR_PACKAGED_ACCEPTANCE_POLICY'});
+  const switching=createProductRuntime({scenario:'basket-wallet-switch'},memoryDb());
+  assert.equal((await switching.advance()).selectedWallet,'acceptance-secondary');
+  assert.equal((await switching.advance()).selectedWallet,'acceptance-primary');
+  await assert.rejects(switching.advance(),{code:'ERR_PACKAGED_ACCEPTANCE_POLICY'});
+});
+
+test('basket reconciliation requires the exact candidate ID and cannot construct twice',async()=>{
+  for(const [scenario,expected] of [['basket-reconcile-exact','ac'.repeat(32)],['basket-reconcile-wrong','bd'.repeat(32)]]){
+    const db=memoryDb();
+    const runtime=createProductRuntime({scenario},db);
+    assert.deepEqual(await runtime.walletMethods.findBasketBidTransactions(buildControlledScenarioPlan(scenario).names),[]);
+    const quote=await runtime.walletMethods.prepareBidMany(payload(scenario),attempt);
+    await runtime.walletMethods.signPreparedBidMany(attempt,quote.scope);
+    await assert.rejects(runtime.walletMethods.broadcastPreparedBidMany(attempt),{code:'ETXBROADCASTUNCERTAIN'});
+    const matches=await runtime.walletMethods.findBasketBidTransactions(buildControlledScenarioPlan(scenario).names);
+    assert.deepEqual(matches,[{txid:expected}]);
+    assert.equal(matches[0].txid==='ac'.repeat(32),scenario==='basket-reconcile-exact');
+    const reopened=createProductRuntime({scenario},db);
+    await assert.rejects(reopened.walletMethods.prepareBidMany(payload(scenario),attempt),{code:'ERR_PACKAGED_ACCEPTANCE_POLICY'});
+    const result=await reopened.describe();
+    assert.equal(result.state.preparationCalls,1);
+    assert.equal(result.state.inertBoundaryCalls,1);
+    assert.equal(result.state.liveBroadcastCalls,0);
+  }
+});
+
+test('registration reconciliation resolves only the exact recorded candidate ID',async()=>{
+  for(const [scenario,unlocked] of [['register-reconcile-exact',true],['register-reconcile-wrong',false]]){
+    const runtime=createProductRuntime({scenario},memoryDb());
+    const context={walletId:'acceptance-primary',network:'regtest',operationId:'fixture-op'};
+    const first=await runtime.walletMethods.sendRegisterAll(undefined,context);
+    assert.equal(first.retryLocked,true);
+    assert.equal(first.entries[0].status,'unknown');
+    assert.equal((await runtime.walletMethods.getRegisterAllStatus(context)).retryLocked,true);
+    await runtime.advance();
+    const after=await runtime.walletMethods.getRegisterAllStatus(context);
+    assert.equal(after.retryLocked,!unlocked);
+    assert.equal(after.entries[0].status,unlocked?'submitted':'unknown');
+    const evidence=(await runtime.describe()).registration;
+    assert.equal(evidence.constructionCalls,1);
+    assert.equal(evidence.inertBoundaryCalls,1);
+    assert.equal(evidence.liveBroadcastCalls,0);
+    assert.equal(evidence.signatureCalls,0);
+  }
+});
+
 test('real disposable bdb journal retains lock through two separate source Node processes',()=>{
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'bob-source-runtime-restart-'));
   try{
