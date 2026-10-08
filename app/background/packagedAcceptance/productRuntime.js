@@ -13,6 +13,8 @@ function reject(message) {
 function createProductRuntime(config, db) {
   const plan = buildControlledScenarioPlan(config.scenario);
   const names = plan.names || (plan.name ? [plan.name] : []);
+  const registration = plan.fixtureType.startsWith('register-')
+    ? require('./registerRuntime').createRegisterRuntime(plan, db) : null;
   let state;
   let pending;
   let preparedAttempt = null;
@@ -146,7 +148,7 @@ function createProductRuntime(config, db) {
     },
   } : {};
   return {
-    walletMethods,
+    walletMethods: {...walletMethods, ...registration?.walletMethods},
     nodeMethods: names.length ? {
       async getNameInfo(name) {
         if (!names.includes(name)) reject('non-fixture name');
@@ -167,7 +169,8 @@ function createProductRuntime(config, db) {
     async describe() {
       await queue;
       await load();
-      return {plan, walletId: 'acceptance-primary', state: {...state}, restoreEvidence, listings: FIXED_LISTINGS,
+      return {plan, walletId: 'acceptance-primary', state: {...state}, registration: registration ? await registration.describe() : null,
+        restoreEvidence, listings: FIXED_LISTINGS,
         packagedStatus: 'NOT TESTED'};
     },
   };

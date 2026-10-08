@@ -1,7 +1,9 @@
 import React, {useEffect, useMemo, useState} from 'react';
 import {useStore} from 'react-redux';
 import {AuctionBasket} from '../../pages/AuctionBasket';
-import {sendBidMany} from '../../ducks/names';
+import {sendBidMany, sendRegisterAll} from '../../ducks/names';
+import {RegisterAll} from '../../components/RegisterAll';
+import walletClient from '../../utils/walletClient';
 import {GET_PASSPHRASE} from '../../ducks/walletReducer';
 import {makeClient} from '../ipc/ipc';
 import ListingForm from '../../addons/shakex/ListingForm';
@@ -36,7 +38,8 @@ export default function InteractiveFixture() {
     name, bidAmount: '1', blindAmount: '1',
   }])), [names]);
   if (!fixture) return <main><p>Preparing isolated acceptance fixture...</p><p role="alert">{notice}</p></main>;
-  const getState = () => ({...store.getState(), wallet:{wid:fixture.walletId,type:'hot',watchOnly:false}});
+  const getState = () => ({...store.getState(), wallet:{...store.getState().wallet,
+    wid:fixture.walletId,network:'regtest',requestGeneration:0,type:'hot',watchOnly:false}});
   const dispatch = action => {
     if (typeof action === 'function') return action(dispatch, getState);
     if (action?.type === GET_PASSPHRASE) return action.payload.resolve();
@@ -58,9 +61,15 @@ export default function InteractiveFixture() {
   return <main className="acceptance-fixture">
     <h2>Isolated acceptance: {fixture.plan.scenario}</h2>
     <p role="alert">{notice}</p>
-    <button type="button" onClick={()=>setVisible(value=>!value)}>{visible?'Leave basket':'Return to basket'}</button>
+    <button type="button" onClick={()=>setVisible(value=>!value)}>{fixture.registration
+      ? (visible?'Leave registrations':'Return to registrations') : (visible?'Leave basket':'Return to basket')}</button>
     <pre data-testid="acceptance-state">{JSON.stringify(fixture.state,null,2)}</pre>
     <output data-testid="acceptance-basket-clears">{basketClears}</output>
+    {fixture.registration && <pre data-testid="acceptance-register-state">{JSON.stringify(fixture.registration,null,2)}</pre>}
+    {visible && fixture.registration && <RegisterAll walletId={fixture.walletId} network="regtest" requestGeneration={0}
+      getStatus={context=>walletClient.getRegisterAllStatus(context)}
+      cancel={context=>walletClient.cancelRegisterAll(context)}
+      submit={(isCurrent,operationId)=>sendRegisterAll(isCurrent,operationId)(dispatch,getState)} />}
     {fixture.plan.fixtureType === 'restore-history' && <pre data-testid="acceptance-restore-evidence">
       {JSON.stringify(fixture.restoreEvidence || {status: 'Preparing generated regtest replay'}, null, 2)}
     </pre>}

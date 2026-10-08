@@ -34,6 +34,8 @@ const BLOCKED_WALLET_METHODS = new Set([
   'broadcastPreparedBidMany',
   'sendRedeemAll',
   'sendRegisterAll',
+  'getRegisterAllStatus',
+  'cancelRegisterAll',
   'sendRenewal',
   'transferMany',
   'finalizeAll',
@@ -66,6 +68,7 @@ const BLOCKED_WALLET_METHODS = new Set([
 
 const PROTECTED_DB_KEYS = new Set([
   'acceptance-fixed-product-state-v1',
+  'acceptance-register-state-v1',
   'acceptance-embedded-restore-v1',
   'connection_type',
   'network',
@@ -129,6 +132,7 @@ function wrapAcceptanceDbMethods(methods, active, options = {}) {
   return {
     ...methods,
     async put(key, value) {
+      if (String(key).startsWith('acceptance-register-journal:')) blocked(`DB.put(${key})`);
       if (PROTECTED_DB_KEYS.has(key)
           && !isApprovedAcceptanceDbWrite(key, value, options)) {
         blocked(`DB.put(${key})`);
@@ -136,6 +140,7 @@ function wrapAcceptanceDbMethods(methods, active, options = {}) {
       return methods.put(key, value);
     },
     async del(key) {
+      if (String(key).startsWith('acceptance-register-journal:')) blocked(`DB.del(${key})`);
       if (PROTECTED_DB_KEYS.has(key)) blocked(`DB.del(${key})`);
       return methods.del(key);
     },

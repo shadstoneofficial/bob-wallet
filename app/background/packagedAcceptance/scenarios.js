@@ -14,6 +14,9 @@ const SCENARIO_DEFINITIONS = Object.freeze({
   'auction-retry': Object.freeze({nodeMode: 'spv', fixtureType: 'auction-retry'}),
   'basket-20-delayed': Object.freeze({nodeMode: 'spv', fixtureType: 'basket-delayed'}),
   'basket-ambiguous': Object.freeze({nodeMode: 'spv', fixtureType: 'basket-ambiguous'}),
+  'register-partial': Object.freeze({nodeMode: 'spv', fixtureType: 'register-partial'}),
+  'register-ambiguous': Object.freeze({nodeMode: 'spv', fixtureType: 'register-ambiguous'}),
+  'register-cancel': Object.freeze({nodeMode: 'spv', fixtureType: 'register-cancel'}),
 });
 
 function getScenarioDefinition(scenario) {
@@ -51,10 +54,14 @@ function buildControlledScenarioPlan(scenario) {
     externalTransactionNetwork: false,
     signingAllowed: false,
     broadcastAllowed: false,
-    evidenceClass: definition.fixtureType.startsWith('basket') || definition.fixtureType === 'auction-retry'
+    evidenceClass: definition.fixtureType.startsWith('basket') || definition.fixtureType.startsWith('register-') || definition.fixtureType === 'auction-retry'
       ? 'source-product-path'
       : 'source-plan-only',
   };
+  if (definition.fixtureType.startsWith('register-')) {
+    return {...base, registrationNames: Array.from({length: 38}, (_, i) => `fixture-register-${String(i + 1).padStart(2, '0')}`),
+      serviceBoundary: 'inert-construction-signing-and-transport', journal: 'real-RegisterAllJournal'};
+  }
   if (definition.fixtureType === 'restore-history') {
     return {
       ...base,
@@ -144,6 +151,10 @@ function validateAmbiguousBasketEvidence(result, plan) {
 
 async function executeControlledSourceFixture(plan, {restoreReplay, productAdapter} = {}) {
   switch (plan.fixtureType) {
+    case 'register-partial':
+    case 'register-ambiguous':
+    case 'register-cancel':
+      return pendingProductFixture(plan);
     case 'restore-history': {
       if (typeof restoreReplay !== 'function') {
         return {

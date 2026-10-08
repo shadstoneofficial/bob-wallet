@@ -55,23 +55,52 @@ This is source verification, NOT packaged Register All acceptance. No installer
 was built or signed for this patch. No real wallet/profile, credentials, DNS
 records, or live transactions were accessed or changed.
 
-The existing packaged acceptance harness blocks real `sendRegisterAll` and does
-not yet supply a Register All product fixture. Before stable publication, extend
-its isolated regtest fixture to inject inert construction/signing/transport into
-the real registration service and exercise the actual recovery component:
+The packaged acceptance harness now includes `register-partial`,
+`register-ambiguous`, and `register-cancel` scenarios. They exercise the real
+RegisterAll component, Redux thunk, IPC, and RegisterAllJournal. The shared
+WalletService proxy, construction, key derivation, signatures, and transport are
+MOCKED, not the real wallet service. No fixture transaction ID represents a real
+transaction. Source service tests separately exercise real method bodies with
+injected I/O; this distinction must remain visible in acceptance reports.
+
+The source renderer/IPC suite passes all 12 tests, including the three new
+registration scenarios, negative context/credential/storage-policy checks, and
+a real disposable database reopened in a new process with its uncertainty lock
+intact. This does not establish that a signed package passes these tests.
+
+Use the existing exact-path macOS launcher with a fresh disposable directory:
+
+```sh
+node scripts/launch-packaged-acceptance-macos.js '/exact/candidate/Bob LearnHNS.app' --profile-root '/new/disposable/register-partial' --initialize --scenario register-partial --accept-disposable-profile
+```
+
+For reopening that profile, replace `--initialize --scenario register-partial`
+with `--reuse`. Use separate new directories for `register-ambiguous` and
+`register-cancel`. Open "Fixed fixtures" (`/acceptance-fixtures`) in the isolated
+app. No normal
+wallet profile, credential, privileged helper, or external transaction service is
+needed. The fixture reports `walletServiceProxy: MOCKED` and `transport: INERT`.
+
+Before stable publication, rerun in the exact signed candidate and record:
 
 1. Six accepted IDs followed by one preparation failure in a 38-name run.
 2. Restart the same disposable profile; show six retained receipts and resume
    exactly 32 names, without recreating the first six.
-3. An accepted-but-timeout response stays locked through restart and negative
-   history, then resolves only from positive exact-ID evidence.
-4. Stop, unmount, and A-to-B-to-A switching during delayed preparation send nothing
-   afterward; late UI results cannot overwrite the newly selected wallet.
+3. The inert ambiguous response stays locked through restart and negative
+   history. Positive exact-ID reconciliation remains covered by the source
+   journal/service tests, not this deliberately negative-history fixture.
+4. Stop and leave/return during delayed preparation send nothing afterward.
+   A-to-B-to-A wallet switching is covered by source service tests, not this
+   single-fixed-wallet fixture. A packaged multi-wallet registration test remains
+   a separate acceptance gap; do not substitute a production profile.
 5. Exercise narrow/wide light/dark recovery screens in all four languages,
    including long transaction IDs and errors.
 
 Retain the harness's filesystem isolation and backend regtest-only restrictions;
 do not replace these checks with manifest claims or use a production profile.
+The fixture adapters replace only the three Register All methods for registration
+scenarios. All three real methods remain blocked in other acceptance scenarios.
+Renderer writes/deletes cannot alter the fixture journal or its counters.
 
 ## Limits
 

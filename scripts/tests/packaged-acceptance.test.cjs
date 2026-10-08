@@ -522,6 +522,9 @@ test('controlled scenarios are fixed, regtest-only, and contain no signing or br
     'basket-20-delayed',
     'basket-ambiguous',
     'multiwallet',
+    'register-ambiguous',
+    'register-cancel',
+    'register-partial',
     'restore-full',
     'restore-spv',
   ]);
