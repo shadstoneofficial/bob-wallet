@@ -113,6 +113,7 @@ function installBridgeHandlers() {
 
   ipcMain.handle('BOB/OPEN_EXTERNAL', (event, url) => {
     if (!isTrustedSender(event)) return false;
+    if (process.env.BOB_PACKAGED_ACCEPTANCE_TEST === 'true') return false;
     const safeUrl = getSafeExternalUrl(url);
     if (!safeUrl) return false;
     return electron.shell.openExternal(safeUrl)
@@ -160,6 +161,10 @@ function installBridgeHandlers() {
   ipcMain.on('BOB/APP_IS_PACKAGED', event => {
     event.returnValue = isTrustedSender(event) ? electron.app.isPackaged : true;
   });
+  ipcMain.on('BOB/APP_IS_ACCEPTANCE', event => {
+    if (!isTrustedSender(event)) return;
+    event.returnValue = process.env.BOB_PACKAGED_ACCEPTANCE_TEST === 'true';
+  });
   ipcMain.on('BOB/APP_GET_PATH', (event, name) => {
     const allowed = new Set(['userData', 'documents', 'downloads']);
     event.returnValue = isTrustedSender(event) && allowed.has(name)
@@ -206,7 +211,7 @@ export default function showMainWindow() {
 
   window.webContents.setWindowOpenHandler(({url}) => {
     const safeUrl = getSafeExternalUrl(url);
-    if (safeUrl) {
+    if (safeUrl && process.env.BOB_PACKAGED_ACCEPTANCE_TEST !== 'true') {
       electron.shell.openExternal(safeUrl);
     }
     return {action: 'deny'};

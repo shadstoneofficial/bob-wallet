@@ -197,7 +197,9 @@ export const lockWallet = () => async (dispatch) => {
 
 export const verifyPhrase = (passphrase) => async (dispatch, getState) => {
   const {watchOnly} = getState().wallet;
-  if (watchOnly) {
+  // Acceptance wallets are generated locally; never export a seed to verify
+  // their UI login. Ordinary wallets retain their existing verification path.
+  if (watchOnly || require('electron').app?.isAcceptance === true) {
     dispatch({
       type: SET_PHRASE_MISMATCH,
       payload: false,
@@ -281,22 +283,53 @@ export const waitForWalletSync = (
     }
 
     const nodeHeight = state.node.chain.height;
-    const {walletHeight, rescanHeight, walletSync} = state.wallet;
-
-    if (!sawRescan && walletSync && rescanHeight !== null) {
-      sawRescan = true;
+    const {
+      walletHeight,
+      rescanHeight,
+      walletSync,
+      rescanStatus,
+      rescanGeneration,
+      activeRescanRequestIds,
+      completedRescanRequestIds,
+    } = state.wallet;
+    if (rescanStatus === 'failed') {
+      throw new Error('Wallet recovery is incomplete. Restart Bob to resume before retrying.');
     }
+    const managedRescanPending = rescanStatus === 'waiting' || rescanStatus === 'scanning';
+    const requestId = options.recoveryRequestId;
+    const backendGenerationChanged = Number.isSafeInteger(options.rescanBackendGenerationBefore)
+      && state.wallet.rescanBackendGeneration !== options.rescanBackendGenerationBefore;
+    if (backendGenerationChanged) {
+      throw new Error('The wallet backend changed while waiting for recovery. Restart basket preparation after synchronization.');
+    }
+    const requestCorrelationAvailable = typeof requestId === 'string'
+      && state.wallet.rescanManaged === true
+      && typeof state.wallet.rescanReady === 'boolean';
+    const matchingRequestActive = requestCorrelationAvailable
+      && activeRescanRequestIds?.includes(requestId);
+    const matchingRequestComplete = requestCorrelationAvailable
+      && completedRescanRequestIds?.includes(requestId);
+    const matchingRescanGeneration = Number.isSafeInteger(options.rescanGenerationBefore)
+      && rescanGeneration > options.rescanGenerationBefore;
 
-    if (!sawRescan) {
-      // The import RPC was dispatched, but its rescan progress event has not
-      // reached Redux yet. Do not mistake the pre-rescan synchronized state for
-      // completion.
-    } else if (walletSync) {
-      if (rescanHeight === null || walletHeight >= rescanHeight) {
-        break;
+    if (requestCorrelationAvailable) {
+      // Global wallet progress or a different rescan generation cannot satisfy
+      // this request-specific wait.
+      if (matchingRequestComplete) break;
+    } else {
+      if (!sawRescan && matchingRescanGeneration) sawRescan = true;
+      if (!sawRescan && walletSync && rescanHeight !== null) sawRescan = true;
+
+      if (sawRescan && !managedRescanPending) {
+        if (matchingRescanGeneration && rescanStatus === 'complete') {
+          break;
+        }
+        if (walletSync) {
+          if (rescanHeight === null || walletHeight >= rescanHeight) break;
+        } else if (nodeHeight && walletHeight >= nodeHeight) {
+          break;
+        }
       }
-    } else if (nodeHeight && walletHeight >= nodeHeight) {
-      break;
     }
 
     let progress;
@@ -308,7 +341,7 @@ export const waitForWalletSync = (
       progress = 0;
     }
 
-    const progressKey = `${walletSync}:${walletHeight}:${rescanHeight}:${nodeHeight}:${progress.toFixed(4)}`;
+    const progressKey = `${rescanStatus}:${rescanGeneration}:${matchingRequestActive}:${walletSync}:${walletHeight}:${rescanHeight}:${nodeHeight}:${progress.toFixed(4)}`;
     if (lastProgressKey === progressKey) {
       stall++;
     } else {

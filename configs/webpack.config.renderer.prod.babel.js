@@ -177,7 +177,7 @@ export default {
       openAnalyzer: process.env.OPEN_ANALYZER === 'true'
     }),
 
-    new NodePolyfillPlugin({excludeAliases: ['process']}),
+    new NodePolyfillPlugin({excludeAliases: ['process', 'crypto']}),
     new webpack.ProvidePlugin({process: 'process/browser'}),
   ]
 };

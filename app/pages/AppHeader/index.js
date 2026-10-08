@@ -7,7 +7,7 @@ import "./index.scss";
 import NetworkPicker from "../NetworkPicker";
 import SyncStatus from "../../components/SyncStatus";
 import * as nodeActions from "../../ducks/node";
-import { ConnectionTypes } from "../../background/connections/service";
+import { ConnectionTypes } from "../../background/connections/types";
 import { clientStub as cClientStub } from "../../background/connections/client";
 import {I18nContext} from "../../utils/i18n";
 const connClient = cClientStub(() => require("electron").ipcRenderer);

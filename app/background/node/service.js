@@ -13,6 +13,8 @@ import { ConnectionTypes, getConnection, getCustomRPC } from '../connections/ser
 import FullNode from 'hsd/lib/node/fullnode';
 import SPVNode from 'hsd/lib/node/spvnode';
 import plugin from 'hsd/lib/wallet/plugin';
+import {installLocalRescan} from '../wallet/localRescan';
+import {installHsdWebSocketUpgradePolicies} from './websocketPolicy';
 import { prefixHash } from '../../db/names';
 import { del, get, put } from '../db/service';
 import {dispatchToMainWindow} from "../../mainWindow";
@@ -37,6 +39,10 @@ import {storageHealth} from '../storage/service';
 const TX = require('hsd/lib/primitives/tx');
 
 const Network = require('hsd/lib/protocol/network');
+const {
+  assertAcceptanceHsdDirectory,
+  constrainHsdOptions,
+} = require('../packagedAcceptance/policy');
 
 const MIN_FEE = new BigNumber(0.01);
 const DEFAULT_BLOCK_TIME = 10 * 60 * 1000;
@@ -48,6 +54,8 @@ const SPV_MODE = 'nodeSpvMode';
 const SPV_HELPER_API_BASE_URL = 'nodeSpvHelperApiBaseUrl';
 const LEARNHNS_TEST_PORT_OFFSET = 1000;
 const TRANSACTION_TIMEOUT_MS = 120000;
+const IS_PACKAGED_ACCEPTANCE = process.env.BOB_PACKAGED_ACCEPTANCE_TEST === 'true';
+const ACCEPTANCE_NODE_MODE = process.env.BOB_ACCEPTANCE_NODE_MODE || 'spv';
 
 export class NodeService extends EventEmitter {
   constructor({
@@ -87,6 +95,7 @@ export class NodeService extends EventEmitter {
   }
 
   async getNoDns() {
+    if (IS_PACKAGED_ACCEPTANCE) return true;
     const noDns = await get(NODE_NO_DNS);
     if (noDns !== null) {
       return noDns === '1';
@@ -96,6 +105,7 @@ export class NodeService extends EventEmitter {
   }
 
   async getSpvMode() {
+    if (IS_PACKAGED_ACCEPTANCE) return ACCEPTANCE_NODE_MODE === 'spv';
     const spv = await get(SPV_MODE);
     if (spv !== null) {
       return spv === '1';
@@ -166,6 +176,13 @@ export class NodeService extends EventEmitter {
   }
 
   async getDir() {
+    if (IS_PACKAGED_ACCEPTANCE) {
+      const userData = app.getPath('userData');
+      return assertAcceptanceHsdDirectory(
+        userData,
+        path.join(userData, 'acceptance-hsd-profile'),
+      );
+    }
     const hsdPrefixDir = await get(HSD_PREFIX_DIR_KEY);
 
     if (hsdPrefixDir) {
@@ -275,6 +292,9 @@ export class NodeService extends EventEmitter {
   }
 
   async setNetworkAndNodeOptions(networkName) {
+    if (IS_PACKAGED_ACCEPTANCE && networkName !== 'regtest') {
+      throw new Error('Packaged acceptance requires regtest.');
+    }
     if (!VALID_NETWORKS[networkName]) {
       throw new Error('Invalid network.');
     }
@@ -325,7 +345,7 @@ export class NodeService extends EventEmitter {
 
     const Node = spv ? SPVNode : FullNode;
 
-    this.hsd = new Node({
+    const nodeOptions = constrainHsdOptions({
       agent: this.getAgent(),
       config: true,
       argv: true,
@@ -354,9 +374,12 @@ export class NodeService extends EventEmitter {
       walletIcannlockup: true,
       maxOutbound: 4,
       compactTreeOnInit: false,
-    });
+    }, IS_PACKAGED_ACCEPTANCE, dir);
+    this.hsd = new Node(nodeOptions);
 
     this.hsd.use(plugin);
+    installHsdWebSocketUpgradePolicies(this.hsd);
+    installLocalRescan(this.hsd.get('walletdb').wdb, this.hsd);
 
     const reportStorageError = error => {
       if (!storageHealth.reportError(error, {source: 'hsd'})) {
@@ -387,6 +410,7 @@ export class NodeService extends EventEmitter {
     await this.hsd.open();
     this.emit('start local', this.hsd.get('walletdb'), walletApiKey);
     await this.hsd.connect();
+    await this.hsd.get('walletdb').wdb.resumeLocalSync?.();
     await this.hsd.startSync();
 
     const migrateFlag = `${this.networkName}-hsd-4.0.0-migrate${spv ? '-spv' : ''}`;
@@ -668,12 +692,13 @@ export class NodeService extends EventEmitter {
     return this.client;
   }
 
-  async broadcastRawTx(tx, {timeout = TRANSACTION_TIMEOUT_MS} = {}) {
+  async broadcastRawTx(tx, {timeout = TRANSACTION_TIMEOUT_MS, assertCurrent = () => {}} = {}) {
     const storagePath = await this.getDir();
     await storageHealth.preflight(storagePath, {
       source: 'transaction-broadcast-preflight',
       transactionAttempted: true,
     });
+    assertCurrent();
     try {
       const decoded = TX.decode(Buffer.from(tx, 'hex'));
       const txid = decoded.txid();

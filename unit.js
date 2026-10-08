@@ -52,6 +52,9 @@ require('./app/pages/Auction/tests/RepairBid.spec');
 require('./app/pages/MyDomain/tests/Records.spec');
 require('./app/background/wallet/tests/liquidityHtlc.spec');
 require('./app/background/wallet/tests/registerValidation.spec');
+require('./app/background/wallet/tests/basketValidation.spec');
+require('./app/background/wallet/tests/registerAll.spec');
+require('./app/components/RegisterAll/register-all.spec');
 require('./app/background/wallet/tests/revealBatch.spec');
 require('./app/background/wallet/tests/stats.spec');
 require('./app/background/wallet/tests/transactionSafety.spec');
@@ -89,8 +92,12 @@ require('./app/background/node/tests/spvHelperRequest.spec');
 require("./app/ducks/tests/nameUpdateReview.spec");
 require('./app/pages/AuctionBasket/tests/localization.spec');
 require('./app/utils/tests/localeFormatting.spec');
+require('./app/utils/tests/secureRandom.spec');
 
 require("./app/utils/tests/reviewText.spec");
 
 require('./app/pages/Addons/tests/catalog.spec');
+
+require('./app/background/wallet/tests/localRescan.spec');
+require('./app/background/wallet/tests/recoveryAdmission.spec');
 require('./app/components/LanguagePicker/LanguagePicker.spec');

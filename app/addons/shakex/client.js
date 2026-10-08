@@ -27,6 +27,14 @@ export function parseListings(payload) {
 }
 
 export async function fetchListings(signal) {
+  if (require('electron').app?.isAcceptance === true) {
+    if (signal?.aborted) throw new Error('Acceptance listing request cancelled.');
+    const {makeClient} = require('../../background/ipc/ipc');
+    const client = makeClient(() => require('electron').ipcRenderer, 'Acceptance', ['describe']);
+    const fixture = await client.describe();
+    if (signal?.aborted) throw new Error('Acceptance listing request cancelled.');
+    return parseListings(fixture.listings);
+  }
   const response = await fetch(`${SHAKEX_ORIGIN}/api/listings`, {
     signal, credentials: 'omit', redirect: 'error', referrerPolicy: 'no-referrer',
   });

@@ -1,0 +1,63 @@
+{
+  "shakexSearchLabel": {
+    "ru-RU": "Поиск имён (Unicode / эмодзи / punycode)",
+    "th-TH": "ค้นหาชื่อ (Unicode / อีโมจิ / punycode)",
+    "en": "Search names (Unicode / emoji / punycode)",
+    "zh-CN": "搜索域名（Unicode / 表情符号 / Punycode）",
+    "sourceHead": "a402006f6a79d29d4317f4bd4dacb255c9453714"
+  },
+  "walletRescanWaiting": {
+    "ru-RU": "Ожидание повторного сканирования истории кошелька…",
+    "th-TH": "กำลังรอสแกนประวัติกระเป๋าเงินใหม่…",
+    "en": "Waiting to rescan wallet history…",
+    "zh-CN": "正在等待重新扫描钱包历史记录…",
+    "sourceHead": "7fa5ccc63e1e5376552ea2250086313a25bb2453"
+  },
+  "walletRescanFailed": {
+    "ru-RU": "Восстановление кошелька не завершено. Перезапустите Bob, чтобы продолжить.",
+    "th-TH": "การกู้คืนกระเป๋าเงินยังไม่เสร็จสมบูรณ์ เริ่ม Bob ใหม่เพื่อดำเนินการต่อ",
+    "en": "Wallet recovery incomplete. Restart Bob to resume.",
+    "zh-CN": "钱包恢复未完成。请重启 Bob 以继续恢复。",
+    "sourceHead": "7fa5ccc63e1e5376552ea2250086313a25bb2453"
+  },
+  "systemDnsDevelopmentStatus": {
+    "en": "Development only",
+    "ru-RU": "Только для разработки",
+    "th-TH": "สำหรับการพัฒนาเท่านั้น",
+    "sourceHead": "50cc6135bbd57df15c9a256f573a27411d409877",
+    "zh-CN": "仅限开发版本",
+    "zhSourceHead": "4e35a77ab5e9424fd92d117b9b0501049e994a0a"
+  },
+  "systemDnsDevelopmentDescription": {
+    "en": "Checks whether Bob's local resolver is ready. It cannot change system DNS.",
+    "ru-RU": "Проверяет готовность локального резолвера Bob. Изменять системные настройки DNS эта функция не может.",
+    "th-TH": "ตรวจสอบว่าตัวแก้ชื่อในเครื่องของ Bob พร้อมหรือไม่ โดยไม่สามารถเปลี่ยน DNS ของระบบได้",
+    "sourceHead": "50cc6135bbd57df15c9a256f573a27411d409877",
+    "zh-CN": "检查 Bob 的本地解析器是否就绪。此功能无法更改系统 DNS。",
+    "zhSourceHead": "4e35a77ab5e9424fd92d117b9b0501049e994a0a"
+  },
+  "systemDnsResolverReady": {
+    "en": "Bob's local resolver is ready for read-only checks.",
+    "ru-RU": "Локальный резолвер Bob готов к проверкам только для чтения.",
+    "th-TH": "ตัวแก้ชื่อในเครื่องของ Bob พร้อมสำหรับการตรวจสอบแบบอ่านอย่างเดียว",
+    "sourceHead": "50cc6135bbd57df15c9a256f573a27411d409877",
+    "zh-CN": "Bob 的本地解析器已准备好进行只读检查。",
+    "zhSourceHead": "4e35a77ab5e9424fd92d117b9b0501049e994a0a"
+  },
+  "systemDnsResolverUnavailable": {
+    "en": "Bob's local resolver is not currently eligible.",
+    "ru-RU": "Локальный резолвер Bob сейчас не соответствует условиям допуска.",
+    "th-TH": "ตัวแก้ชื่อในเครื่องของ Bob ยังไม่เข้าเงื่อนไขที่กำหนดในขณะนี้",
+    "sourceHead": "50cc6135bbd57df15c9a256f573a27411d409877",
+    "zh-CN": "Bob 的本地解析器当前不符合使用条件。",
+    "zhSourceHead": "4e35a77ab5e9424fd92d117b9b0501049e994a0a"
+  },
+  "systemDnsRunTest": {
+    "en": "Run resolver test",
+    "ru-RU": "Запустить проверку резолвера",
+    "th-TH": "ทดสอบตัวแก้ชื่อ",
+    "sourceHead": "50cc6135bbd57df15c9a256f573a27411d409877",
+    "zh-CN": "运行解析器测试",
+    "zhSourceHead": "4e35a77ab5e9424fd92d117b9b0501049e994a0a"
+  }
+}

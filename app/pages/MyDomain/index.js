@@ -177,7 +177,6 @@ export class MyDomain extends Component {
         <Collapsible className="my-domain__info-panel" title={t('domainDetails')} defaultCollapsed>
           <DomainDetails name={name} />
         </Collapsible>
-        <Collapsible className="my-domain__info-panel" title={t('records')} overflowY={false}>
           <Records
             name={name}
             transferring={!!domain.info && domain.info.transfer !== 0}
@@ -185,8 +184,8 @@ export class MyDomain extends Component {
             canonicalError={this.state.canonicalError}
             refreshCanonicalNameInfo={this.refreshNameInfo}
             editable
+            sellingOptions
           />
-        </Collapsible>
         <Collapsible className="my-domain__info-panel" title={t('bidsTitle')} defaultCollapsed>
           {
             this.props.domain

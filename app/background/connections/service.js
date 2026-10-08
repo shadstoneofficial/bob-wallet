@@ -1,5 +1,7 @@
 import { del, get, put } from '../db/service';
 import crypto from "crypto";
+import {ConnectionTypes} from './types';
+export {ConnectionTypes} from './types';
 
 const CONNECTION_TYPE_KEY = 'connection_type';
 const RPC_API_KEY = 'p2p_api_key';
@@ -12,12 +14,6 @@ const CUSTOM_RPC_URL = 'custom_rpc_url';
 const CUSTOM_RPC_PROTOCOL = 'custom_rpc_protocol';
 
 const Network = require('hsd/lib/protocol/network');
-
-export const ConnectionTypes = {
-  P2P: 'P2P',
-  Custom: 'Custom',
-  TEST: 'TEST',
-};
 
 export async function getAPIKey() {
   const apiKey = await get(RPC_API_KEY);
@@ -52,6 +48,9 @@ export async function getCustomRPC() {
 }
 
 async function setConnection(opts) {
+  if (process.env.BOB_PACKAGED_ACCEPTANCE_TEST === 'true' && opts.type !== ConnectionTypes.P2P) {
+    throw new Error('Packaged acceptance policy requires a local P2P connection.');
+  }
   switch (opts.type) {
     case ConnectionTypes.P2P:
       await put(CONNECTION_TYPE_KEY, ConnectionTypes.P2P);
@@ -73,10 +72,16 @@ async function setConnection(opts) {
 }
 
 async function setConnectionType(connectionType) {
+  if (process.env.BOB_PACKAGED_ACCEPTANCE_TEST === 'true' && connectionType !== ConnectionTypes.P2P) {
+    throw new Error('Packaged acceptance policy requires a local P2P connection.');
+  }
   return await put(CONNECTION_TYPE_KEY, connectionType);
 }
 
 export async function getConnection() {
+  if (process.env.BOB_PACKAGED_ACCEPTANCE_TEST === 'true') {
+    return {type: ConnectionTypes.P2P, apiKey: await getAPIKey()};
+  }
   const connectionType = await get(CONNECTION_TYPE_KEY);
 
   switch (connectionType) {
@@ -104,10 +109,11 @@ const methods = {
   getConnection,
   setConnection,
   setConnectionType,
-  getCustomRPC,
+  getCustomRPC: process.env.BOB_PACKAGED_ACCEPTANCE_TEST === 'true'
+    ? async () => { throw new Error('Packaged acceptance policy blocks Custom RPC.'); }
+    : getCustomRPC,
 };
 
 export async function start(server) {
   server.withService(sName, methods);
 }
-

@@ -3,7 +3,7 @@ import PropTypes from 'prop-types';
 import {shell} from 'electron';
 import './docs-help.scss';
 
-export default function DocsHelp({title, children, href}) {
+export default function DocsHelp({title, children, href, buttonLabel = 'Learn More'}) {
   return (
     <div className="docs-help">
       <div>
@@ -15,7 +15,7 @@ export default function DocsHelp({title, children, href}) {
           className="docs-help__button"
           onClick={() => shell.openExternal(href)}
         >
-          Learn More
+          {buttonLabel}
         </button>
       )}
     </div>
@@ -26,4 +26,5 @@ DocsHelp.propTypes = {
   title: PropTypes.string.isRequired,
   children: PropTypes.node.isRequired,
   href: PropTypes.string,
+  buttonLabel: PropTypes.string,
 };

@@ -1,6 +1,8 @@
 import { Address } from 'hsd/lib/primitives';
+import {v4 as uuidv4} from 'uuid';
 import nodeClient from '../utils/nodeClient';
 import walletClient from '../utils/walletClient';
+import {basketScope, assertBasketScope, assertBasketEligibility, basketScopeError} from '../utils/basketScope';
 import * as namesDb from '../db/names';
 import {
   fetchPendingTransactions,
@@ -452,6 +454,7 @@ export const BID_SUBMISSION_PHASES = Object.freeze({
   CHECKING: 'checking',
   RESCANNING: 'rescanning',
   BUILDING: 'building',
+  REVIEWING: 'reviewing',
   SIGNING: 'signing',
   BROADCASTING: 'broadcasting',
   VERIFYING: 'verifying',
@@ -463,6 +466,7 @@ const PREPARATION_TIMEOUT_MS = 12 * 60 * 1000;
 const BROADCAST_TIMEOUT_MS = 120 * 1000;
 const RECONCILE_TIMEOUT_MS = 15 * 1000;
 const basketSubmissionLocks = new Map();
+const basketWalletLocks = new Map();
 
 function basketSubmissionKey(walletId, entries) {
   const values = entries.map(entry => [entry.name, entry.bid, entry.lockup]);
@@ -484,7 +488,7 @@ function throwIfCancelled(signal) {
   });
 }
 
-function waitForControlledPromise(promise, {signal, timeoutMs, timeoutError}) {
+export function waitForControlledPromise(promise, {signal, timeoutMs, timeoutError}) {
   return new Promise((resolve, reject) => {
     let settled = false;
     let timer = null;
@@ -538,12 +542,6 @@ async function findNewBasketTransactions(entries, baseline, findTransactions) {
   return (current || []).filter(tx => tx?.txid && !baseline.has(tx.txid));
 }
 
-function isDefiniteBroadcastFailure(error) {
-  if (error?.code === 'ETXREJECTED') return true;
-  if (error?.code === 'ETXBROADCASTUNCERTAIN') return false;
-  return /rejected by the network|fully signed/i.test(error?.message || '');
-}
-
 function submissionFailureStage(error, fallback) {
   if (error?.code === 'BASKET_BUILD_FAILED') return BID_SUBMISSION_PHASES.BUILDING;
   if (error?.code === 'BASKET_SIGN_FAILED') return BID_SUBMISSION_PHASES.SIGNING;
@@ -556,6 +554,10 @@ function submissionFailureStage(error, fallback) {
  * duplicate-safety behavior can be tested without broadcasting HNS.
  */
 export async function submitBidManyLifecycle(entries, deps, options = {}) {
+  // Freeze the authorized rows before any asynchronous work or eligibility lookup.
+  entries = basketScope(entries).rows.map(row => ({
+    ...row, height: entries.find(entry => entry.name === row.name)?.height,
+  }));
   const signal = options.signal;
   const onPhase = options.onPhase || (() => {});
   const onTiming = options.onTiming || ((phase, durationMs, details) => {
@@ -566,6 +568,7 @@ export async function submitBidManyLifecycle(entries, deps, options = {}) {
   let stage = BID_SUBMISSION_PHASES.CHECKING;
   let broadcastStarted = false;
   let baseline = null;
+  let signed = null;
   const attemptId = options.attemptId || `basket-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const preparationStartedAt = Date.now();
 
@@ -581,14 +584,23 @@ export async function submitBidManyLifecycle(entries, deps, options = {}) {
       {code: 'BASKET_PREPARATION_TIMEOUT', stage},
     ),
   });
+  const assertCurrent = () => {
+    throwIfCancelled(signal);
+    options.assertCurrent?.();
+  };
+  const validateEligibility = async () => {
+    for (const entry of entries) {
+      assertBasketEligibility(entry.name, await prepare(deps.getNameInfo(entry.name)));
+    }
+    assertCurrent();
+  };
 
   try {
     setPhase(BID_SUBMISSION_PHASES.CHECKING);
     baseline = transactionIds(await prepare(
       deps.findTransactions(entries.map(entry => entry.name)),
     ));
-    await prepare(deps.requestPassphrase());
-    throwIfCancelled(signal);
+    assertCurrent();
 
     const auctionValidationStartedAt = Date.now();
     const missing = [];
@@ -616,14 +628,18 @@ export async function submitBidManyLifecycle(entries, deps, options = {}) {
       }
 
       setPhase(BID_SUBMISSION_PHASES.RESCANNING, {missing: missing.length});
+      const recoveryRequestId = uuidv4().replace(/-/g, '');
       const importPromise = Promise.resolve().then(() => (
-        deps.importNames(toImport, {transactionAttempted: false})
+        deps.importNames(toImport, {
+          transactionAttempted: false,
+          recoveryRequestId,
+        })
       ));
       // Successful import RPC completion is not a completion signal. Observe
       // Redux rescan progress instead, while still surfacing an early RPC error.
       const importFailure = importPromise.then(() => new Promise(() => {}));
       await prepare(Promise.race([
-        deps.waitForSync({signal, timeoutMs: preparationTimeoutMs}),
+        deps.waitForSync({signal, timeoutMs: preparationTimeoutMs, recoveryRequestId}),
         importFailure,
       ]));
       throwIfCancelled(signal);
@@ -646,7 +662,7 @@ export async function submitBidManyLifecycle(entries, deps, options = {}) {
       imported: missing.length,
     });
 
-    throwIfCancelled(signal);
+    await validateEligibility();
     const payload = entries.map(entry => ({
       name: entry.name,
       bid: entry.bid,
@@ -661,10 +677,30 @@ export async function submitBidManyLifecycle(entries, deps, options = {}) {
       if (signal?.aborted) await deps.cancel?.(attemptId);
       throw error;
     }
-    throwIfCancelled(signal);
-    const preparedTxid = prepared?.txid || '';
-    setPhase(BID_SUBMISSION_PHASES.SIGNING, {attemptId, txid: preparedTxid});
-    throwIfCancelled(signal);
+    assertCurrent();
+    const quotedScope = basketScope(entries, prepared?.scope?.fee);
+    assertBasketScope(prepared?.scope, quotedScope);
+    if (!Number.isSafeInteger(prepared.scope.fee) || typeof options.confirmScope !== 'function') {
+      throw basketScopeError('An explicit review of the exact transaction fee is required.');
+    }
+    setPhase(BID_SUBMISSION_PHASES.REVIEWING, {attemptId});
+    const approvedScope = await prepare(options.confirmScope(JSON.parse(JSON.stringify(quotedScope))));
+    assertCurrent();
+    assertBasketScope(approvedScope, quotedScope);
+    await validateEligibility();
+    // Never hold the password over a rescan or over an open review screen.
+    await prepare(deps.requestPassphrase());
+    assertCurrent();
+    await validateEligibility();
+    setPhase(BID_SUBMISSION_PHASES.SIGNING, {attemptId});
+    signed = await prepare(deps.signPrepared(attemptId, quotedScope));
+    assertCurrent();
+    assertBasketScope(signed?.scope, quotedScope);
+    const preparedTxid = signed?.txid || '';
+    if (!/^[a-f0-9]{64}$/.test(preparedTxid)) {
+      throw basketScopeError('The signed transaction ID could not be verified.');
+    }
+    assertCurrent();
 
     let result;
     setPhase(BID_SUBMISSION_PHASES.BROADCASTING, {attemptId, txid: preparedTxid});
@@ -678,9 +714,13 @@ export async function submitBidManyLifecycle(entries, deps, options = {}) {
         ),
       });
     } catch (error) {
+      if (error.code === 'BASKET_PREBROADCAST_FAILED') {
+        broadcastStarted = false;
+        throw error;
+      }
       const acceptedMatch = /Transaction ([0-9a-f]{64}) was accepted by the network/i
         .exec(error?.message || '');
-      if (acceptedMatch) {
+      if (acceptedMatch && acceptedMatch[1] === preparedTxid) {
         // Network acceptance with a local history-write error is still a
         // successful broadcast. Keep the txid and do not offer retry.
         result = {txid: acceptedMatch[1]};
@@ -699,26 +739,27 @@ export async function submitBidManyLifecycle(entries, deps, options = {}) {
             },
           );
         }
-        if (matches.length === 1) {
-          result = matches[0];
+        const exact = matches.find(match => match.txid === preparedTxid);
+        if (exact) {
+          result = exact;
         } else {
           throw createSubmissionError(error.message || 'Basket broadcast failed.', {
             code: error.code || 'BASKET_BROADCAST_FAILED',
             stage: BID_SUBMISSION_PHASES.BROADCASTING,
-            retryAllowed: matches.length === 0 && isDefiniteBroadcastFailure(error),
-            broadcastUncertain: !isDefiniteBroadcastFailure(error) || matches.length > 1,
+            retryAllowed: false,
+            broadcastUncertain: true,
           });
         }
       }
     }
 
     setPhase(BID_SUBMISSION_PHASES.VERIFYING, {attemptId, txid: preparedTxid});
-    let txid = result?.txid || result?.hash || result?.id || preparedTxid;
+    let txid = result?.txid || result?.hash || result?.id;
     if (!txid) {
       const matches = await findNewBasketTransactions(entries, baseline, deps.findTransactions);
-      if (matches.length === 1) txid = matches[0].txid;
+      if (matches.some(match => match.txid === preparedTxid)) txid = preparedTxid;
     }
-    if (!txid) {
+    if (!txid || txid !== preparedTxid) {
       throw createSubmissionError(
         'Broadcast returned without a transaction ID. Retry is disabled until wallet history confirms the outcome.',
         {
@@ -730,39 +771,47 @@ export async function submitBidManyLifecycle(entries, deps, options = {}) {
       );
     }
 
-    for (const entry of entries) {
-      try {
-        await deps.storeName(entry.name);
-      } catch (error) {
-        console.error(`Could not store submitted basket name ${entry.name}:`, error);
-      }
-    }
     try {
-      await deps.refreshPending();
+      await waitForControlledPromise((async () => {
+        for (const entry of entries) {
+          try {
+            await deps.storeName(entry.name);
+          } catch (error) {
+            console.error(`Could not store submitted basket name ${entry.name}:`, error);
+          }
+        }
+        await deps.refreshPending();
+      })(), {
+        timeoutMs: RECONCILE_TIMEOUT_MS,
+        timeoutError: new Error('Post-submission display refresh timed out; the transaction was already submitted.'),
+      });
     } catch (error) {
       console.error('Could not refresh pending transactions after basket submission:', error);
     }
     setPhase(BID_SUBMISSION_PHASES.SUBMITTED, {txid, timings: result?.timings || prepared?.timings || {}});
-    return {txid, timings: result?.timings || prepared?.timings || {}};
+    return {txid, scope: signed.scope, timings: result?.timings || prepared?.timings || {}};
   } catch (error) {
-    if (error?.code === 'BASKET_SUBMISSION_CANCELLED') {
-      await deps.cancel?.(attemptId);
-      throw error;
-    }
-
     let retryAllowed = !!error.retryAllowed;
-    let broadcastUncertain = !!error.broadcastUncertain;
+    let broadcastUncertain = broadcastStarted || !!error.broadcastUncertain;
     if (!broadcastStarted) {
-      await deps.cancel?.(attemptId);
-      retryAllowed = true;
-      broadcastUncertain = false;
+      let cancellation;
+      try {
+        cancellation = await waitForControlledPromise(deps.cancel?.(attemptId), {
+          timeoutMs: RECONCILE_TIMEOUT_MS,
+          timeoutError: new Error('Cancellation could not be confirmed.'),
+        });
+      } catch (_) { /* Keep the attempt locked if the backend cannot confirm cancellation. */ }
+      retryAllowed = cancellation?.broadcastAttempted === false;
+      broadcastUncertain = !retryAllowed;
     }
+    if (error?.code === 'BASKET_SUBMISSION_CANCELLED' && !broadcastUncertain) throw error;
 
     const wrapped = createSubmissionError(error.message || 'Basket submission failed.', {
-      code: error.code || 'BASKET_SUBMISSION_FAILED',
+      code: broadcastUncertain ? 'BASKET_BROADCAST_AMBIGUOUS' : error.code || 'BASKET_SUBMISSION_FAILED',
       stage: submissionFailureStage(error, stage),
       retryAllowed,
       broadcastUncertain,
+      txid: signed?.txid || '',
     });
     setPhase(BID_SUBMISSION_PHASES.FAILED, {
       error: wrapped.message,
@@ -785,6 +834,20 @@ export const sendBidMany = (entries, options = {}) => async (dispatch, getState)
   }
 
   const { wallet } = getState();
+  const walletKey = `${wallet.network}:${wallet.wid}`;
+  const assertCurrent = () => {
+    if (!isCurrentWalletRequest(getState, wallet.requestGeneration || 0, wallet.wid)
+        || getState().wallet.network !== wallet.network) {
+      throw basketScopeError('The selected wallet or network changed.');
+    }
+    options.assertCurrent?.();
+  };
+  const rescanGenerationBefore = Number.isSafeInteger(wallet.rescanGeneration)
+    ? wallet.rescanGeneration
+    : 0;
+  const rescanBackendGenerationBefore = Number.isSafeInteger(wallet.rescanBackendGeneration)
+    ? wallet.rescanBackendGeneration
+    : null;
   if (wallet.watchOnly) {
     throw new Error('Auction Basket bidding is not available for watch-only wallets.');
   }
@@ -793,7 +856,7 @@ export const sendBidMany = (entries, options = {}) => async (dispatch, getState)
   }
 
   const submissionKey = basketSubmissionKey(wallet.wid, entries);
-  const existing = basketSubmissionLocks.get(submissionKey);
+  const existing = basketSubmissionLocks.get(submissionKey) || basketWalletLocks.get(walletKey);
   if (existing) {
     throw createSubmissionError(
       existing.txid
@@ -808,9 +871,11 @@ export const sendBidMany = (entries, options = {}) => async (dispatch, getState)
     );
   }
 
+  basketWalletLocks.set(walletKey, {status: 'preparing'});
   try {
     const result = await submitBidManyLifecycle(entries, {
       requestPassphrase: () => new Promise((resolve, reject) => {
+        assertCurrent();
         dispatch(getPassphrase(resolve, reject));
       }),
       getAuctionInfo: name => walletClient.getAuctionInfo(name),
@@ -819,27 +884,44 @@ export const sendBidMany = (entries, options = {}) => async (dispatch, getState)
       waitForSync: waitOptions => dispatch(waitForWalletSync(600, {
         ...waitOptions,
         requireRescanStart: true,
+        rescanGenerationBefore,
+        rescanBackendGenerationBefore,
       })),
       findTransactions: names => walletClient.findBasketBidTransactions(names),
       prepare: (payload, attemptId) => {
         basketSubmissionLocks.set(submissionKey, {status: 'preparing', attemptId});
-        return walletClient.prepareBidMany(payload, attemptId);
+        assertCurrent();
+        return walletClient.prepareBidMany(payload, attemptId, {walletId: wallet.wid, network: wallet.network});
+      },
+      signPrepared: (attemptId, scope) => {
+        assertCurrent();
+        return walletClient.signPreparedBidMany(attemptId, scope);
       },
       cancel: attemptId => walletClient.cancelBidManyAttempt(attemptId),
       broadcastPrepared: attemptId => {
+        assertCurrent();
         basketSubmissionLocks.set(submissionKey, {status: 'broadcasting', attemptId});
         return walletClient.broadcastPreparedBidMany(attemptId);
       },
-      storeName: name => namesDb.storeName(name),
-      refreshPending: () => dispatch(fetchPendingTransactions()),
-    }, options);
+      storeName: name => {
+        if (isCurrentWalletRequest(getState, wallet.requestGeneration || 0, wallet.wid)
+            && getState().wallet.network === wallet.network) return namesDb.storeName(name);
+      },
+      refreshPending: () => {
+        if (isCurrentWalletRequest(getState, wallet.requestGeneration || 0, wallet.wid)
+            && getState().wallet.network === wallet.network) return dispatch(fetchPendingTransactions());
+      },
+    }, {...options, assertCurrent});
     basketSubmissionLocks.set(submissionKey, {status: 'submitted', txid: result.txid});
+    basketWalletLocks.delete(walletKey);
     return result;
   } catch (error) {
     if (error.broadcastUncertain) {
       basketSubmissionLocks.set(submissionKey, {status: 'uncertain'});
+      basketWalletLocks.set(walletKey, {status: 'uncertain'});
     } else {
       basketSubmissionLocks.delete(submissionKey);
+      basketWalletLocks.delete(walletKey);
     }
     throw error;
   }
@@ -936,12 +1018,16 @@ export const sendRevealMany = (names) => async (dispatch) => {
   return await walletClient.sendRevealMany(names);
 };
 
-export const sendRegisterAll = () => async (dispatch) => {
+export const sendRegisterAll = (isMounted = () => true, operationId) => async (dispatch, getState) => {
+  const {wid, network, requestGeneration} = getState().wallet;
   const passphrase = await new Promise((resolve, reject) => {
     dispatch(getPassphrase(resolve, reject));
   });
-
-  return await walletClient.sendRegisterAll(passphrase);
+  if (!isMounted() || !isCurrentWalletRequest(getState, requestGeneration || 0, wid)
+      || getState().wallet.network !== network) {
+    throw new Error('Register All was cancelled before submission because the active view or wallet changed.');
+  }
+  return await walletClient.sendRegisterAll(passphrase, {walletId: wid, network, operationId});
 };
 
 export const sendRenewal = (name) => async (dispatch) => {

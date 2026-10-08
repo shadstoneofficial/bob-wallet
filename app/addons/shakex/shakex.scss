@@ -21,3 +21,8 @@ body.bob-theme-dark .shakex-addon {
 }
 
 body.bob-theme-dark .shakex-addon a { color: #8ab4ff; }
+
+.shakex-addon {
+  &__name { font-family: system-ui, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif; }
+  &__ascii { margin: .25rem 0 .75rem; font-family: monospace; font-size: .8rem; overflow-wrap: anywhere; }
+}

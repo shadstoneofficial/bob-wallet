@@ -78,6 +78,7 @@ contextBridge.exposeInMainWorld('bobElectron', {
   },
   app: {
     isPackaged: ipcRenderer.sendSync('BOB/APP_IS_PACKAGED'),
+    isAcceptance: ipcRenderer.sendSync('BOB/APP_IS_ACCEPTANCE'),
     getPath(name) {
       return ipcRenderer.sendSync('BOB/APP_GET_PATH', name);
     },

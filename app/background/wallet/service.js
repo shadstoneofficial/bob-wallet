@@ -17,6 +17,7 @@ import {
   SYNC_WALLET_PROGRESS,
   SET_WALLET_NETWORK,
   SET_RESCAN_HEIGHT,
+  SET_RESCAN_STATE,
   SET_FIND_NONCE_PROGRESS,
   SET_BASKET_SUBMISSION_PROGRESS,
 } from '../../ducks/walletReducer';
@@ -38,6 +39,11 @@ import {
   broadcastAndRecord,
   reserveTransactionInputs,
 } from './transactionSafety';
+import {createRecoveryAdmission} from './recoveryAdmission';
+import {createRescanRiskTracker} from './rescanRisk';
+import {basketScope, assertBasketScope, assertBasketEligibility, basketScopeError} from '../../utils/basketScope';
+import {reconcileBasketOutputs} from './basketValidation';
+import {RegisterAllJournal} from './registerAll';
 
 const WalletNode = require('hsd/lib/wallet/node');
 const TX = require('hsd/lib/primitives/tx');
@@ -94,19 +100,25 @@ class WalletService {
     this.lastProgressUpdate = 0;
     this.lastKnownChainHeight = 0;
     this.heightBeforeRescan = null; // null = not rescanning
+    this.rescanBackendGeneration = 0;
+    this.walletSelectionGeneration = 0;
+    this.rescanListener = null;
     this.conn = {type: null};
     this.findNonceStop = false;
-    this.rescanMaySubmitTransaction = false;
+    this.recoveryAdmission = createRecoveryAdmission(() => this.node?.wdb?.bobRescanState);
+    this.rescanRisk = createRescanRiskTracker();
     this.walletMutationCoordinator = new WalletMutationCoordinator();
     this.preparedBidManyAttempts = new Map();
     this.didSelectTransactionWallet = false;
     this.pendingTransactionSelection = null;
+    this.registerAllJournal = new RegisterAllJournal({get, put});
+    this.walletSelectionGeneration = 0;
   }
 
   _onWalletDBError = (error) => {
     if (!storageHealth.reportError(error, {
       source: 'walletdb',
-      transactionAttempted: this.rescanMaySubmitTransaction,
+      transactionAttempted: this.rescanRisk.transactionAttempted,
     })) {
       console.error('walletdb error', error);
     }
@@ -121,6 +133,7 @@ class WalletService {
     if (this.node) {
       // The app was restarted but the nodes are already running,
       // just re-dispatch to redux store.
+      if (this.node.wdb.bobRescanState) this.onRescanState(this.node.wdb.bobRescanState);
       dispatchToMainWindow({
         type: SET_WALLET_NETWORK,
         payload: this.networkName,
@@ -136,7 +149,15 @@ class WalletService {
     this.conn = await getConnection();
     assert(this.conn.type === ConnectionTypes.P2P);
 
+    this.rescanBackendGeneration++;
     this.node = plugin;
+    const backendGeneration = this.rescanBackendGeneration;
+    this.rescanListener = state => {
+      if (this.rescanBackendGeneration !== backendGeneration || this.node !== plugin) return;
+      this.onRescanState(state);
+    };
+    this.node.wdb.on('bob rescan', this.rescanListener);
+    if (this.node.wdb.bobRescanState) this.rescanListener(this.node.wdb.bobRescanState);
     this.network = plugin.network;
     this.networkName = this.network.type;
     this.walletApiKey = apiKey;
@@ -202,6 +223,18 @@ class WalletService {
 
     this.conn = await getConnection();
     assert(this.conn.type === ConnectionTypes.Custom);
+
+    this.rescanBackendGeneration++;
+    this.onRescanState({
+      status: 'idle',
+      managed: false,
+      ready: null,
+      height: 0,
+      target: null,
+      generation: 0,
+      activeRequestIds: [],
+      completedRequestIds: [],
+    });
 
     this.network = network;
     this.networkName = network.type;
@@ -281,7 +314,31 @@ class WalletService {
 
   };
 
+  onRescanState = state => {
+    if (state.status === 'complete') this.recoveryAdmission.finishRescans();
+    dispatchToMainWindow({
+      type: SET_RESCAN_STATE,
+      payload: {...state, backendGeneration: this.rescanBackendGeneration},
+    });
+  };
+
   _onNodeStop = async () => {
+    if (this.node && this.rescanListener) {
+      this.node.wdb.removeListener('bob rescan', this.rescanListener);
+    }
+    this.rescanListener = null;
+    this.rescanBackendGeneration++;
+    this.recoveryAdmission.resetBackend();
+    this.onRescanState({
+      status: 'idle',
+      managed: false,
+      ready: null,
+      height: 0,
+      target: null,
+      generation: 0,
+      activeRequestIds: [],
+      completedRequestIds: [],
+    });
     // Wallet as plugin is closed by the full node closing,
     // otherwise we close manually.
     if (this.conn.type === ConnectionTypes.Custom)
@@ -318,6 +375,7 @@ class WalletService {
   };
 
   setWallet = (name) => {
+    if (name !== this.name) this.walletSelectionGeneration++;
     this.didSelectWallet = false;
     this.didSelectTransactionWallet = false;
     this.name = name;
@@ -466,27 +524,35 @@ class WalletService {
 
   rescan = async (height = 0, options = {}) => {
     const transactionAttempted = !!options.transactionAttempted;
-    const storagePath = await this.nodeService.getDir();
-    await storageHealth.preflight(storagePath, {
-      source: 'wallet-rescan-preflight',
-      transactionAttempted,
-    });
-
-    this.heightBeforeRescan = this.lastKnownChainHeight;
-    this.lastKnownChainHeight = height;
-    this.rescanMaySubmitTransaction = transactionAttempted;
-
-    dispatchToMainWindow({type: START_SYNC_WALLET});
-    dispatchToMainWindow({
-      type: SYNC_WALLET_PROGRESS,
-      payload: height,
-    });
-    dispatchToMainWindow({
-      type: SET_RESCAN_HEIGHT,
-      payload: this.heightBeforeRescan,
-    });
-
+    const releaseAdmission = this.recoveryAdmission.beginRescan(options.recoveryAdmission);
+    const releaseRisk = this.rescanRisk.track(transactionAttempted);
     try {
+      const storagePath = await this.nodeService.getDir();
+      await storageHealth.preflight(storagePath, {
+        source: 'wallet-rescan-preflight',
+        transactionAttempted,
+      });
+
+      if (!this.node.wdb.bobRescanState) {
+        this.heightBeforeRescan = this.lastKnownChainHeight;
+        this.lastKnownChainHeight = height;
+
+        dispatchToMainWindow({type: START_SYNC_WALLET});
+        dispatchToMainWindow({
+          type: SYNC_WALLET_PROGRESS,
+          payload: height,
+        });
+        dispatchToMainWindow({
+          type: SET_RESCAN_HEIGHT,
+          payload: this.heightBeforeRescan,
+        });
+      }
+
+      if (this.node.wdb.bobRescanState) {
+        return await this.node.wdb.rescan(height, {
+          requestId: options.recoveryRequestId,
+        });
+      }
       return await this.node.wdb.rescan(height);
     } catch (error) {
       storageHealth.reportError(error, {
@@ -495,7 +561,8 @@ class WalletService {
       });
       throw error;
     } finally {
-      this.rescanMaySubmitTransaction = false;
+      releaseRisk();
+      releaseAdmission();
     }
   };
 
@@ -503,50 +570,59 @@ class WalletService {
     return this.node.wdb.deepClean();
   };
 
-  importSeed = async (name, passphrase, type, secret, m, n) => {
-    this.setWallet(name);
+  importSeed = async (name, passphrase, type, secret, m, n, rescanHeight = 0) => {
+    const recoveryAdmission = this.recoveryAdmission.beginImport();
+    try {
+      this.setWallet(name);
 
-    const options = {
-      id: name,
-      passphrase,
-      m,
-      n,
-    };
-    switch (type) {
-      case 'phrase':
-        options.mnemonic = secret.trim();
-        break;
-      case 'xpriv':
-        options.master = secret.trim();
-        break;
-      case 'master':
-        const data = secret.master;
-        const parsedData = {
-          encrypted: data.encrypted,
-          alg: data.algorithm,
-          iv: Buffer.from(data.iv, 'hex'),
-          ciphertext: Buffer.from(data.ciphertext, 'hex'),
-          n: data.n,
-          r: data.r,
-          p: data.p,
-        };
-        const mk = new MasterKey(parsedData);
-        options.master = await mk.unlock(secret.passphrase, 10)
-        assert(options.master, 'Could not decrypt key.')
-        break;
-      default:
-        throw new Error('Invalid type.')
+      const options = {
+        id: name,
+        passphrase,
+        m,
+        n,
+      };
+      switch (type) {
+        case 'phrase':
+          options.mnemonic = secret.trim();
+          break;
+        case 'xpriv':
+          options.master = secret.trim();
+          break;
+        case 'master':
+          const data = secret.master;
+          const parsedData = {
+            encrypted: data.encrypted,
+            alg: data.algorithm,
+            iv: Buffer.from(data.iv, 'hex'),
+            ciphertext: Buffer.from(data.ciphertext, 'hex'),
+            n: data.n,
+            r: data.r,
+            p: data.p,
+          };
+          const mk = new MasterKey(parsedData);
+          options.master = await mk.unlock(secret.passphrase, 10)
+          assert(options.master, 'Could not decrypt key.')
+          break;
+        default:
+          throw new Error('Invalid type.')
+      }
+
+      const res = await this.node.wdb.create(options);
+      const wallets = await this.listWallets();
+
+      dispatchToMainWindow({
+        type: SET_WALLETS,
+        payload: createPayloadForSetWallets(wallets, name),
+      });
+
+      this.rescan(rescanHeight, {recoveryAdmission}).catch(error => {
+        console.error('Imported wallet rescan failed:', error);
+      });
+      return res.getJSON();
+    } catch (error) {
+      this.recoveryAdmission.releaseImport(recoveryAdmission);
+      throw error;
     }
-
-    const res = await this.node.wdb.create(options);
-    const wallets = await this.listWallets();
-
-    dispatchToMainWindow({
-      type: SET_WALLETS,
-      payload: createPayloadForSetWallets(wallets, name),
-    });
-
-    return res.getJSON();
   };
 
   generateReceivingAddress = async () => {
@@ -869,124 +945,129 @@ class WalletService {
     if (!wallet) throw new Error('Selected wallet was not found.');
     if (wallet.watchOnly) throw new Error('Cannot derive new accounts for a watch-only wallet.');
 
-    await wallet.unlock(passphrase, ONE_MINUTE);
+    const recoveryAdmission = this.recoveryAdmission.beginImport();
+    try {
+      await wallet.unlock(passphrase, ONE_MINUTE);
 
-    if (!wallet.master || !wallet.master.key) {
-      throw new Error('Bob could not unlock the wallet master key.');
-    }
+      if (!wallet.master || !wallet.master.key) {
+        throw new Error('Bob could not unlock the wallet master key.');
+      }
 
-    const existingAccounts = new Map();
-    const existingAccountNames = await wallet.getAccounts();
+      const existingAccounts = new Map();
+      const existingAccountNames = await wallet.getAccounts();
 
-    for (const accountName of existingAccountNames) {
-      const account = await wallet.getAccount(accountName);
-      if (account) existingAccounts.set(account.accountIndex, account);
-    }
+      for (const accountName of existingAccountNames) {
+        const account = await wallet.getAccount(accountName);
+        if (account) existingAccounts.set(account.accountIndex, account);
+      }
 
-    let match = null;
-    const accountDepth = Math.max(wallet.accountDepth || 0, existingAccounts.size);
+      let match = null;
+      const accountDepth = Math.max(wallet.accountDepth || 0, existingAccounts.size);
 
-    for (let accountIndex = 0; accountIndex < SHAKE_RECOVERY_ACCOUNT_LIMIT; accountIndex++) {
-      const existingAccount = existingAccounts.get(accountIndex);
-      const account = existingAccount || this.createVirtualAccount(wallet, accountIndex);
-      const branches = [
-        {
-          id: 0,
-          name: 'receive',
-          derive: index => account.deriveReceive(index),
-        },
-        {
-          id: 1,
-          name: 'change',
-          derive: index => account.deriveChange(index),
-        },
-      ];
+      for (let accountIndex = 0; accountIndex < SHAKE_RECOVERY_ACCOUNT_LIMIT; accountIndex++) {
+        const existingAccount = existingAccounts.get(accountIndex);
+        const account = existingAccount || this.createVirtualAccount(wallet, accountIndex);
+        const branches = [
+          {
+            id: 0,
+            name: 'receive',
+            derive: index => account.deriveReceive(index),
+          },
+          {
+            id: 1,
+            name: 'change',
+            derive: index => account.deriveChange(index),
+          },
+        ];
 
-      for (const branch of branches) {
-        for (let index = 0; index < SHAKE_RECOVERY_DERIVATION_LIMIT; index++) {
-          const derivedAddress = branch.derive(index).getAddress();
+        for (const branch of branches) {
+          for (let index = 0; index < SHAKE_RECOVERY_DERIVATION_LIMIT; index++) {
+            const derivedAddress = branch.derive(index).getAddress();
 
-          if (!derivedAddress.hash.equals(parsedAddress.hash)) continue;
+            if (!derivedAddress.hash.equals(parsedAddress.hash)) continue;
 
-          match = {
-            walletId: this.name,
-            accountIndex,
-            accountName: existingAccount ? existingAccount.name : null,
-            branch: branch.id,
-            branchName: branch.name,
-            index,
-            accountExisted: !!existingAccount,
-            address: addressString,
-          };
-          break;
+            match = {
+              walletId: this.name,
+              accountIndex,
+              accountName: existingAccount ? existingAccount.name : null,
+              branch: branch.id,
+              branchName: branch.name,
+              index,
+              accountExisted: !!existingAccount,
+              address: addressString,
+            };
+            break;
+          }
+
+          if (match) break;
         }
 
         if (match) break;
       }
 
-      if (match) break;
-    }
+      if (!match) {
+        return {
+          status: 'not-found',
+          address: addressString,
+          selectedWallet: this.name,
+          accountLimit: SHAKE_RECOVERY_ACCOUNT_LIMIT,
+          derivationLimit: SHAKE_RECOVERY_DERIVATION_LIMIT,
+          recoveryScan: true,
+          importedAccounts: [],
+        };
+      }
 
-    if (!match) {
+      const importedAccounts = [];
+
+      if (!match.accountExisted) {
+        if (match.accountIndex < accountDepth) {
+          throw new Error(`Matching account index ${match.accountIndex} is below Bob's current account depth but was not loaded.`);
+        }
+
+        for (let accountIndex = accountDepth; accountIndex <= match.accountIndex; accountIndex++) {
+          const accountName = await this.getUniqueAccountName(wallet, accountIndex === match.accountIndex
+            ? `shake-account-${accountIndex}`
+            : `imported-account-${accountIndex}`);
+          const account = await wallet.createAccount({
+            name: accountName,
+            type: 'pubkeyhash',
+          }, passphrase);
+
+          importedAccounts.push({
+            accountIndex: account.accountIndex,
+            accountName: account.name,
+          });
+
+          if (account.accountIndex === match.accountIndex) {
+            match.accountName = account.name;
+          }
+        }
+
+        const wallets = await this.listWallets();
+        dispatchToMainWindow({
+          type: SET_WALLETS,
+          payload: createPayloadForSetWallets(wallets, this.name),
+        });
+
+        this.rescan(0, {recoveryAdmission}).catch(e => {
+          console.error('Could not start account recovery rescan.', e);
+        });
+      }
+
       return {
-        status: 'not-found',
+        status: match.accountExisted ? 'found-existing-account' : 'imported-account',
         address: addressString,
         selectedWallet: this.name,
         accountLimit: SHAKE_RECOVERY_ACCOUNT_LIMIT,
         derivationLimit: SHAKE_RECOVERY_DERIVATION_LIMIT,
         recoveryScan: true,
-        importedAccounts: [],
+        match,
+        importedAccounts,
+        rescanStarted: importedAccounts.length > 0,
       };
+    } finally {
+      this.recoveryAdmission.releaseImport(recoveryAdmission);
     }
-
-    const importedAccounts = [];
-
-    if (!match.accountExisted) {
-      if (match.accountIndex < accountDepth) {
-        throw new Error(`Matching account index ${match.accountIndex} is below Bob's current account depth but was not loaded.`);
-      }
-
-      for (let accountIndex = accountDepth; accountIndex <= match.accountIndex; accountIndex++) {
-        const accountName = await this.getUniqueAccountName(wallet, accountIndex === match.accountIndex
-          ? `shake-account-${accountIndex}`
-          : `imported-account-${accountIndex}`);
-        const account = await wallet.createAccount({
-          name: accountName,
-          type: 'pubkeyhash',
-        }, passphrase);
-
-        importedAccounts.push({
-          accountIndex: account.accountIndex,
-          accountName: account.name,
-        });
-
-        if (account.accountIndex === match.accountIndex) {
-          match.accountName = account.name;
-        }
-      }
-
-      const wallets = await this.listWallets();
-      dispatchToMainWindow({
-        type: SET_WALLETS,
-        payload: createPayloadForSetWallets(wallets, this.name),
-      });
-
-      this.rescan(0).catch(e => {
-        console.error('Could not start account recovery rescan.', e);
-      });
-    }
-
-    return {
-      status: match.accountExisted ? 'found-existing-account' : 'imported-account',
-      address: addressString,
-      selectedWallet: this.name,
-      accountLimit: SHAKE_RECOVERY_ACCOUNT_LIMIT,
-      derivationLimit: SHAKE_RECOVERY_DERIVATION_LIMIT,
-      recoveryScan: true,
-      match,
-      importedAccounts,
-      rescanStarted: importedAccounts.length > 0,
-    };
   };
 
   createVirtualAccount(wallet, accountIndex) {
@@ -1353,8 +1434,12 @@ class WalletService {
     return durationMs;
   };
 
-  prepareBidMany = async (bids = [], requestedAttemptId) => {
+  prepareBidMany = async (bids = [], requestedAttemptId, expected) => {
+    if (expected?.walletId !== this.name || expected?.network !== this.networkName) {
+      throw basketScopeError('The selected wallet or network changed.');
+    }
     const actions = this._normalizeBidManyActions(bids);
+    const reviewed = basketScope(bids);
     const attemptId = String(requestedAttemptId || crypto.randomBytes(16).toString('hex'));
     if (this.preparedBidManyAttempts.has(attemptId)) {
       const error = new Error('This basket preparation attempt already exists.');
@@ -1365,6 +1450,10 @@ class WalletService {
     const attempt = {
       attemptId,
       walletId: this.name,
+      node: this.node,
+      selectionGeneration: this.walletSelectionGeneration,
+      backendGeneration: this.rescanBackendGeneration,
+      entries: reviewed.rows,
       names: actions.map(action => action[1]),
       status: 'preparing',
       currentStage: 'building',
@@ -1372,6 +1461,12 @@ class WalletService {
       timings: {},
     };
     this.preparedBidManyAttempts.set(attemptId, attempt);
+    attempt.timer = setTimeout(() => {
+      if (!['broadcasting', 'submitted', 'uncertain'].includes(attempt.status)) {
+        attempt.cancelled = true;
+        this._discardBidMany(attempt);
+      }
+    }, 12 * ONE_MINUTE);
     this._setBasketSubmissionProgress(attemptId, 'building', {
       txid: '',
       broadcastAttempted: false,
@@ -1379,11 +1474,25 @@ class WalletService {
     });
 
     try {
-      const result = await this._walletProxy(
-        async () => {
+      // Construct while locked. Approval and unlocking happen only after this
+      // exact unsigned transaction and its actual fee have been reviewed.
+      return await this.walletMutationCoordinator.run(async () => {
+          this._assertBidManyCurrent(attempt);
+          await storageHealth.preflight(await this.nodeService.getDir(), {
+            source: 'basket-quote', transactionAttempted: false,
+          });
+          const wallet = await attempt.node.wdb.get(attempt.walletId);
+          const info = await this.getWalletInfo();
+          const account = await this.getAccountInfo();
+          if (info.watchOnly || account.type === 'multisig') {
+            throw basketScopeError('Auction Basket requires a standard hot wallet.');
+          }
+          await this._validateBidManyEligibility(attempt, wallet);
           const startedAt = Date.now();
+          let result;
           try {
-            return await this._executeTransactionRPC('createbatch', [actions, {paths: true}]);
+            this._assertBidManyCurrent(attempt);
+            result = await this._executeTransactionRPC('createbatch', [actions, {paths: true}]);
           } finally {
             const duration = this._recordBasketTiming(attempt, 'createbatch', startedAt, {
               count: actions.length,
@@ -1391,52 +1500,93 @@ class WalletService {
             });
             attempt.timings.coinSelection = duration;
           }
-        },
-        {
-          broadcast: false,
-          actionName: 'bid-many',
-          diagnosticContext: {count: actions.length, names: attempt.names},
-          timings: attempt.timings,
-          onStage: phase => {
-            attempt.currentStage = phase;
-            this._setBasketSubmissionProgress(attemptId, phase, {
-              broadcastAttempted: false,
-              timings: {...attempt.timings},
-            });
-          },
-        },
-      );
-
-      if (!result) {
-        const error = new Error('Basket transaction was not fully signed.');
-        error.code = 'BASKET_SIGN_FAILED';
-        throw error;
-      }
-      if (attempt.cancelled) {
-        const error = new Error('Basket preparation was cancelled before broadcast. No transaction was sent.');
-        error.code = 'BASKET_SUBMISSION_CANCELLED';
-        throw error;
-      }
-
-      const wallet = await this.node.wdb.get(this.name);
-      attempt.mtx = result;
-      attempt.txid = result.txid();
-      attempt.status = 'prepared';
-      attempt.releaseReservedInputs = reserveTransactionInputs(wallet, result);
-      this._setBasketSubmissionProgress(attemptId, 'signing', {
-        txid: attempt.txid,
-        broadcastAttempted: false,
-        timings: {...attempt.timings},
+          this._assertBidManyCurrent(attempt);
+          const mtx = result instanceof MTX ? result : MTX.fromJSON(result);
+          const parsed = await this.parseMtx(wallet, mtx);
+          attempt.mtx = parsed.mtx;
+          attempt.scope = await reconcileBasketOutputs(attempt.mtx, wallet, attempt.entries);
+          await this._validateBidManyEligibility(attempt, wallet);
+          this._assertBidManyCurrent(attempt);
+          attempt.releaseReservedInputs = reserveTransactionInputs(wallet, attempt.mtx);
+          attempt.status = 'quoted';
+          return {attemptId, scope: attempt.scope, timings: {...attempt.timings}};
       });
-      return {attemptId, txid: attempt.txid, timings: {...attempt.timings}};
     } catch (error) {
-      attempt.releaseReservedInputs?.();
-      this.preparedBidManyAttempts.delete(attemptId);
+      this._discardBidMany(attempt);
       if (!error.code || error.code === -1 || error.code === 'ETIMEDOUT') {
         error.code = attempt.currentStage === 'signing'
           ? 'BASKET_SIGN_FAILED'
           : 'BASKET_BUILD_FAILED';
       }
+      throw error;
+    }
+  };
+
+  _discardBidMany = attempt => {
+    clearTimeout(attempt.timer);
+    attempt.releaseReservedInputs?.();
+    this.preparedBidManyAttempts.delete(attempt.attemptId);
+  };
+
+  _assertBidManyCurrent = attempt => {
+    if (attempt.cancelled || attempt.node !== this.node || attempt.walletId !== this.name
+        || attempt.selectionGeneration !== this.walletSelectionGeneration
+        || attempt.backendGeneration !== this.rescanBackendGeneration) {
+      throw basketScopeError('Preparation was cancelled or the wallet/network changed.');
+    }
+  };
+
+  _validateBidManyEligibility = async (attempt, wallet) => {
+    const height = wallet.wdb.height;
+    for (const entry of attempt.entries) {
+      assertBasketEligibility(entry.name, await this.nodeService.getNameInfo(entry.name));
+      const state = await wallet.getNameState(hashName(Buffer.from(entry.name, 'ascii')));
+      if (!state || !state.isBidding(wallet.wdb.height + 1, wallet.network)) {
+        throw basketScopeError(`${entry.name}/ cannot be bid on in the next block.`);
+      }
+    }
+    if (wallet.wdb.height !== height) throw basketScopeError('The chain advanced during auction validation.');
+    this._assertBidManyCurrent(attempt);
+  };
+
+  signPreparedBidMany = async (attemptId, approvedScope) => {
+    const attempt = this.preparedBidManyAttempts.get(String(attemptId || ''));
+    if (!attempt || attempt.status !== 'quoted') throw basketScopeError('The prepared basket is no longer available.');
+    assertBasketScope(approvedScope, attempt.scope);
+    this._assertBidManyCurrent(attempt);
+    attempt.status = 'signing';
+    attempt.currentStage = 'signing';
+    try {
+      const result = await this._walletProxy(() => attempt.mtx, {
+        broadcast: false,
+        reserveInputs: false, // The quote holds these coins until send/cancel.
+        actionName: 'bid-many',
+        diagnosticContext: {count: attempt.entries.length, names: attempt.names},
+        timings: attempt.timings,
+        beforeSign: async (mtx, wallet) => {
+          this._assertBidManyCurrent(attempt);
+          await this._validateBidManyEligibility(attempt, wallet);
+          assertBasketScope(await reconcileBasketOutputs(mtx, wallet, attempt.entries), approvedScope);
+          this._assertBidManyCurrent(attempt);
+          if (wallet.master.encrypted && !wallet.master.key) {
+            const error = new Error('The wallet locked before signing. No transaction was sent. Unlock it and review the basket again; auction deadlines may have changed.');
+            error.code = 'BASKET_SIGN_FAILED';
+            throw error;
+          }
+        },
+      });
+      if (!result) throw new Error('The basket could not be fully signed. No transaction was sent.');
+      this._assertBidManyCurrent(attempt);
+      const wallet = await attempt.node.wdb.get(attempt.walletId);
+      assertBasketScope(await reconcileBasketOutputs(result, wallet, attempt.entries), approvedScope);
+      this._assertBidManyCurrent(attempt);
+      attempt.mtx = result;
+      attempt.txid = result.txid();
+      attempt.status = 'prepared';
+      return {attemptId, txid: attempt.txid, scope: attempt.scope};
+    } catch (error) {
+      this._discardBidMany(attempt);
+      if (error.code !== 'BASKET_SCOPE_CHANGED') error.code = 'BASKET_SIGN_FAILED';
       throw error;
     }
   };
@@ -1449,7 +1599,7 @@ class WalletService {
     }
     attempt.cancelled = true;
     attempt.releaseReservedInputs?.();
-    if (attempt.status === 'prepared') this.preparedBidManyAttempts.delete(attempt.attemptId);
+    if (attempt.status === 'prepared' || attempt.status === 'quoted') this._discardBidMany(attempt);
     return {cancelled: true, broadcastAttempted: false, txid: attempt.txid || ''};
   };
 
@@ -1460,9 +1610,19 @@ class WalletService {
       error.code = 'BASKET_DUPLICATE_BLOCKED';
       throw error;
     }
-    if (attempt.walletId !== this.name) {
-      const error = new Error('The selected wallet changed before broadcast. No transaction was sent.');
-      error.code = 'BASKET_WALLET_CHANGED';
+    // Claim this attempt before any asynchronous validation to prevent two
+    // simultaneous broadcast requests from using the same prepared transaction.
+    attempt.status = 'validating';
+    try {
+      this._assertBidManyCurrent(attempt);
+      const wallet = await attempt.node.wdb.get(attempt.walletId);
+      await this._validateBidManyEligibility(attempt, wallet);
+      assertBasketScope(await reconcileBasketOutputs(attempt.mtx, wallet, attempt.entries), attempt.scope);
+      if (attempt.mtx.txid() !== attempt.txid) throw basketScopeError('The signed transaction changed.');
+      this._assertBidManyCurrent(attempt);
+    } catch (error) {
+      this._discardBidMany(attempt);
+      error.code = 'BASKET_PREBROADCAST_FAILED';
       throw error;
     }
 
@@ -1476,8 +1636,18 @@ class WalletService {
     try {
       const result = await broadcastAndRecord({
         mtx: attempt.mtx,
-        walletDB: this.node.wdb,
-        broadcast: tx => this.nodeService.broadcastRawTx(tx.toHex(), {timeout: TRANSACTION_TIMEOUT_MS}),
+        walletDB: attempt.node.wdb,
+        broadcast: tx => this.nodeService.broadcastRawTx(tx.toHex(), {
+          timeout: TRANSACTION_TIMEOUT_MS,
+          assertCurrent: () => {
+            try {
+              this._assertBidManyCurrent(attempt);
+            } catch (error) {
+              attempt.prebroadcastFailure = error;
+              throw error;
+            }
+          },
+        }),
       });
       this._recordBasketTiming(attempt, 'broadcast', startedAt);
       attempt.status = 'submitted';
@@ -1487,7 +1657,7 @@ class WalletService {
         timings: {...attempt.timings},
       });
       const verifyStartedAt = Date.now();
-      const wallet = await this.node.wdb.get(this.name);
+      const wallet = await attempt.node.wdb.get(attempt.walletId);
       const localTX = await wallet.getTX(result.hash());
       this._recordBasketTiming(attempt, 'reconciliation', verifyStartedAt, {
         foundInWalletDB: !!localTX,
@@ -1495,14 +1665,17 @@ class WalletService {
       if (!localTX) {
         console.warn(`Transaction ${attempt.txid} was accepted but is not yet visible in local WalletDB.`);
       }
-      attempt.releaseReservedInputs?.();
-      this.preparedBidManyAttempts.delete(attempt.attemptId);
-      return {txid: attempt.txid, timings: {...attempt.timings}};
+      this._discardBidMany(attempt);
+      return {txid: attempt.txid, scope: attempt.scope, timings: {...attempt.timings}};
     } catch (error) {
       this._recordBasketTiming(attempt, 'broadcast', startedAt, {failed: true});
+      if (attempt.prebroadcastFailure) {
+        this._discardBidMany(attempt);
+        attempt.prebroadcastFailure.code = 'BASKET_PREBROADCAST_FAILED';
+        throw attempt.prebroadcastFailure;
+      }
       if (error.code === 'ETXREJECTED') {
-        attempt.releaseReservedInputs?.();
-        this.preparedBidManyAttempts.delete(attempt.attemptId);
+        this._discardBidMany(attempt);
       } else {
         attempt.status = 'uncertain';
       }
@@ -1511,9 +1684,7 @@ class WalletService {
   };
 
   sendBidMany = async (bids = []) => {
-    const attemptId = crypto.randomBytes(16).toString('hex');
-    const prepared = await this.prepareBidMany(bids, attemptId);
-    return this.broadcastPreparedBidMany(prepared.attemptId);
+    throw basketScopeError('Basket submission requires an explicit review of its exact transaction fee.');
   };
 
   findBasketBidTransactions = async (names = []) => {
@@ -1568,38 +1739,58 @@ class WalletService {
     () => this._executeRPC('createredeem', [name]),
   );
 
-  sendRegisterAll = async (passphrase) => {
-    const {wdb} = this.node;
-    const wallet = await wdb.get(this.name);
-
-    const names = await getNamesForRegisterAll(wallet);
-    if (!names.length) {
-      throw new Error('Nothing to do.');
+  _registerAllContext = (expected) => {
+    const context = {walletId: this.name, network: this.networkName};
+    if (!context.walletId || !this.node || (expected &&
+      (expected.walletId !== context.walletId || expected.network !== context.network))) {
+      throw new Error('The selected wallet or network changed. Register All was not started.');
     }
+    return context;
+  };
 
-    const results = [];
-    for (const name of names) {
-      if (passphrase)
-        await this.unlock(this.name, passphrase);
+  getRegisterAllStatus = async (expected) => {
+    const context = this._registerAllContext(expected);
+    const wallet = await this.node.wdb.get(context.walletId);
+    return this.registerAllJournal.status(context, async txid => !!await wallet.getTX(Buffer.from(txid, 'hex')));
+  };
 
-      const mtx = await this._walletProxy(
-        () => this._createVerifiedRegisterMTX(wallet, name),
-      );
+  cancelRegisterAll = (context) => this.registerAllJournal.cancel(context);
 
-      if (mtx) {
-        results.push({
-          name,
-          txid: mtx.txid(),
-        });
+  sendRegisterAll = async (passphrase, expected) => {
+    const context = {...this._registerAllContext(expected), operationId: expected?.operationId};
+    if (!context.operationId) throw new Error('Register All requires a cancellable operation ID.');
+    const node = this.node;
+    const client = this.client;
+    const generation = this.rescanBackendGeneration;
+    const selectionGeneration = this.walletSelectionGeneration;
+    const assertCurrent = () => {
+      this._registerAllContext(context);
+      if (this.node !== node || this.rescanBackendGeneration !== generation
+          || this.walletSelectionGeneration !== selectionGeneration) {
+        throw new Error('The wallet backend changed. Register All has stopped.');
       }
-    }
-
-    return {
-      txid: results.map(result => result.txid).join(', '),
-      txids: results.map(result => result.txid),
-      names: results.map(result => result.name),
-      transactions: results,
     };
+    let wallet;
+    return this.registerAllJournal.run(context, {
+      assertCurrent,
+      getNames: async () => {
+        wallet = await node.wdb.get(context.walletId);
+        return getNamesForRegisterAll(wallet);
+      },
+      submit: (name, hooks) => this._walletProxy(
+        () => this._createVerifiedRegisterMTX(wallet, name),
+        {
+          ...hooks,
+          beforePrepare: async () => {
+            hooks.assertCurrent();
+            if (passphrase) await client.unlock(context.walletId, passphrase);
+            hooks.assertCurrent();
+          },
+          actionName: 'register-all',
+          diagnosticContext: {name},
+        },
+      ),
+    });
   };
 
   _createVerifiedRegisterMTX = async (wallet, name) => {
@@ -1957,15 +2148,21 @@ class WalletService {
   };
 
   importName = async (name, start, options = {}) => {
-    await this._executeRPC('importname', [name, null]);
+    const recoveryAdmission = this.recoveryAdmission.beginImport();
+    try {
+      await this._executeRPC('importname', [name, null]);
 
-    // wait 1 sec (for filterload to update on peer)
-    if (this.nodeService.spv) {
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // wait 1 sec (for filterload to update on peer)
+      if (this.nodeService.spv) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+
+      // rescan
+      return await this.rescan(start, {...options, recoveryAdmission});
+    } catch (error) {
+      this.recoveryAdmission.releaseImport(recoveryAdmission);
+      throw error;
     }
-
-    // rescan
-    return this.rescan(start, options);
   };
 
   /**
@@ -1980,38 +2177,55 @@ class WalletService {
       return null;
     }
 
-    let minHeight = null;
-    const seen = new Set();
+    const recoveryAdmission = this.recoveryAdmission.beginImport();
+    try {
+      let minHeight = null;
+      const seen = new Set();
 
-    for (const entry of entries) {
-      const name = (entry?.name || '').trim().toLowerCase();
-      if (!name || seen.has(name)) {
-        continue;
-      }
-      seen.add(name);
+      for (const entry of entries) {
+        const name = (entry?.name || '').trim().toLowerCase();
+        if (!name || seen.has(name)) {
+          continue;
+        }
+        seen.add(name);
 
-      await this._executeRPC('importname', [name, null]);
+        await this._executeRPC('importname', [name, null]);
 
-      const h = Number(entry.height);
-      if (Number.isFinite(h)) {
-        if (minHeight == null || h < minHeight) {
-          minHeight = h;
+        const h = Number(entry.height);
+        if (Number.isFinite(h)) {
+          if (minHeight == null || h < minHeight) {
+            minHeight = h;
+          }
         }
       }
-    }
 
-    if (this.nodeService.spv) {
-      // Allow bloom filter / peer filterload to update once for all names.
-      await new Promise(resolve => setTimeout(resolve, 1500));
-    }
+      if (this.nodeService.spv) {
+        // Allow bloom filter / peer filterload to update once for all names.
+        await new Promise(resolve => setTimeout(resolve, 1500));
+      }
 
-    // Start one rescan from the earliest auction height. Completion is observed
-    // through wallet progress events instead of holding this IPC request open:
-    // hsd can reach the target height without resolving wdb.rescan().
-    this.rescan(minHeight == null ? 0 : minHeight, options).catch(error => {
-      console.error('Bulk name import rescan failed:', error);
-    });
-    return {rescanStarted: true, height: minHeight == null ? 0 : minHeight};
+      // Start one rescan from the earliest auction height. Completion is observed
+      // through durable backend state rather than this IPC request's promise.
+      this.rescan(minHeight == null ? 0 : minHeight, {
+        ...options,
+        recoveryRequestId: this.node.wdb.bobRescanState
+          ? options.recoveryRequestId
+          : undefined,
+        recoveryAdmission,
+      }).catch(error => {
+        console.error('Bulk name import rescan failed:', error);
+      });
+      return {
+        rescanStarted: true,
+        height: minHeight == null ? 0 : minHeight,
+        recoveryRequestId: this.node.wdb.bobRescanState
+          ? options.recoveryRequestId || null
+          : null,
+      };
+    } catch (error) {
+      this.recoveryAdmission.releaseImport(recoveryAdmission);
+      throw error;
+    }
   };
 
   rpcGetWalletInfo = async () => {
@@ -2555,7 +2769,9 @@ class WalletService {
     const {actionName, diagnosticContext} = context;
     const name = diagnosticContext?.name;
     const error = new Error(
-      actionName === 'bid'
+      actionName === 'bid-many'
+        ? 'Basket signing failed. No transaction was sent. The wallet could not provide signing keys for its inputs; it may have locked during preparation. Unlock the correct wallet/account and review the entire basket again, including auction deadlines.'
+        : actionName === 'bid'
         ? `Bid was not submitted${name ? ` for ${name}/` : ''}: Bob could build the bid transaction, but the selected wallet/account could not provide signing keys for its inputs. Unlock the correct wallet/account, confirm it is not watch-only, then rescan the auction before retrying.`
         : SIGNING_KEY_ERROR_MESSAGE
     );
@@ -2567,14 +2783,25 @@ class WalletService {
   _walletProxy = async (createFn, options) => {
     return this.walletMutationCoordinator.run(async () => {
       const transactionAttempted = options?.broadcast !== false;
+      const transactionClient = this.client;
+      const transactionWalletId = this.name;
+      let preparationStarted = false;
       try {
         const storagePath = await this.nodeService.getDir();
         await storageHealth.preflight(storagePath, {
           source: 'transaction-preflight',
           transactionAttempted,
         });
+        options?.assertCurrent?.();
+        preparationStarted = true;
+        await options?.beforePrepare?.();
         return await this._walletProxyUnchecked(createFn, options);
       } catch (error) {
+        if (options?.actionName === 'register-all' && preparationStarted) {
+          // Preparation may throw after unlocking, before the inner proxy's finally.
+          try { await transactionClient.lock(transactionWalletId); }
+          catch (lockError) { console.error('Could not relock interrupted registration wallet:', lockError); }
+        }
         storageHealth.reportError(error, {
           source: 'transaction-preparation',
           transactionAttempted,
@@ -2594,11 +2821,22 @@ class WalletService {
       diagnosticContext = {},
       timings = {},
       onStage = () => {},
+      beforeSign = async () => {},
+      reserveInputs = true,
+      beforeBroadcast = async () => {},
+      assertCurrent = () => {},
     } = options || {};
 
-    const wallet = await this.node.wdb.get(this.name);
+    assertCurrent();
+    const walletId = this.name;
+    const client = this.client;
+    const wallet = await this.node.wdb.get(walletId);
     const info = await this.getWalletInfo();
     const accountInfo = await this.getAccountInfo();
+    assertCurrent();
+    if (actionName === 'register-all' && accountInfo.type === 'multisig') {
+      throw new Error('Register All recovery does not yet support multisig wallets. Register names individually.');
+    }
 
     // Call createFn to get an mtx
     let mtx = await createFn();
@@ -2609,13 +2847,17 @@ class WalletService {
     }
 
     // Parse MTX Data
-    onStage('signing');
+    await onStage('signing');
     const derivationStartedAt = Date.now();
     const parsedMtxData = await this.parseMtx(wallet, mtx, {metadata});
     mtx = parsedMtxData.mtx;  // mtx is modified (adding coins to view, etc.)
-    const releaseReservedInputs = reserveTransactionInputs(wallet, mtx);
+    assertCurrent();
+    const releaseReservedInputs = reserveInputs ? reserveTransactionInputs(wallet, mtx) : () => {};
+    let broadcastAttempted = false;
+    let operationFailed = false;
 
     try {
+      await beforeSign(mtx, wallet);
       // Handle multisig (hot and ledger wallets)
       if (parsedMtxData.containsMultisig) {
         // multisigProxy does not really broadcast, it's just for UI
@@ -2635,6 +2877,7 @@ class WalletService {
         } else {
           // Handle hot wallets (non-multisig)
           const rings = await wallet.deriveInputs(mtx);
+          assertCurrent();
           timings.inputDerivation = Date.now() - derivationStartedAt;
           if (actionName === 'bid-many') {
             console.info('[Auction Basket timing]', {
@@ -2659,6 +2902,7 @@ class WalletService {
           const type = parsedMtxData.metadata?.inputs?.[0]?.sighashType ?? Script.hashType.ALL;
           try {
             const signingStartedAt = Date.now();
+            await beforeSign(mtx, wallet);
             await mtx.sign(rings, type);
             timings.signing = Date.now() - signingStartedAt;
             if (actionName === 'bid-many') {
@@ -2696,11 +2940,28 @@ class WalletService {
       }
 
       if (broadcast && isValid) {
-        const result = await broadcastAndRecord({
-          mtx,
-          walletDB: this.node.wdb,
-          broadcast: tx => this.nodeService.broadcastRawTx(tx.toHex()),
-        });
+        assertCurrent();
+        await beforeBroadcast(mtx.txid());
+        try { assertCurrent(); }
+        catch (error) { error.broadcastNotAttempted = true; throw error; }
+        broadcastAttempted = true;
+        const walletDB = wallet.wdb || this.node.wdb;
+        let guardRejected = false;
+        let result;
+        try {
+          result = await broadcastAndRecord({
+            mtx,
+            walletDB,
+            broadcast: tx => this.nodeService.broadcastRawTx(tx.toHex(), {assertCurrent: () => {
+              try { assertCurrent(); }
+              catch (error) { guardRejected = true; throw error; }
+            }}),
+          });
+        } catch (error) {
+          // Only our synchronous pre-send guard proves transport was not entered.
+          if (guardRejected) error.broadcastNotAttempted = true;
+          throw error;
+        }
         try {
           await this.refreshWalletInfo();
         } catch (error) {
@@ -2715,9 +2976,19 @@ class WalletService {
       }
 
       return mtx;
+    } catch (error) {
+      operationFailed = true;
+      throw error;
     } finally {
       releaseReservedInputs();
-      this.lock();
+      try {
+        await client.lock(walletId);
+      } catch (error) {
+        // Cleanup must never replace an accepted/uncertain transaction outcome
+        // with an unrelated lock error that could invite a duplicate retry.
+        console.error('Could not relock the transaction wallet:', error);
+        if (!broadcastAttempted && !operationFailed) throw error;
+      }
     }
   }
 
@@ -3466,6 +3737,7 @@ service.setPassphrase.suppressLogging = true;
 service.revealSeed.suppressLogging = true;
 service.findShakeWalletAddress.suppressLogging = true;
 service.unlock.suppressLogging = true;
+service.sendRegisterAll.suppressLogging = true;
 
 const sName = 'Wallet';
 const methods = {
@@ -3516,10 +3788,13 @@ const methods = {
   sendRevealMany: service.sendRevealMany,
   sendBidMany: service.sendBidMany,
   prepareBidMany: service.prepareBidMany,
+  signPreparedBidMany: service.signPreparedBidMany,
   cancelBidManyAttempt: service.cancelBidManyAttempt,
   broadcastPreparedBidMany: service.broadcastPreparedBidMany,
   sendRedeemAll: service.sendRedeemAll,
   sendRegisterAll: service.sendRegisterAll,
+  getRegisterAllStatus: service.getRegisterAllStatus,
+  cancelRegisterAll: service.cancelRegisterAll,
   sendRenewal: service.sendRenewal,
   transferMany: service.transferMany,
   finalizeAll: service.finalizeAll,
@@ -3558,7 +3833,11 @@ const methods = {
 };
 
 export async function start(server) {
-  server.withService(sName, methods);
+  const {wrapAcceptanceWalletMethods} = require('../packagedAcceptance/policy');
+  server.withService(sName, wrapAcceptanceWalletMethods(
+    methods,
+    process.env.BOB_PACKAGED_ACCEPTANCE_TEST === 'true'
+  ));
 }
 
 

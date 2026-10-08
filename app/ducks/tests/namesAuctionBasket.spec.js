@@ -2,11 +2,18 @@ import test from 'tape';
 
 import {
   BID_SUBMISSION_PHASES,
-  submitBidManyLifecycle,
+  submitBidManyLifecycle as runLifecycle,
 } from '../names';
 import {AuctionBasket} from '../../pages/AuctionBasket';
+import {basketScope} from '../../utils/basketScope';
 
-const entries = [{name: 'example', bid: 1000000, lockup: 2000000, height: 100}];
+const TXID = 'ab'.repeat(32);
+const submitBidManyLifecycle = (rows, deps, options = {}) => runLifecycle(rows, deps, {
+  confirmScope: async scope => scope,
+  ...options,
+});
+
+const entries = [{name: 'basket-fixture', bid: 1000000, lockup: 2000000, height: 100}];
 
 function deferred() {
   let resolve;
@@ -23,12 +30,13 @@ function lifecycleDeps(overrides = {}) {
     findTransactions: async () => [],
     requestPassphrase: async () => {},
     getAuctionInfo: async () => ({}),
-    getNameInfo: async () => ({info: {height: 101}}),
+    getNameInfo: async () => ({info: {height: 101, state: 'BIDDING'}}),
     importNames: async () => ({rescanStarted: true}),
     waitForSync: async () => {},
-    prepare: async (payload, attemptId) => ({attemptId, txid: 'basket-tx'}),
+    prepare: async (payload, attemptId) => ({attemptId, scope: basketScope(payload, 21600)}),
+    signPrepared: async (attemptId, scope) => ({attemptId, txid: TXID, scope}),
     cancel: async () => ({cancelled: true, broadcastAttempted: false}),
-    broadcastPrepared: async () => ({txid: 'basket-tx'}),
+    broadcastPrepared: async () => ({txid: TXID}),
     storeName: async () => {},
     refreshPending: async () => {},
     ...overrides,
@@ -39,6 +47,8 @@ test('basket rescan completes normally and submission continues exactly once', a
   let auctionChecks = 0;
   let broadcasts = 0;
   let syncWaits = 0;
+  let importedRequestId = null;
+  let waitedRequestId = null;
   const phases = [];
   const result = await submitBidManyLifecycle(entries, lifecycleDeps({
     getAuctionInfo: async () => {
@@ -46,20 +56,30 @@ test('basket rescan completes normally and submission continues exactly once', a
       if (auctionChecks === 1) throw new Error('Auction not found.');
       return {};
     },
-    waitForSync: async () => { syncWaits++; },
+    importNames: async (names, options) => {
+      importedRequestId = options.recoveryRequestId;
+      return {rescanStarted: true};
+    },
+    waitForSync: async options => {
+      syncWaits++;
+      waitedRequestId = options.recoveryRequestId;
+    },
     broadcastPrepared: async () => {
       broadcasts++;
-      return {txid: 'normal-rescan-tx'};
+      return {txid: TXID};
     },
   }), {onPhase: phase => phases.push(phase)});
 
   t.equal(syncWaits, 1, 'waits for the one bulk rescan');
+  t.match(importedRequestId, /^[a-f0-9]{32}$/, 'bulk import receives an immutable request token');
+  t.equal(waitedRequestId, importedRequestId, 'readiness waits for that exact import token');
   t.equal(broadcasts, 1, 'broadcasts exactly once');
-  t.equal(result.txid, 'normal-rescan-tx', 'returns the transaction ID');
+  t.equal(result.txid, TXID, 'returns the transaction ID');
   t.deepEqual(phases, [
     BID_SUBMISSION_PHASES.CHECKING,
     BID_SUBMISSION_PHASES.RESCANNING,
     BID_SUBMISSION_PHASES.BUILDING,
+    BID_SUBMISSION_PHASES.REVIEWING,
     BID_SUBMISSION_PHASES.SIGNING,
     BID_SUBMISSION_PHASES.BROADCASTING,
     BID_SUBMISSION_PHASES.VERIFYING,
@@ -82,11 +102,11 @@ test('completed rescan is authoritative when the import RPC never resolves', asy
     waitForSync: async () => {},
     broadcastPrepared: async () => {
       broadcasts++;
-      return {txid: 'hung-import-tx'};
+      return {txid: TXID};
     },
   }), {preparationTimeoutMs: 50});
 
-  t.equal(result.txid, 'hung-import-tx', 'continues after observed rescan completion');
+  t.equal(result.txid, TXID, 'continues after observed rescan completion');
   t.equal(broadcasts, 1, 'does not duplicate the submission');
   t.end();
 });
@@ -106,17 +126,17 @@ test('a delayed 20-name createbatch completes once without using the short reque
       prepares++;
       await new Promise(resolve => setTimeout(resolve, 20));
       t.equal(payload.length, 20, 'keeps the supported 20-name transaction');
-      return {attemptId, txid: 'delayed-createbatch-tx', timings: {createbatch: 15000}};
+      return {attemptId, scope: basketScope(payload, 21600), timings: {createbatch: 15000}};
     },
     broadcastPrepared: async () => {
       broadcasts++;
-      return {txid: 'delayed-createbatch-tx'};
+      return {txid: TXID};
     },
   }), {preparationTimeoutMs: 100, onPhase: phase => phases.push(phase)});
 
   t.equal(prepares, 1, 'constructs exactly once');
   t.equal(broadcasts, 1, 'broadcasts exactly once');
-  t.equal(result.txid, 'delayed-createbatch-tx');
+  t.equal(result.txid, TXID);
   t.ok(phases.includes(BID_SUBMISSION_PHASES.BUILDING));
   t.ok(phases.includes(BID_SUBMISSION_PHASES.SIGNING));
   t.ok(phases.includes(BID_SUBMISSION_PHASES.VERIFYING));
@@ -175,8 +195,8 @@ test('cancelling while createbatch is running prevents a late broadcast', async 
 
 test('leaving during preparation cancels continuation without touching the basket', t => {
   const props = {
-    order: ['example'],
-    items: {example: {name: 'example', bidAmount: '1', blindAmount: '1'}},
+    order: ['basket-fixture'],
+    items: {'basket-fixture': {name: 'basket-fixture', bidAmount: '1', blindAmount: '1'}},
     spendableBalance: 10000000,
     network: 'regtest',
     addNamesToBasket() {},
@@ -247,8 +267,8 @@ test('ambiguous broadcast timeout never permits a duplicate retry', async t => {
 
 test('returning to edit preserves an ambiguous broadcast safety lock', t => {
   const component = new AuctionBasket({
-    order: ['example'],
-    items: {example: {name: 'example', bidAmount: '1', blindAmount: '1'}},
+    order: ['basket-fixture'],
+    items: {'basket-fixture': {name: 'basket-fixture', bidAmount: '1', blindAmount: '1'}},
     spendableBalance: 10000000,
     network: 'regtest',
     addNamesToBasket() {}, removeFromBasket() {}, updateBasketItem() {}, clearBasket() {},
@@ -277,38 +297,397 @@ test('successful broadcast clears the component basket only after a txid is obta
   const broadcast = deferred();
   let clears = 0;
   const component = new AuctionBasket({
-    order: ['example'],
-    items: {example: {name: 'example', bidAmount: '1', blindAmount: '1'}},
+    order: ['basket-fixture'],
+    items: {'basket-fixture': {name: 'basket-fixture', bidAmount: '1', blindAmount: '1'}},
     spendableBalance: 10000000,
     network: 'regtest',
     addNamesToBasket() {},
     removeFromBasket() {},
     updateBasketItem() {},
     clearBasket: () => { clears++; },
-    sendBidMany: () => broadcast.promise,
+    sendBidMany: async (rows, options) => {
+      await options.confirmScope(basketScope(rows, 21600));
+      return broadcast.promise;
+    },
     showError: message => t.fail(message),
     showSuccess() {},
     history: {push() {}},
   });
   component.context = {t: key => key};
   component._mounted = true;
-  component.state = {...component.state, step: 'review', accepted: true};
+  component.state = {...component.state, step: 'review', accepted: true, reviewedScope: basketScope(entries)};
   component.setState = (patch, callback) => {
     component.state = {...component.state, ...patch};
     if (callback) callback();
   };
   component.refreshStatuses = async () => ({
-    example: {state: 'BIDDING', height: 100},
+    'basket-fixture': {state: 'BIDDING', height: 100},
   });
 
   const submission = component.onSubmit();
   await Promise.resolve();
   await Promise.resolve();
   t.equal(clears, 0, 'keeps the basket while no transaction ID exists');
-
-  broadcast.resolve({txid: 'confirmed-component-tx'});
+  t.equal(component.state.accepted, false, 'actual fee requires new explicit approval');
+  component.state.accepted = true;
+  component.onConfirmPrepared();
+  broadcast.resolve({txid: TXID, scope: basketScope(entries, 21600)});
   await submission;
   t.equal(clears, 1, 'clears after the transaction ID is returned');
-  t.equal(component.state.submissionTxid, 'confirmed-component-tx', 'retains the transaction ID');
+  t.equal(component.state.submissionTxid, TXID, 'retains the transaction ID');
+  t.end();
+});
+
+const twoNames = [
+  {name: 'harm', bid: 2400000000, lockup: 5000000000, height: 100},
+  {name: 'backrub', bid: 50000000, lockup: 300000000, height: 100},
+];
+
+test('long rescan and final review precede unlocking; construction and broadcast occur once', async t => {
+  let locked = false;
+  let imported = false;
+  const events = [];
+  await submitBidManyLifecycle(twoNames, lifecycleDeps({
+    getAuctionInfo: async () => {if (!imported) throw new Error('auction not found');},
+    importNames: async () => {imported = true;},
+    waitForSync: async () => {locked = true; events.push('rescan');},
+    prepare: async (payload, attemptId) => {
+      t.equal(locked, true, 'unsigned construction works after the unlock lease expired');
+      events.push('construct');
+      return {attemptId, scope: basketScope(payload, 21600)};
+    },
+    requestPassphrase: async () => {events.push('unlock'); locked = false;},
+    signPrepared: async (attemptId, scope) => {
+      t.equal(locked, false, 'fresh unlock immediately precedes signing');
+      events.push('sign');
+      return {attemptId, scope, txid: TXID};
+    },
+    broadcastPrepared: async () => {events.push('broadcast'); return {txid: TXID};},
+  }), {confirmScope: async scope => {events.push('approve exact fee'); return scope;}});
+  t.deepEqual(events, ['rescan', 'construct', 'approve exact fee', 'unlock', 'sign', 'broadcast']);
+  t.end();
+});
+
+test('deadline crossing during rescan or final review stops the entire original basket', async t => {
+  for (const expiresAt of ['rescan', 'review', 'unlock']) {
+    let expired = false;
+    let imported = false;
+    let signs = 0;
+    let broadcasts = 0;
+    try {
+      await submitBidManyLifecycle(twoNames, lifecycleDeps({
+        getAuctionInfo: async () => {if (!imported) throw new Error('auction not found');},
+        importNames: async () => {imported = true;},
+        waitForSync: async () => {expired = expiresAt === 'rescan';},
+        requestPassphrase: async () => {expired = expiresAt === 'unlock';},
+        getNameInfo: async name => ({info: {state: expired && name === 'backrub' ? 'REVEAL' : 'BIDDING'}}),
+        signPrepared: async () => {signs++;},
+        broadcastPrepared: async () => {broadcasts++;},
+      }), {confirmScope: async scope => {expired = expiresAt === 'review'; return scope;}});
+      t.fail('expired scope must not submit');
+    } catch (error) {
+      t.equal(error.code, 'BASKET_SCOPE_CHANGED', expiresAt);
+      t.match(error.message, /backrub/);
+      t.equal(error.broadcastUncertain, false);
+    }
+    t.equal(signs, 0);
+    t.equal(broadcasts, 0, 'harm alone is never silently sent');
+  }
+  t.end();
+});
+
+test('subset construction or a modified final approval cannot reach signing', async t => {
+  for (const kind of ['subset', 'fee', 'no-approval']) {
+    let signs = 0;
+    let broadcasts = 0;
+    try {
+      await runLifecycle(twoNames, lifecycleDeps({
+        prepare: async (rows, attemptId) => ({attemptId, scope: basketScope(kind === 'subset' ? rows.slice(0, 1) : rows, 21600)}),
+        signPrepared: async () => {signs++;},
+        broadcastPrepared: async () => {broadcasts++;},
+      }), {confirmScope: kind === 'no-approval' ? undefined : async scope => ({...scope, fee: scope.fee + 1})});
+      t.fail(kind);
+    } catch (error) {
+      t.equal(error.code, 'BASKET_SCOPE_CHANGED', kind);
+    }
+    t.equal(signs, 0);
+    t.equal(broadcasts, 0);
+  }
+  t.end();
+});
+
+test('an unrelated history transaction or mismatched returned txid never counts as basket success', async t => {
+  for (const kind of ['history', 'wrong-id']) {
+    let historyCalls = 0;
+    try {
+      await submitBidManyLifecycle(twoNames, lifecycleDeps({
+        findTransactions: async () => ++historyCalls === 1 ? [] : [{txid: 'cd'.repeat(32)}],
+        broadcastPrepared: async () => {
+          if (kind === 'history') throw new Error('connection lost');
+          return {txid: 'cd'.repeat(32)};
+        },
+      }));
+      t.fail('must stay uncertain');
+    } catch (error) {
+      t.equal(error.retryAllowed, false, kind);
+      t.equal(error.broadcastUncertain, true);
+      t.equal(error.txid, TXID, 'retain the exact candidate ID for reconciliation');
+    }
+  }
+  t.end();
+});
+
+test('history failure after a broadcast response without an ID remains retry locked', async t => {
+  let queries = 0;
+  try {
+    await submitBidManyLifecycle(twoNames, lifecycleDeps({
+      broadcastPrepared: async () => ({}),
+      findTransactions: async () => {
+        if (++queries === 1) return [];
+        throw new Error('fixture history unavailable');
+      },
+    }));
+    t.fail('missing acceptance evidence');
+  } catch (error) {
+    t.equal(error.broadcastUncertain, true);
+    t.equal(error.retryAllowed, false);
+    t.equal(error.txid, TXID);
+  }
+  t.end();
+});
+
+test('wallet switching does not persist the previous wallet receipt over the next draft', t => {
+  const component = new AuctionBasket({walletId: 'wallet-b', network: 'regtest', order: [], items: {}});
+  component._mounted = true;
+  component.state = {...component.state, submissionPhase: 'broadcasting', broadcastUncertain: true,
+    submissionTxid: TXID};
+  let persisted = 0;
+  let loaded = 0;
+  component.persistDraft = () => {persisted++;};
+  component.loadSavedDraft = () => {loaded++;};
+  component.setState = (patch, callback) => {
+    const previous = component.state;
+    component.state = {...component.state, ...patch};
+    component.componentDidUpdate(component.props, previous);
+    callback?.();
+  };
+  component.componentDidUpdate({...component.props, walletId: 'wallet-a'}, component.state);
+  t.equal(persisted, 0, 'never writes A safety state to B');
+  t.equal(loaded, 1, 'reads B persisted safety state');
+  t.equal(component.state.submissionTxid, '', 'no stale receipt from A');
+  t.equal(component.state.submissionPhase, 'idle');
+  t.end();
+});
+
+test('cancellation during exact review prevents late approval from signing or sending', async t => {
+  const review = deferred();
+  const controller = new AbortController();
+  let signs = 0;
+  let broadcasts = 0;
+  const pending = submitBidManyLifecycle(twoNames, lifecycleDeps({
+    signPrepared: async () => {signs++;}, broadcastPrepared: async () => {broadcasts++;},
+  }), {signal: controller.signal, confirmScope: () => {controller.abort(); return review.promise;}});
+  try {await pending; t.fail('cancel');} catch (error) {t.equal(error.code, 'BASKET_SUBMISSION_CANCELLED');}
+  review.resolve(basketScope(twoNames, 21600));
+  await Promise.resolve();
+  t.equal(signs, 0);
+  t.equal(broadcasts, 0);
+  t.end();
+});
+
+test('expired retry and signing failures preserve both original basket entries and their values', async t => {
+  for (const kind of ['expired-retry', 'sign-failed']) {
+    let submissions = 0;
+    const items = {
+      harm: {bidAmount: '2400', blindAmount: '2600'},
+      backrub: {bidAmount: '50', blindAmount: '250'},
+    };
+    const original = JSON.stringify(items);
+    const component = new AuctionBasket({
+      order: ['harm', 'backrub'], items, spendableBalance: 10000000000,
+      walletId: 'disposable', network: 'regtest', walletType: 'standard',
+      clearBasket: () => t.fail('must retain basket'), removeFromBasket: () => t.fail('must retain rows'),
+      showError() {}, showSuccess: () => t.fail('no success'),
+      sendBidMany: async () => {
+        submissions++;
+        const error = new Error('The wallet locked before signing. No transaction was sent.');
+        Object.assign(error, {code: 'BASKET_SIGN_FAILED', stage: 'signing', retryAllowed: true});
+        throw error;
+      },
+    });
+    component.context = {t: key => key};
+    component._mounted = true;
+    component.state = {...component.state, accepted: true, step: 'review', reviewedScope: basketScope(twoNames)};
+    component.setState = patch => {component.state = {...component.state, ...patch};};
+    component.refreshStatuses = async () => ({harm: {state: 'BIDDING'}, backrub: {state: kind === 'expired-retry' ? 'REVEAL' : 'BIDDING'}});
+    await component.onSubmit();
+    t.equal(submissions, kind === 'expired-retry' ? 0 : 1);
+    t.equal(JSON.stringify(component.props.items), original, 'all amounts retained');
+    t.equal(component.state.accepted, false, 'original confirmation is invalidated');
+    t.equal(component.state.submissionRows[1].status, kind === 'expired-retry' ? 'expired' : 'failed');
+  }
+  t.end();
+});
+
+test('the UI persists uncertainty before broadcast and a late success cannot erase a stale basket', async t => {
+  const descriptor = Object.getOwnPropertyDescriptor(window, 'localStorage');
+  const values = new Map();
+  Object.defineProperty(window, 'localStorage', {configurable: true, value: {
+    getItem: key => values.get(key), setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key),
+  }});
+  const broadcast = deferred();
+  let boundary = 0;
+  let clears = 0;
+  const props = {
+    order: ['harm', 'backrub'],
+    items: {harm: {bidAmount: '2400', blindAmount: '2600'}, backrub: {bidAmount: '50', blindAmount: '250'}},
+    spendableBalance: 10000000000, walletId: 'disposable', network: 'regtest',
+    clearBasket: () => {clears++;}, showError: message => t.fail(message), showSuccess() {},
+    sendBidMany: async (rows, options) => {
+      await options.confirmScope(basketScope(rows, 21600));
+      options.onPhase('broadcasting', {txid: TXID});
+      t.equal(JSON.parse(values.get(component.getDraftKey())).formState.broadcastUncertain, true, 'durable lock precedes the boundary');
+      boundary++;
+      return broadcast.promise;
+    },
+  };
+  const component = new AuctionBasket(props);
+  component.context = {t: key => key}; component._mounted = true;
+  component.state = {...component.state, accepted: true, step: 'review', reviewedScope: basketScope(twoNames)};
+  component.setState = patch => {component.state = {...component.state, ...patch};};
+  component.refreshStatuses = async () => ({harm: {state: 'BIDDING'}, backrub: {state: 'BIDDING'}});
+  try {
+    const pending = component.onSubmit();
+    await Promise.resolve(); await Promise.resolve();
+    component.state.accepted = true; component.onConfirmPrepared();
+    await Promise.resolve(); await Promise.resolve();
+    t.equal(boundary, 1);
+    component.componentWillUnmount();
+    broadcast.resolve({txid: TXID, scope: basketScope(twoNames, 21600)});
+    await pending;
+    t.equal(clears, 0, 'unmounted completion cannot clear any basket');
+    const reopened = new AuctionBasket({...props, items: {...props.items, harm: {bidAmount: '2401', blindAmount: '2600'}}});
+    reopened.context = component.context; reopened._mounted = true;
+    reopened.setState = patch => {reopened.state = {...reopened.state, ...patch};};
+    reopened.loadSavedDraft();
+    t.equal(reopened.state.broadcastUncertain, true, 'editing amounts cannot bypass the persisted uncertainty lock');
+    t.equal(reopened.state.retryAllowed, false);
+  } finally {
+    if (descriptor) Object.defineProperty(window, 'localStorage', descriptor);
+    else delete window.localStorage;
+  }
+  t.end();
+});
+
+test('exact success unlocks the persisted residual draft without removing empty rows', async t => {
+  const descriptor = Object.getOwnPropertyDescriptor(window, 'localStorage');
+  const values = new Map();
+  Object.defineProperty(window, 'localStorage', {configurable: true, value: {
+    getItem: key => values.get(key), setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key),
+  }});
+  const props = {
+    order: ['harm', 'backrub', 'empty-draft'],
+    items: {harm: {bidAmount: '2400', blindAmount: '2600'}, backrub: {bidAmount: '50', blindAmount: '250'},
+      'empty-draft': {bidAmount: '', blindAmount: ''}},
+    spendableBalance: 10000000000, walletId: 'disposable', network: 'regtest',
+    clearBasket: () => t.fail('the empty draft must survive'),
+    showError: message => t.fail(message), showSuccess() {},
+    sendBidMany: async (rows, options) => {
+      const scope = basketScope(rows, 21600);
+      component.state.transactionScope = scope;
+      options.onPhase('broadcasting', {txid: TXID});
+      options.onPhase('submitted', {txid: TXID});
+      t.equal(component.state.broadcastUncertain, true, 'submitted event alone cannot unlock the draft');
+      return {txid: TXID, scope};
+    },
+    removeFromBasket: name => {
+      const previousProps = component.props;
+      const items = {...component.props.items}; delete items[name];
+      component.props = {...component.props, order: component.props.order.filter(row => row !== name), items};
+      component.componentDidUpdate(previousProps, component.state);
+    },
+  };
+  const component = new AuctionBasket(props);
+  component.context = {t: key => key}; component._mounted = true;
+  component.state = {...component.state, accepted: true, step: 'review', reviewedScope: basketScope(twoNames)};
+  component.setState = (patch, callback) => {
+    const previous = component.state;
+    component.state = {...component.state, ...patch};
+    component.componentDidUpdate(component.props, previous);
+    callback?.();
+  };
+  component.refreshStatuses = async () => ({harm: {state: 'BIDDING'}, backrub: {state: 'BIDDING'}});
+  try {
+    await component.onSubmit();
+    t.deepEqual(component.props.order, ['empty-draft'], 'only successfully submitted rows removed');
+    t.equal(component.state.broadcastUncertain, false, 'exact success releases uncertainty');
+    t.equal(component.state.submissionTxid, TXID, 'receipt retains the exact transaction ID');
+    const persisted = JSON.parse(values.get(component.getDraftKey()));
+    t.equal(persisted.formState.broadcastUncertain, false, 'remaining draft persisted without an uncertainty lock');
+    const reopened = new AuctionBasket(component.props);
+    reopened.context = component.context; reopened._mounted = true;
+    reopened.setState = patch => {reopened.state = {...reopened.state, ...patch};};
+    reopened.loadSavedDraft();
+    t.equal(reopened.state.broadcastUncertain, false, 'reopened residual draft remains usable');
+    t.equal(reopened.isSubmissionActive(), false);
+  } finally {
+    if (descriptor) Object.defineProperty(window, 'localStorage', descriptor);
+    else delete window.localStorage;
+  }
+  t.end();
+});
+
+test('clear, replacement and removal cannot erase a durable uncertain submission across restart', t => {
+  const descriptor = Object.getOwnPropertyDescriptor(window, 'localStorage');
+  const values = new Map();
+  Object.defineProperty(window, 'localStorage', {configurable: true, value: {
+    getItem: key => values.get(key), setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key),
+  }});
+  let clears = 0;
+  const props = {
+    order: ['harm', 'backrub'],
+    items: {harm: {bidAmount: '2400', blindAmount: '2600'}, backrub: {bidAmount: '50', blindAmount: '250'}},
+    walletId: 'disposable', network: 'regtest', clearBasket: () => {clears++;}, showError() {}, showSuccess() {},
+  };
+  const makeComponent = nextProps => {
+    const component = new AuctionBasket(nextProps);
+    component.context = {t: key => key}; component._mounted = true;
+    component.setState = patch => {component.state = {...component.state, ...patch};};
+    return component;
+  };
+  try {
+    const original = makeComponent(props);
+    original.state = {...original.state, broadcastUncertain: true, submissionTxid: TXID,
+      reviewedScope: basketScope(twoNames), transactionScope: basketScope(twoNames, 21600)};
+    original.persistDraft();
+    original.onBackToBasket();
+    original.onClearBasket();
+    t.equal(clears, 0, 'Clear cannot remove uncertain basket entries');
+    t.equal(original.clearSavedDraft(), false, 'deletion method itself fails closed');
+    t.equal(original.clearSavedDraft({txid: TXID, scope: basketScope(twoNames, 21600)}), false,
+      'a candidate ID and scope are not proof of successful broadcast');
+    const restarted = makeComponent(props);
+    restarted.loadSavedDraft();
+    t.equal(restarted.state.broadcastUncertain, true, 'restart retains the lock after attempted Clear');
+    restarted.props = {...restarted.props, importBasketRows: rows => {
+      restarted.props = {...restarted.props, order: rows.map(row => row.name),
+        items: Object.fromEntries(rows.map(row => [row.name, row]))};
+    }};
+    restarted.state.importPreview = [{name: 'replacement', bidAmount: '1', blindAmount: '2', errors: []}];
+    restarted.applyCompleteBasket('replace');
+    restarted.persistDraft();
+    const replaced = makeComponent(restarted.props);
+    replaced.loadSavedDraft();
+    t.equal(replaced.state.broadcastUncertain, true, 'replacing names preserves the wallet safety lock');
+    replaced.props = {...replaced.props, order: [], items: {}};
+    replaced.persistDraft();
+    const empty = makeComponent(replaced.props);
+    empty.loadSavedDraft();
+    t.equal(empty.state.broadcastUncertain, true, 'even an empty persisted draft retains uncertainty');
+    t.equal(empty.clearSavedDraft(), false, 'empty rows do not authorize lock deletion');
+  } finally {
+    if (descriptor) Object.defineProperty(window, 'localStorage', descriptor);
+    else delete window.localStorage;
+  }
   t.end();
 });

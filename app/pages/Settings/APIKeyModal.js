@@ -3,7 +3,7 @@ import React, {Component} from "react";
 import {connect} from "react-redux";
 import {withRouter} from "react-router-dom";
 import PropTypes from "prop-types";
-import crypto from "crypto";
+import {secureRandomHex} from '../../utils/secureRandom';
 import Alert from "../../components/Alert";
 import {I18nContext} from "../../utils/i18n";
 import * as nodeActions from '../../ducks/node';
@@ -40,7 +40,7 @@ export default class APIKeyModal extends Component {
 
   generateNewKey = async() => {
     this.setState({
-      apiKey: crypto.randomBytes(20).toString('hex'),
+      apiKey: secureRandomHex(20, window.crypto),
     });
   };
 

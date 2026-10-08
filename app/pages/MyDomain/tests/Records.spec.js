@@ -7,6 +7,49 @@ import {Records} from '../../../components/Records';
 
 const fixture = require('../../../utils/tests/fixtures/activate-proposal-v1-addresses.json');
 
+test('Selling options require explicit selection and only navigate or reveal a draft form', t => {
+  const paths = [];
+  const subject = makeRecords({sellingOptions: true, domain: {isOwner: true, info: {registered: true}}, history: {push: path => paths.push(path)}});
+  const {component} = subject;
+  t.equal(component.state.saleProvider, null, 'no provider selected by default');
+  component.chooseSale('shakex');
+  t.equal(component.state.saleProvider, 'shakex');
+  t.equal(component.state.isDirty, false, 'selection does not modify records');
+  t.equal(subject.sendCalls(), 0, 'selection does not send a transaction');
+  t.equal(subject.loadCalls(), 0, 'selection does not contact a provider');
+  component.chooseSale('shakedex');
+  t.deepEqual(paths, ['/exchange?createListing=1&name=example']);
+  component.props.shakedexListings = [{nameLock: {name: 'example'}, status: 'ACTIVE'}];
+  component.chooseSale('shakedex');
+  t.equal(paths[1], '/exchange?listing=example', 'existing listing is opened');
+  component.props.name = 'xn--ev9h';
+  component.chooseSale('shakedex');
+  t.equal(paths[2], '/exchange?createListing=1&name=xn--ev9h', 'canonical name stays unchanged');
+  component.props.name = 'example';
+  component.props.shakedexListings[0].status = 'SOLD';
+  component.chooseSale('shakedex');
+  t.equal(paths[3], '/exchange?createListing=1&name=example', 'reacquired sold name can be listed again');
+  t.end();
+});
+
+test('Selling options deny ineligible names and preserve dirty drafts', t => {
+  for (const override of [{domain: {isOwner: false}}, {domain: {isOwner: true, info: {registered: false}}}, {transferring: true}, {pendingData: {}}, {canonicalLoading: true}, {canonicalError: 'offline'}]) {
+    let navigations = 0;
+    const {component} = makeRecords({domain: {isOwner: true, info: {registered: true}}, history: {push: () => navigations++}, ...override});
+    component.chooseSale('shakedex');
+    component.chooseSale('shakex');
+    t.equal(navigations, 0);
+    t.equal(component.state.saleProvider, null);
+  }
+  const {component} = makeRecords({domain: {isOwner: true, info: {registered: true}}});
+  component.state.isDirty = true;
+  const draft = component.state.updatedResource;
+  component.chooseSale('shakex');
+  t.equal(component.state.saleProvider, null);
+  t.equal(component.state.updatedResource, draft, 'unsaved DNS draft survives');
+  t.end();
+});
+
 function makeRecords(overrides = {}) {
   let sendCalls = 0;
   let loadCalls = 0;
