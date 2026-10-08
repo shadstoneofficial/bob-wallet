@@ -638,7 +638,8 @@ export class Records extends Component {
     if (!this.mounted || this.saleDisabled()) return;
     if (provider === 'shakedex') {
       const listing = (this.props.shakedexListings || []).find(item =>
-        item.nameLock?.name === this.props.name && item.status !== LISTING_STATUS.FINALIZE_CANCEL_CONFIRMED);
+        item.nameLock?.name === this.props.name &&
+        ![LISTING_STATUS.FINALIZE_CANCEL_CONFIRMED, LISTING_STATUS.SOLD].includes(item.status));
       this.props.history.push(listing
         ? `/exchange?listing=${encodeURIComponent(this.props.name)}`
         : `/exchange?createListing=1&name=${encodeURIComponent(this.props.name)}`);

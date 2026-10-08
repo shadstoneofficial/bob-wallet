@@ -25,6 +25,10 @@ test('Selling options require explicit selection and only navigate or reveal a d
   component.props.name = 'xn--ev9h';
   component.chooseSale('shakedex');
   t.equal(paths[2], '/exchange?createListing=1&name=xn--ev9h', 'canonical name stays unchanged');
+  component.props.name = 'example';
+  component.props.shakedexListings[0].status = 'SOLD';
+  component.chooseSale('shakedex');
+  t.equal(paths[3], '/exchange?createListing=1&name=example', 'reacquired sold name can be listed again');
   t.end();
 });
 
