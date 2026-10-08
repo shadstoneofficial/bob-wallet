@@ -1,6 +1,17 @@
 # Next stable release acceptance
 
-Status: source integration in progress, 2026-10-08. This is a release gate, not a passed acceptance report.
+Status: source integration and independent review completed on 2026-10-08; fresh signed-package acceptance remains pending. This is a release gate, not a passed packaged-acceptance report.
+
+## Verified source checkpoint
+
+- Combined source tests: 1,423 product assertions, 14 service lifecycle tests and 64 acceptance-harness tests passed. The final acceptance DB key-type hardening was separately rerun through all 64 harness tests.
+- Nine isolated sync fixture invocations passed, including expected-failure controls and patched startup/recovery with no backend error.
+- Production compilation passed on the clean integration checkpoint before the final fixture-only additions; repeat compilation and CI on the final release commit remain required.
+- EN/ZH/RU/TH share 1,342 keys with matching placeholders. Offline Electron static fixtures passed 32 narrow/wide light/dark layout checks for selling and registration recovery. Representative English/Thai selling and Russian/Thai recovery images were inspected. Hosted fonts are deliberately blocked; static React server-render warnings are expected. This is not a signed-package visual test or native-speaker review.
+- Independent review found and resolved the Clear-draft uncertainty-lock bypass, successful residual-draft lock, reacquired-name relisting route and acceptance DB binary-key bypass.
+- Tests used mocks or isolated disposable data. No existing wallet profile, secret or live transaction was accessed.
+
+The registration fixture uses real UI, thunk, IPC and journal with a MOCKED WalletService proxy and INERT signing/transport. Actual service method tests remain a separate source-level layer. Do not present this combination as packaged real-transport verification.
 
 ## Scope
 

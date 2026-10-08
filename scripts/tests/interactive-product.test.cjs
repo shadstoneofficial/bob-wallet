@@ -265,9 +265,11 @@ test('registration fixture refuses non-fixed contexts and protects durable recor
   await assert.rejects(runtime.walletMethods.sendRegisterAll('unexpected-input',context),/does not accept credentials/);
   const {wrapAcceptanceDbMethods}=require('../../app/background/packagedAcceptance/policy');
   const wrapped=wrapAcceptanceDbMethods({put:()=>assert.fail('renderer write'),del:()=>assert.fail('renderer delete')},true);
-  for(const key of ['acceptance-register-state-v1','acceptance-register-journal:register-all:fixture']){
+  for(const text of ['acceptance-register-state-v1','acceptance-register-journal:register-all:fixture','network']){
+    for(const key of [text,Array.from(Buffer.from(text)),new Uint8Array(Buffer.from(text)),Buffer.from(text)]){
     await assert.rejects(wrapped.put(key,{}),{code:'ERR_PACKAGED_ACCEPTANCE_POLICY'});
     await assert.rejects(wrapped.del(key),{code:'ERR_PACKAGED_ACCEPTANCE_POLICY'});
+    }
   }
   startBackend('multiwallet');
   const nonFixture=wrapAcceptanceWalletMethods({sendRegisterAll:()=>assert.fail('real service'),getRegisterAllStatus:()=>assert.fail('real read'),cancelRegisterAll:()=>assert.fail('real cancellation')},true);
