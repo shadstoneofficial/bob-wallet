@@ -578,3 +578,61 @@ test('the UI persists uncertainty before broadcast and a late success cannot era
   }
   t.end();
 });
+
+test('exact success unlocks the persisted residual draft without removing empty rows', async t => {
+  const descriptor = Object.getOwnPropertyDescriptor(window, 'localStorage');
+  const values = new Map();
+  Object.defineProperty(window, 'localStorage', {configurable: true, value: {
+    getItem: key => values.get(key), setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key),
+  }});
+  const props = {
+    order: ['harm', 'backrub', 'empty-draft'],
+    items: {harm: {bidAmount: '2400', blindAmount: '2600'}, backrub: {bidAmount: '50', blindAmount: '250'},
+      'empty-draft': {bidAmount: '', blindAmount: ''}},
+    spendableBalance: 10000000000, walletId: 'disposable', network: 'regtest',
+    clearBasket: () => t.fail('the empty draft must survive'),
+    showError: message => t.fail(message), showSuccess() {},
+    sendBidMany: async (rows, options) => {
+      const scope = basketScope(rows, 21600);
+      component.state.transactionScope = scope;
+      options.onPhase('broadcasting', {txid: TXID});
+      options.onPhase('submitted', {txid: TXID});
+      t.equal(component.state.broadcastUncertain, true, 'submitted event alone cannot unlock the draft');
+      return {txid: TXID, scope};
+    },
+    removeFromBasket: name => {
+      const previousProps = component.props;
+      const items = {...component.props.items}; delete items[name];
+      component.props = {...component.props, order: component.props.order.filter(row => row !== name), items};
+      component.componentDidUpdate(previousProps, component.state);
+    },
+  };
+  const component = new AuctionBasket(props);
+  component.context = {t: key => key}; component._mounted = true;
+  component.state = {...component.state, accepted: true, step: 'review', reviewedScope: basketScope(twoNames)};
+  component.setState = (patch, callback) => {
+    const previous = component.state;
+    component.state = {...component.state, ...patch};
+    component.componentDidUpdate(component.props, previous);
+    callback?.();
+  };
+  component.refreshStatuses = async () => ({harm: {state: 'BIDDING'}, backrub: {state: 'BIDDING'}});
+  try {
+    await component.onSubmit();
+    t.deepEqual(component.props.order, ['empty-draft'], 'only successfully submitted rows removed');
+    t.equal(component.state.broadcastUncertain, false, 'exact success releases uncertainty');
+    t.equal(component.state.submissionTxid, TXID, 'receipt retains the exact transaction ID');
+    const persisted = JSON.parse(values.get(component.getDraftKey()));
+    t.equal(persisted.formState.broadcastUncertain, false, 'remaining draft persisted without an uncertainty lock');
+    const reopened = new AuctionBasket(component.props);
+    reopened.context = component.context; reopened._mounted = true;
+    reopened.setState = patch => {reopened.state = {...reopened.state, ...patch};};
+    reopened.loadSavedDraft();
+    t.equal(reopened.state.broadcastUncertain, false, 'reopened residual draft remains usable');
+    t.equal(reopened.isSubmissionActive(), false);
+  } finally {
+    if (descriptor) Object.defineProperty(window, 'localStorage', descriptor);
+    else delete window.localStorage;
+  }
+  t.end();
+});

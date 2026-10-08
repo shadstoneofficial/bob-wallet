@@ -902,6 +902,9 @@ export class AuctionBasket extends Component {
           this.setState({
             submissionPhase: 'submitted',
             submissionTxid: res.txid,
+            broadcastUncertain: false,
+            retryAllowed: false,
+            savedDraft: null,
             submittedCount: entries.length,
             submissionRows: entries.map(entry => ({name: entry.name, status: 'submitted'})),
           });
