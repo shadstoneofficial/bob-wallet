@@ -1308,5 +1308,16 @@
   "addonLiquidityChannelTitle": "Liquidity Channel",
   "addonLiquidityChannelHelp": "Guest P2P should be available without GFAVIP; GFAVIP is optional for Gems and account benefits.",
   "addonLiquidityChannelSave": "Add/Save",
-  "addonLiquidityChannelInvalid": "Enter a valid channel host."
+  "addonLiquidityChannelInvalid": "Enter a valid channel host.",
+  "basketScopeReviewRequired": "Review the complete basket again before preparing a transaction.",
+  "basketExactReview": "Review the exact transaction",
+  "basketExactReviewHelp": "No transaction has been signed or sent. Confirm every name, true bid, blind, lockup and the exact fee. Auction deadlines can still expire before confirmation on chain.",
+  "basketExactFee": "Exact transaction fee",
+  "basketOneTransaction": "Transaction count: 1",
+  "basketApproveExactScope": "I approve exactly these names, amounts, fee and one transaction.",
+  "basketSignAndSubmit": "Unlock, sign and submit",
+  "basketPrepareExactReview": "Prepare for final review",
+  "basketRowSubmitted": "Submitted in the transaction above.",
+  "basketRowExpired": "Omitted: bidding ended. Entry and values retained; no bid sent by this attempt.",
+  "basketRowFailed": "Not submitted. This attempt stopped before broadcast; entry and values retained."
 }

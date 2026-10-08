@@ -26,9 +26,11 @@ function loadProductModules() {
   try {
     const names = require('../../app/ducks/names');
     const walletClient = require('../../app/utils/walletClient').default;
+    const nodeClient = require('../../app/utils/nodeClient').default;
+    const {basketScope} = require('../../app/utils/basketScope');
     const {GET_PASSPHRASE} = require('../../app/ducks/walletReducer');
     const {AuctionBasket} = require('../../app/pages/AuctionBasket');
-    productModules = {AuctionBasket, GET_PASSPHRASE, names, walletClient};
+    productModules = {AuctionBasket, GET_PASSPHRASE, names, walletClient, nodeClient, basketScope};
     return productModules;
   } finally {
     Module._load = originalLoad;
@@ -46,7 +48,11 @@ function deferred() {
 }
 
 async function withWalletMethods(methods, callback) {
-  const {walletClient} = loadProductModules();
+  const previousWindow = global.window;
+  if (!global.window) global.window = {localStorage: memoryLocalStorage()};
+  const {walletClient, nodeClient} = loadProductModules();
+  const originalInfo = nodeClient.getNameInfo;
+  nodeClient.getNameInfo = async () => ({info: {state: 'BIDDING', height: 101}});
   const originals = new Map();
   for (const [name, method] of Object.entries(methods)) {
     originals.set(name, walletClient[name]);
@@ -56,6 +62,8 @@ async function withWalletMethods(methods, callback) {
     return await callback();
   } finally {
     for (const [name, method] of originals) walletClient[name] = method;
+    nodeClient.getNameInfo = originalInfo;
+    if (previousWindow === undefined) delete global.window;
   }
 }
 
@@ -96,11 +104,17 @@ function mountBasket(props, sendBidMany) {
   const component = new AuctionBasket({...props, sendBidMany});
   component.context = {t: (key, value) => value ? `${key}:${value}` : key};
   component._mounted = true;
-  component.state = {...component.state, step: 'review', accepted: true};
+  component.state = {...component.state, step: 'review', accepted: true, reviewedScope: component.currentBasketScope()};
   component.setState = (patch, callback) => {
     const next = typeof patch === 'function' ? patch(component.state, component.props) : patch;
     component.state = {...component.state, ...next};
     if (callback) callback();
+    // This source-only scripted user approves the newly displayed exact fee.
+    // The packaged product still requires its real checkbox/button interaction.
+    if (next.transactionScope && component.confirmPrepared) {
+      component.state.accepted = true;
+      component.onConfirmPrepared();
+    }
   };
   component.refreshStatuses = async () => Object.fromEntries(
     props.order.map(name => [name, {state: 'BIDDING', height: 100}]),
@@ -129,7 +143,8 @@ function baseWalletMethods(overrides = {}) {
   return {
     findBasketBidTransactions: async () => [],
     getAuctionInfo: async () => ({}),
-    prepareBidMany: async (payload, attemptId) => ({attemptId, txid: 'inert-prepared-tx'}),
+    prepareBidMany: async (payload, attemptId) => ({attemptId, scope: loadProductModules().basketScope(payload, 10000)}),
+    signPreparedBidMany: async (attemptId, scope) => ({attemptId, scope, txid: 'ac'.repeat(32)}),
     cancelBidManyAttempt: async () => ({cancelled: true, broadcastAttempted: false}),
     broadcastPreparedBidMany: async () => {
       const error = new Error('Inert acceptance boundary refused broadcast.');
@@ -221,7 +236,7 @@ async function runDelayedBasket(plan, options = {}) {
     } else {
       component.onBackToBasket();
     }
-    preparation.resolve({attemptId: started.attemptId, txid: 'inert-prepared-tx'});
+    preparation.resolve({attemptId: started.attemptId, scope: loadProductModules().basketScope(started.payload, 10000)});
     await submission;
     return {
       productPath: 'AuctionBasket.onSubmit/onBackToBasket -> sendBidMany -> submitBidManyLifecycle',
@@ -264,7 +279,7 @@ async function runAmbiguousBasket(plan) {
       },
       prepareBidMany: async (payload, attemptId) => {
         preparationCalls += 1;
-        return {attemptId, txid: 'inert-ambiguous-tx', payloadCount: payload.length};
+        return {attemptId, scope: loadProductModules().basketScope(payload, 10000), payloadCount: payload.length};
       },
       broadcastPreparedBidMany: async () => {
         inertBroadcastCalls += 1;
@@ -297,7 +312,7 @@ async function runAmbiguousBasket(plan) {
         productPath: 'AuctionBasket draft/navigation -> sendBidMany duplicate lock -> submitBidManyLifecycle',
         firstFailure,
         persistedLock,
-        duplicateBlockedAfterReuse: /Duplicate submission is blocked/i.test(reused.state.submissionError),
+        duplicateBlockedAfterReuse: reused.state.broadcastUncertain && !reused.state.retryAllowed && preparationCalls === 1,
         preparationCalls,
         inertBroadcastCalls,
         liveBroadcastCalls: 0,

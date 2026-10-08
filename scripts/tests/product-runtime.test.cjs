@@ -44,7 +44,8 @@ test('runtime delayed construction cancels without reaching any signing/broadcas
 test('runtime ambiguous lock survives new adapter with the same disposable database',async()=>{
   const db=memoryDb();
   const first=createProductRuntime({scenario:'basket-ambiguous'},db);
-  await first.walletMethods.prepareBidMany(payload('basket-ambiguous'),attempt);
+  const quote=await first.walletMethods.prepareBidMany(payload('basket-ambiguous'),attempt);
+  await first.walletMethods.signPreparedBidMany(attempt,quote.scope);
   await assert.rejects(first.walletMethods.broadcastPreparedBidMany(attempt),{code:'ETXBROADCASTUNCERTAIN'});
   const second=createProductRuntime({scenario:'basket-ambiguous'},db);
   await assert.rejects(second.walletMethods.prepareBidMany(payload('basket-ambiguous'),attempt),{code:'ERR_PACKAGED_ACCEPTANCE_POLICY'});
@@ -77,7 +78,10 @@ test('runtime accepts only exact numeric or base-unit string fixture amounts',as
     const runtime=createProductRuntime({scenario:'basket-ambiguous'},memoryDb());
     const rows=payload('basket-ambiguous').map(row=>({...row,
       bid:strings?String(row.bid):row.bid,lockup:strings?String(row.lockup):row.lockup}));
-    await runtime.walletMethods.prepareBidMany(rows,attempt);
+    const quote=await runtime.walletMethods.prepareBidMany(rows,attempt);
+    await assert.rejects(runtime.walletMethods.broadcastPreparedBidMany(attempt),{code:'ERR_PACKAGED_ACCEPTANCE_POLICY'});
+    await assert.rejects(runtime.walletMethods.signPreparedBidMany(attempt,{...quote.scope,fee:0}),{code:'ERR_PACKAGED_ACCEPTANCE_POLICY'});
+    await runtime.walletMethods.signPreparedBidMany(attempt,quote.scope);
     await assert.rejects(runtime.walletMethods.broadcastPreparedBidMany('basket-456-def'),{code:'ERR_PACKAGED_ACCEPTANCE_POLICY'});
     await assert.rejects(runtime.walletMethods.broadcastPreparedBidMany(attempt),{code:'ETXBROADCASTUNCERTAIN'});
   }

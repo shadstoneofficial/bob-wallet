@@ -22,6 +22,7 @@ import Overview from '../../app/pages/Overview';
 import Send from '../../app/components/SendModal';
 import Receive from '../../app/components/ReceiveModal';
 import Basket, {AuctionBasket} from '../../app/pages/AuctionBasket';
+import {basketScope} from '../../app/utils/basketScope';
 import OpenBasket from '../../app/pages/OpenBasket';
 import Domains from '../../app/pages/DomainManager';
 import Exchange, {Exchange as ExchangeScreen} from '../../app/pages/Exchange';
@@ -90,6 +91,9 @@ class BasketReview extends AuctionBasket {
       retryAllowed: query.get('phase') === 'failed' && query.get('uncertain') === '0',
       step: 'review',
       accepted: true,
+      reviewedScope: basketScope([{name: 'fixture', bid: 10000000, lockup: 15000000}]),
+      transactionScope: query.get('phase') === 'reviewing'
+        ? basketScope([{name: 'fixture', bid: 10000000, lockup: 15000000}], 21600) : null,
       rowMeta: {fixture: {state: 'BIDDING', hoursUntilReveal: 12}},
     };
   }

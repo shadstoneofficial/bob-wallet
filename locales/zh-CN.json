@@ -1308,5 +1308,16 @@
   "addonLiquidityChannelTitle": "Liquidity 频道",
   "addonLiquidityChannelHelp": "访客 P2P 应无需 GFAVIP 即可使用；GFAVIP 为可选项，用于 Gems 和账户权益。",
   "addonLiquidityChannelSave": "添加/保存",
-  "addonLiquidityChannelInvalid": "请输入有效的频道主机名。"
+  "addonLiquidityChannelInvalid": "请输入有效的频道主机名。",
+  "basketScopeReviewRequired": "准备交易前，请重新核对完整竞价篮。",
+  "basketExactReview": "核对实际交易",
+  "basketExactReviewHelp": "尚未签名或发送交易。请确认每个域名、真实出价、盲额、锁定金额及实际手续费。竞价仍可能在链上确认前结束。",
+  "basketExactFee": "实际交易手续费",
+  "basketOneTransaction": "交易数量：1",
+  "basketApproveExactScope": "我同意仅按此处列出的域名、金额和手续费提交一笔交易。",
+  "basketSignAndSubmit": "解锁、签名并提交",
+  "basketPrepareExactReview": "准备最终核对",
+  "basketRowSubmitted": "已在上述交易中提交。",
+  "basketRowExpired": "未提交：竞价已结束。条目和金额已保留；本次尝试未发送出价。",
+  "basketRowFailed": "未提交。本次尝试在广播前停止；条目和金额已保留。"
 }

@@ -41,7 +41,7 @@ function startBackend(scenario,values=new Map()){
   const db={get:async key=>values.get(key)||null,put:async(key,value)=>values.set(key,structuredClone(value))};
   installProductRuntime({scenario},db,server);
   const runtime=require('../../app/background/packagedAcceptance/productRuntime').getProductRuntime();
-  server.withService('Wallet',wrapAcceptanceWalletMethods({getAuctionInfo:()=>assert.fail('raw auction'),findBasketBidTransactions:()=>assert.fail('raw history'),prepareBidMany:()=>assert.fail('raw signing'),cancelBidManyAttempt:()=>assert.fail('raw cancellation'),broadcastPreparedBidMany:()=>assert.fail('live broadcast'),getPendingTransactions:()=>assert.fail('raw pending history')},true));
+  server.withService('Wallet',wrapAcceptanceWalletMethods({getAuctionInfo:()=>assert.fail('raw auction'),findBasketBidTransactions:()=>assert.fail('raw history'),prepareBidMany:()=>assert.fail('raw construction'),signPreparedBidMany:()=>assert.fail('raw signing'),cancelBidManyAttempt:()=>assert.fail('raw cancellation'),broadcastPreparedBidMany:()=>assert.fail('live broadcast'),getPendingTransactions:()=>assert.fail('raw pending history')},true));
   server.withService('DB',db);
   server.withService('Node',runtime.nodeMethods);
   server.withService('Analytics',{screenView:async()=>null});
@@ -75,7 +75,8 @@ test('real renderer, IPC and fixed backend show pre-signing failure and Retry',a
   try{
     await reviewAndAccept();await submit();
     assert.match(document.body.textContent,/Controlled pre-signing construction failure/);
-    const retry=document.querySelector('.auction-basket__footer-actions button:last-child');assert(!retry.disabled);assert.equal(retry.textContent.trim(),t('basketRetrySubmission'));
+    const retry=document.querySelector('.auction-basket__footer-actions button:last-child');assert(retry.disabled);assert.equal(retry.textContent.trim(),t('basketRetrySubmission'));
+    await act(async()=>document.querySelector('.auction-basket__confirm input').click());await tick();
     await act(async()=>retry.click());await tick();
     assert.equal((await runtime.describe()).state.preparationCalls,2);
   }finally{await act(async()=>root.unmount());window.localStorage.clear();}
@@ -101,6 +102,10 @@ test('real renderer ambiguous result stays locked through navigation and remount
   const runtime=startBackend('basket-ambiguous');let root=await mount();
   try{
     await reviewAndAccept();await submit();
+    assert.match(document.body.textContent,/Review the exact transaction/);
+    assert.equal((await runtime.describe()).state.inertBoundaryCalls,0);
+    await act(async()=>document.querySelector('.auction-basket__confirm input').click());await tick();
+    await submit();
     assert.match(document.body.textContent,/Controlled ambiguous result/);
     assert(document.querySelector('.auction-basket__footer-actions button:last-child').disabled);
     await click('Leave basket');await click('Return to basket');
@@ -175,9 +180,14 @@ test('real delayed 20-name success clears only after one inert result with an ID
   try{
     await reviewAndAccept();await submit();
     assert.equal(document.querySelector('[data-testid="acceptance-basket-clears"]').textContent,'0');
-    for(let i=0;i<120 && !(await runtime.describe()).state.inertTxid;i++){
+    for(let i=0;i<120 && !document.body.textContent.includes(t('basketExactReview'));i++){
       await act(async()=>{await new Promise(resolve=>setTimeout(resolve,100));});
     }
+    assert(document.body.textContent.includes(t('basketExactReview')));
+    assert.equal((await runtime.describe()).state.inertBoundaryCalls,0,'new fee review cannot auto-send');
+    assert.equal(document.querySelector('[data-testid="acceptance-basket-clears"]').textContent,'0');
+    await act(async()=>document.querySelector('.auction-basket__confirm input').click());await tick();
+    await submit();
     await tick();
     const state=(await runtime.describe()).state;
     assert.equal(state.preparationCalls,1);

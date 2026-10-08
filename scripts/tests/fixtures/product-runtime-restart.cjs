@@ -10,7 +10,8 @@ const {buildControlledScenarioPlan}=require('../../../app/background/packagedAcc
   const runtime=createProductRuntime({scenario:'basket-ambiguous'},adapter);
   const rows=buildControlledScenarioPlan('basket-ambiguous').names.map(name=>({name,bid:1000000,lockup:2000000}));
   if(process.argv[3]==='first'){
-    await runtime.walletMethods.prepareBidMany(rows,'basket-123-abc');
+    const quote=await runtime.walletMethods.prepareBidMany(rows,'basket-123-abc');
+    await runtime.walletMethods.signPreparedBidMany('basket-123-abc',quote.scope);
     await assert.rejects(runtime.walletMethods.broadcastPreparedBidMany('basket-123-abc'),{code:'ETXBROADCASTUNCERTAIN'});
   }else{
     await assert.rejects(runtime.walletMethods.prepareBidMany(rows,'basket-456-def'),{code:'ERR_PACKAGED_ACCEPTANCE_POLICY'});

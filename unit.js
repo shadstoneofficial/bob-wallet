@@ -52,6 +52,7 @@ require('./app/pages/Auction/tests/RepairBid.spec');
 require('./app/pages/MyDomain/tests/Records.spec');
 require('./app/background/wallet/tests/liquidityHtlc.spec');
 require('./app/background/wallet/tests/registerValidation.spec');
+require('./app/background/wallet/tests/basketValidation.spec');
 require('./app/background/wallet/tests/revealBatch.spec');
 require('./app/background/wallet/tests/stats.spec');
 require('./app/background/wallet/tests/transactionSafety.spec');

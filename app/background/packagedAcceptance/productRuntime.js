@@ -16,6 +16,12 @@ function createProductRuntime(config, db) {
   let state;
   let pending;
   let preparedAttempt = null;
+  let approvedAttempt = null;
+  const fixedScope = () => ({
+    rows: names.map(name => ({name, bid: 1000000, blind: 1000000, lockup: 2000000})),
+    totalBid: names.length * 1000000, totalBlind: names.length * 1000000,
+    totalLockup: names.length * 2000000, fee: 10000, transactionCount: 1,
+  });
   let restoreEvidence = null;
   let restoreInitialization = null;
   let queue = Promise.resolve();
@@ -67,6 +73,7 @@ function createProductRuntime(config, db) {
         if (pending) reject('overlapping preparation');
         state.preparationCalls += 1;
         preparedAttempt = null;
+        approvedAttempt = null;
         await save();
         if (plan.fixtureType === 'auction-retry') {
           const error = new Error('Controlled pre-signing construction failure. Retry is safe; no transaction was created.');
@@ -78,14 +85,25 @@ function createProductRuntime(config, db) {
             const timer = setTimeout(() => {
               pending = null;
               preparedAttempt = attemptId;
-              resolve({attemptId, txid: 'inert-fixture-only'});
+              resolve({attemptId, scope: fixedScope()});
             }, 10000);
             pending = {attemptId, timer, reject: rejectPromise};
           });
         }
         if (plan.fixtureType === 'basket-ambiguous') preparedAttempt = attemptId;
       });
-      return delayed || {attemptId, txid: 'inert-fixture-only'};
+      return delayed || {attemptId, scope: fixedScope()};
+    },
+    async signPreparedBidMany(attemptId, scope) {
+      assertAttempt(attemptId);
+      return serialized(async () => {
+        await load();
+        if (preparedAttempt !== attemptId || approvedAttempt || state.uncertain
+            || JSON.stringify(scope) !== JSON.stringify(fixedScope())) reject('unreviewed scope');
+        // Approval marker only: no keys, signatures or wallet methods are used.
+        approvedAttempt = attemptId;
+        return {attemptId, scope: fixedScope(), txid: 'ac'.repeat(32), inert: true};
+      });
     },
     async cancelBidManyAttempt(attemptId) {
       assertAttempt(attemptId);
@@ -102,6 +120,7 @@ function createProductRuntime(config, db) {
           pending = null;
         }
         if (preparedAttempt === attemptId) preparedAttempt = null;
+        if (approvedAttempt === attemptId) approvedAttempt = null;
         await save();
         return {cancelled, broadcastAttempted: false};
       });
@@ -111,14 +130,15 @@ function createProductRuntime(config, db) {
       return serialized(async () => {
         await load();
         if (!['basket-ambiguous', 'basket-delayed'].includes(plan.fixtureType) || state.inertBoundaryCalls
-            || preparedAttempt !== attemptId) reject('broadcast boundary');
+            || preparedAttempt !== attemptId || approvedAttempt !== attemptId) reject('broadcast boundary');
         // Journal either inert outcome before returning; never sign or relay.
         state.inertBoundaryCalls = 1;
         state.uncertain = plan.fixtureType === 'basket-ambiguous';
         if (!state.uncertain) state.inertTxid = 'ac'.repeat(32);
         preparedAttempt = null;
+        approvedAttempt = null;
         await save();
-        if (!state.uncertain) return {txid: state.inertTxid, inert: true};
+        if (!state.uncertain) return {txid: state.inertTxid, scope: fixedScope(), inert: true};
         const error = new Error('Controlled ambiguous result. No signing or network broadcast occurred; duplicate attempts remain locked.');
         error.code = 'ETXBROADCASTUNCERTAIN';
         throw error;

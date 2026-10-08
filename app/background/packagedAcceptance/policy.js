@@ -29,6 +29,7 @@ const BLOCKED_WALLET_METHODS = new Set([
   'sendRevealMany',
   'sendBidMany',
   'prepareBidMany',
+  'signPreparedBidMany',
   'cancelBidManyAttempt',
   'broadcastPreparedBidMany',
   'sendRedeemAll',
