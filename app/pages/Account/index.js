@@ -6,6 +6,7 @@ import { connect } from "react-redux";
 import Transactions from "../../components/Transactions";
 import PhraseMismatch from "../../components/PhraseMismatch";
 import ShakedexDeprecated from '../../components/ShakedexDeprecated';
+import RegisterAll from '../../components/RegisterAll';
 import "./account.scss";
 import { displayBalance } from "../../utils/balances";
 import { hoursToNow } from "../../utils/timeConverter";
@@ -17,7 +18,6 @@ import * as nameActions from "../../ducks/names";
 import * as nodeActions from "../../ducks/node";
 import { fetchTransactions } from "../../ducks/walletActions";
 import {I18nContext} from "../../utils/i18n";
-import {formatRegisterSuccess} from '../../utils/transactionNotifications';
 import {fetchWalletStats} from '../../ducks/walletStats';
 
 const analytics = aClientStub(() => require("electron").ipcRenderer);
@@ -42,7 +42,6 @@ const analytics = aClientStub(() => require("electron").ipcRenderer);
     updateHNSPrice: () => dispatch(nodeActions.updateHNSPrice()),
     sendRevealAll: () => dispatch(nameActions.sendRevealAll()),
     sendRedeemAll: () => dispatch(nameActions.sendRedeemAll()),
-    sendRegisterAll: () => dispatch(nameActions.sendRegisterAll()),
     finalizeAll: () => dispatch(nameActions.finalizeAll()),
     finalizeMany: (names) => dispatch(nameActions.finalizeMany(names)),
     renewAll: () => dispatch(nameActions.renewAll()),
@@ -64,7 +63,6 @@ export default class Account extends Component {
     fetchWallet: PropTypes.func.isRequired,
     sendRevealAll: PropTypes.func.isRequired,
     sendRedeemAll: PropTypes.func.isRequired,
-    sendRegisterAll: PropTypes.func.isRequired,
     finalizeAll: PropTypes.func.isRequired,
     finalizeMany: PropTypes.func.isRequired,
     renewAll: PropTypes.func.isRequired,
@@ -125,7 +123,6 @@ export default class Account extends Component {
     const functionToExecute = {
       reveal: this.props.sendRevealAll,
       redeem: this.props.sendRedeemAll,
-      register: this.props.sendRegisterAll,
       finalize: this.props.finalizeMany,
       renew: this.props.renewAll,
     }[action];
@@ -135,9 +132,7 @@ export default class Account extends Component {
       if (res !== null) {
         this.props.fetchTransactions();
         this.updateStatsAndBalance();
-        if (action === 'register' && res && res.txid) {
-          this.props.showSuccess(formatRegisterSuccess(res));
-        } else if (action === 'finalize' && res && (res.hash || res.txid)) {
+        if (action === 'finalize' && res && (res.hash || res.txid)) {
           const txid = res.hash || res.txid;
           const names = Array.isArray(args) && args.length
             ? ` for ${args.join(', ')}`
@@ -169,6 +164,7 @@ export default class Account extends Component {
 
         {this.renderBalance()}
         {this.renderCards()}
+        <RegisterAll />
 
         {/* Transactions */}
         <div className="account__transactions">
@@ -403,7 +399,6 @@ export default class Account extends Component {
                   : t('registerCardVerifyWarning')}
               </Fragment>
             }
-            buttonAction={() => this.onCardButtonClick("register")}
           />
         ) : (
           ""

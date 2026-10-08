@@ -1,0 +1,12 @@
+.register-all {
+  margin: 16px 0;
+  overflow-wrap: anywhere;
+
+  table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+  th, td { padding: 8px; text-align: left; vertical-align: top; }
+  th:first-child { width: 25%; }
+  th:nth-child(2) { width: 20%; }
+  code { white-space: normal; overflow-wrap: anywhere; }
+  button { padding: 8px 16px; cursor: pointer; }
+  button:disabled { cursor: default; opacity: 0.6; }
+}

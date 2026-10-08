@@ -1018,12 +1018,16 @@ export const sendRevealMany = (names) => async (dispatch) => {
   return await walletClient.sendRevealMany(names);
 };
 
-export const sendRegisterAll = () => async (dispatch) => {
+export const sendRegisterAll = (isMounted = () => true, operationId) => async (dispatch, getState) => {
+  const {wid, network, requestGeneration} = getState().wallet;
   const passphrase = await new Promise((resolve, reject) => {
     dispatch(getPassphrase(resolve, reject));
   });
-
-  return await walletClient.sendRegisterAll(passphrase);
+  if (!isMounted() || !isCurrentWalletRequest(getState, requestGeneration || 0, wid)
+      || getState().wallet.network !== network) {
+    throw new Error('Register All was cancelled before submission because the active view or wallet changed.');
+  }
+  return await walletClient.sendRegisterAll(passphrase, {walletId: wid, network, operationId});
 };
 
 export const sendRenewal = (name) => async (dispatch) => {

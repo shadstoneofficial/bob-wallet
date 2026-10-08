@@ -692,12 +692,13 @@ export class NodeService extends EventEmitter {
     return this.client;
   }
 
-  async broadcastRawTx(tx, {timeout = TRANSACTION_TIMEOUT_MS} = {}) {
+  async broadcastRawTx(tx, {timeout = TRANSACTION_TIMEOUT_MS, assertCurrent = () => {}} = {}) {
     const storagePath = await this.getDir();
     await storageHealth.preflight(storagePath, {
       source: 'transaction-broadcast-preflight',
       transactionAttempted: true,
     });
+    assertCurrent();
     try {
       const decoded = TX.decode(Buffer.from(tx, 'hex'));
       const txid = decoded.txid();

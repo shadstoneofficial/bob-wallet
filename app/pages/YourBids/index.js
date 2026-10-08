@@ -21,7 +21,7 @@ import * as notifActions from "../../ducks/notifications";
 import dbClient from "../../utils/dbClient";
 import {BIDS_FILTER_NEED_REVEAL, NAME_STATES} from "../../constants/names";
 import {I18nContext} from "../../utils/i18n";
-import {formatRegisterSuccess} from '../../utils/transactionNotifications';
+import RegisterAll from '../../components/RegisterAll';
 
 const analytics = aClientStub(() => require('electron').ipcRenderer);
 
@@ -88,27 +88,6 @@ class YourBids extends Component {
 
   handleOnChange = async e => {
     this.setState({ query: e.target.value });
-  };
-
-  onRegisterAll = async () => {
-    const {
-      showError,
-      showSuccess,
-      sendRegisterAll,
-    } = this.props;
-
-    try {
-      const res = await sendRegisterAll();
-      if (res !== null) {
-        if (res && res.txid) {
-          showSuccess(formatRegisterSuccess(res));
-        } else {
-          showSuccess(this.context.t('registerSuccess'));
-        }
-      }
-    } catch (e) {
-      showError(e.message)
-    }
   };
 
   onRedeemAll = async () => {
@@ -299,14 +278,9 @@ class YourBids extends Component {
             >
               {t('redeemAll')}
             </button>
-            <button
-              className="bids__top__btn"
-              onClick={this.onRegisterAll}
-            >
-              {t('registerAll')}
-            </button>
           </div>
         </div>
+        <RegisterAll />
         <div className="bids__filters">
           {this.renderFilter(t('all'), '')}
           {this.renderFilter(t('bidding'), NAME_STATES.BIDDING)}
@@ -542,7 +516,6 @@ export default withRouter(
       sendRedeemAll: () => dispatch(nameActions.sendRedeemAll()),
       sendRevealAll: () => dispatch(nameActions.sendRevealAll()),
       sendRevealMany: (names) => dispatch(nameActions.sendRevealMany(names)),
-      sendRegisterAll: () => dispatch(nameActions.sendRegisterAll()),
       showError: (message) => dispatch(notifActions.showError(message)),
       showSuccess: (message) => dispatch(notifActions.showSuccess(message)),
     })
