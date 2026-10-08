@@ -12,6 +12,16 @@ function fixture(overrides = {}) {
   return component;
 }
 
+test('Register All translates the failed stage in its recovery summary', t => {
+  const component = fixture();
+  const calls = [];
+  component.context = {t: (key, ...args) => {calls.push([key, ...args]); return key === 'registrationState_broadcasting' ? 'translated-stage' : key;}};
+  component.state.operation = {status: 'paused', failedName: 'fixture-name', failedStage: 'broadcasting', entries: []};
+  component.render();
+  t.deepEqual(calls.find(call => call[0] === 'registrationStoppedAt'), ['registrationStoppedAt', 'fixture-name', 'translated-stage']);
+  t.end();
+});
+
 test('Register All component prevents duplicate clicks and ignores late results after unmount', async t => {
   let resolve; let calls = 0; const cancelled = [];
   const component = fixture({submit: () => {calls++; return new Promise(r => {resolve = r;});},

@@ -108,7 +108,7 @@ export class RegisterAll extends Component {
         {error && <p role="alert">{error}</p>}
         {operation && <div aria-live="polite">
           <p>{t('registrationProgress', submitted, entries.length)}</p>
-          {operation.failedName && <p>{t('registrationStoppedAt', operation.failedName, operation.failedStage)}</p>}
+          {operation.failedName && <p>{t('registrationStoppedAt', operation.failedName, t(`registrationState_${operation.failedStage}`))}</p>}
           {!!operation.notAttempted?.length && <p>{t('registrationNotAttempted', operation.notAttempted.join(', '))}</p>}
           {operation.retryLocked && !running && <p role="alert">{t('registrationUncertain')}</p>}
           {!running && operation.status === 'paused' && !operation.retryLocked && <p>{t('registrationResumeHelp')}</p>}
