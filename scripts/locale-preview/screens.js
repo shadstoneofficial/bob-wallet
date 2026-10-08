@@ -30,6 +30,7 @@ import Settings from '../../app/pages/Settings';
 import RevealSeed from '../../app/pages/Settings/RevealSeedModal';
 import {FinalizeWithPaymentModal} from '../../app/pages/MyDomain/FinalizeWithPaymentModal';
 import {Records} from '../../app/components/Records';
+import {RegisterAll} from '../../app/components/RegisterAll';
 import '../../app/pages/MyDomain/my-domain.scss';
 
 const query = new URLSearchParams(location.search);
@@ -96,6 +97,20 @@ class BasketReview extends AuctionBasket {
         ? basketScope([{name: 'fixture', bid: 10000000, lockup: 15000000}], 21600) : null,
       rowMeta: {fixture: {state: 'BIDDING', hoursUntilReveal: 12}},
     };
+  }
+}
+class RegistrationReview extends RegisterAll {
+  constructor(props) {
+    super(props);
+    this.state = {...this.state, loaded: true, operation: {
+      status: 'paused', running: false, retryLocked: true,
+      failedName: 'fixture-second', failedStage: 'broadcasting', notAttempted: ['fixture-third'],
+      entries: [
+        {name: 'fixture-first', status: 'submitted', stage: 'submitted', txid: 'a'.repeat(64)},
+        {name: 'fixture-second', status: 'unknown', stage: 'broadcasting', txid: 'b'.repeat(64)},
+        {name: 'fixture-third', status: 'queued', stage: 'queued', txid: null},
+      ],
+    }};
   }
 }
 const fixtureListings = [
@@ -173,6 +188,7 @@ const screens = {
   receive: [Receive, '/receive'],
   basket: [Basket, '/auction-basket'],
   review: [BasketReview, '/auction-basket'],
+  registration: [RegistrationReview, '/bids'],
   open: [OpenBasket, '/open-basket'],
   domains: [Domains, '/domains'],
   marketplace: [Exchange, '/exchange'],

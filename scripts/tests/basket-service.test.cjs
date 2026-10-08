@@ -61,7 +61,7 @@ function fixture() {
   const service = {
     name: 'disposable', networkName: 'regtest', walletSelectionGeneration: 0, rescanBackendGeneration: 0,
     preparedBidManyAttempts: new Map(), walletMutationCoordinator: new WalletMutationCoordinator(),
-    node: {wdb: {get: async () => wallet, addTX: async () => {}}},
+    node: {wdb: wallet.wdb},
     nodeService: {getDir: async () => '/unused-disposable-fixture',
       getNameInfo: async () => ({info: {state: expired ? 'REVEAL' : 'BIDDING'}}),
       broadcastRawTx: async (_, options = {}) => {options.assertCurrent?.(); counts.broadcast++;}},
@@ -71,6 +71,7 @@ function fixture() {
     _executeTransactionRPC: async method => {assert.equal(method, 'createbatch'); counts.construct++; return new FakeMTX();},
     _setBasketSubmissionProgress() {}, _recordBasketTiming: () => 0,
   };
+  Object.assign(wallet.wdb, {get: async () => wallet, addTX: async () => {}});
   const bindings = {basketScope, assertBasketScope, assertBasketEligibility, basketScopeError,
     reconcileBasketOutputs, reserveTransactionInputs, broadcastAndRecord, MTX: FakeMTX,
     hashName, crypto: require('node:crypto'), ONE_MINUTE: 60000, TRANSACTION_TIMEOUT_MS: 120000,
