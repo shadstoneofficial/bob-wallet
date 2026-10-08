@@ -1,4 +1,10 @@
 {
+  "sellNameTitle": "Sell this name",
+  "sellNameShakedexHelp": "Create or manage a Shakedex listing. The existing listing flow includes its transaction and backup requirements.",
+  "sellNameShakedexAction": "Open Shakedex listing",
+  "sellNameShakexHelp": "Publish an asking price and contact in DNS records. This advertises the name; it does not complete a sale. ShakeX indexes mainnet only.",
+  "sellNameShakexAction": "Manage ShakeX advertisement",
+  "sellNameUnavailable": "Selling requires a registered name you own, with no pending operation or unsaved record changes.",
   "abort": "Abort",
   "accept": "Accept",
   "addABlind": "Add a blind",

@@ -425,6 +425,15 @@ body.bob-theme-dark {
   pre { white-space: pre-wrap; overflow-wrap: anywhere; }
   &:disabled { opacity: .65; }
 }
+.name-selling {
+  &__options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2rem; }
+  h3 { font-size: 1rem; margin: 0 0 .75rem; }
+  p { line-height: 1.5; overflow-wrap: anywhere; }
+  &__options > div { display: flex; flex-direction: column; align-items: flex-start; }
+  &__options button { @extend %btn-secondary; margin-top: auto; padding: .65rem 1rem; max-width: 100%; height: auto; white-space: normal; }
+  .shakex-listing-form { border: 0; border-top: 1px solid $manatee-gray; border-radius: 0; padding: 1rem 0 0; }
+  @media (max-width: 900px) { &__options { grid-template-columns: minmax(0, 1fr); } }
+}
 body.bob-theme-dark .shakex-listing-form input { background: #0d1117; color: #e6edf3; }
 
 body.bob-theme-dark .activate-import-review--shakex {

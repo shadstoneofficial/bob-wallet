@@ -1,4 +1,10 @@
 {
+  "sellNameTitle": "出售此域名",
+  "sellNameShakedexHelp": "创建或管理 Shakedex 挂单。现有挂单流程包含交易及备份要求。",
+  "sellNameShakedexAction": "打开 Shakedex 挂单",
+  "sellNameShakexHelp": "在 DNS 记录中发布要价和联系方式。这只是出售广告，不会完成交易。ShakeX 仅索引主网。",
+  "sellNameShakexAction": "管理 ShakeX 出售广告",
+  "sellNameUnavailable": "出售需要您拥有已注册的域名，且没有待处理操作或未保存的记录更改。",
   "abort": "中止",
   "accept": "接受",
   "addABlind": "添加掩护金额",

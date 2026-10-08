@@ -28,6 +28,8 @@ import Exchange, {Exchange as ExchangeScreen} from '../../app/pages/Exchange';
 import Settings from '../../app/pages/Settings';
 import RevealSeed from '../../app/pages/Settings/RevealSeedModal';
 import {FinalizeWithPaymentModal} from '../../app/pages/MyDomain/FinalizeWithPaymentModal';
+import {Records} from '../../app/components/Records';
+import '../../app/pages/MyDomain/my-domain.scss';
 
 const query = new URLSearchParams(location.search);
 const localeName = normalizeLocale(query.get('locale') || 'zh-CN');
@@ -149,6 +151,12 @@ class AddonsReview extends Addons {
 }
 function CatalogReview() {return <AddonsReview location={{pathname: '/addons'}} history={{push: noop}} deeplinkParams={{}} />;}
 const screens = {
+  selling: [() => <div className="my-domain"><Records name="fixture" network="regtest"
+    domain={{isOwner: true, info: {registered: true}}} resource={{records: []}}
+    currentHeight={1000} editable sellingOptions transferring={false} deeplinkParams={{}}
+    showSuccess={noop} sendUpdate={noop} clearDeeplinkParams={noop} loadCanonicalNameInfo={noop}
+    refreshCanonicalNameInfo={noop} openProposalFile={noop} readProposalFile={noop}
+    history={{push: noop}} /></div>, '/domains/fixture'],
   login: [LoginReview, '/login'],
   confirm: [SendConfirmation, '/send'],
   addons: [CatalogReview, '/addons'],

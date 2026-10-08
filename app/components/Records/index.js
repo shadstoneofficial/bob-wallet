@@ -22,6 +22,8 @@ import {deserializeRecord, serializeRecord} from '../../utils/recordHelpers';
 import {I18nContext} from "../../utils/i18n";
 import fs from 'fs';
 import ListingForm from '../../addons/shakex/ListingForm';
+import Collapsible from '../Collapsible';
+import {LISTING_STATUS} from '../../constants/exchange';
 import {buildSaleReview} from '../../addons/shakex/records';
 import nodeClient from '../../utils/nodeClient';
 import {assertCanonicalStillCurrent, parseActivateProposal} from '../../utils/activateProposal';
@@ -126,6 +128,7 @@ export class Records extends Component {
       refreshError: '',
       importReview: null,
       isImporting: false,
+      saleProvider: null,
     };
   }
 
@@ -140,6 +143,7 @@ export class Records extends Component {
         contextRevision: state.contextRevision + 1,
         isUpdating: false,
         isImporting: false,
+        saleProvider: null,
         isRefreshingRecords: false,
         errorMessage: '',
         resourceName: props.name,
@@ -595,15 +599,9 @@ export class Records extends Component {
       return this.renderRefreshStatus();
     }
 
-    return (
+    const records = (
       <div>
         {this.renderRefreshStatus()}
-        {editable && domain.isOwner && <ListingForm
-          key={this.props.name}
-          resource={resource}
-          disabled={this.state.isDirty || this.state.isImporting || this.state.isUpdating || !!pendingData || transferring || !!domain.pendingOperation}
-          onStage={this.onStageSale}
-        />}
         {this.renderImportReview()}
         <Table
           className={cn('records-table', {
@@ -620,6 +618,51 @@ export class Records extends Component {
         </Table>
       </div>
     );
+    if (!this.props.sellingOptions) return records;
+    return <div>
+      {editable && domain.isOwner && <Collapsible className="my-domain__info-panel" title={t('sellNameTitle')} overflowY={false}>
+        {this.renderSellingOptions()}
+      </Collapsible>}
+      <Collapsible className="my-domain__info-panel" title={t('records')} overflowY={false}>
+        {records}
+      </Collapsible>
+    </div>;
+  }
+
+  saleDisabled = () => !this.props.domain?.isOwner || !this.props.domain?.info?.registered ||
+    this.props.domain.info.revoked || this.props.canonicalLoading || !!this.props.canonicalError ||
+    this.state.isDirty || this.state.isImporting || this.state.isUpdating ||
+    !!this.props.pendingData || this.props.transferring || !!this.props.domain.pendingOperation;
+
+  chooseSale = provider => {
+    if (!this.mounted || this.saleDisabled()) return;
+    if (provider === 'shakedex') {
+      const listing = (this.props.shakedexListings || []).find(item =>
+        item.nameLock?.name === this.props.name && item.status !== LISTING_STATUS.FINALIZE_CANCEL_CONFIRMED);
+      this.props.history.push(listing
+        ? `/exchange?listing=${encodeURIComponent(this.props.name)}`
+        : `/exchange?createListing=1&name=${encodeURIComponent(this.props.name)}`);
+    } else if (provider === 'shakex') {
+      this.setState({saleProvider: 'shakex'});
+    }
+  };
+
+  renderSellingOptions() {
+    const {t} = this.context;
+    const disabled = this.saleDisabled();
+    return <section className="name-selling">
+      <div className="name-selling__options">
+        <div><h3>Shakedex</h3><p>{t('sellNameShakedexHelp')}</p>
+          <button type="button" disabled={disabled} onClick={() => this.chooseSale('shakedex')}>{t('sellNameShakedexAction')}</button>
+        </div>
+        <div><h3>ShakeX</h3><p>{t('sellNameShakexHelp')}</p>
+          <button type="button" disabled={disabled} aria-expanded={this.state.saleProvider === 'shakex'} onClick={() => this.chooseSale('shakex')}>{t('sellNameShakexAction')}</button>
+        </div>
+      </div>
+      {disabled && <p>{t('sellNameUnavailable')}</p>}
+      {this.state.saleProvider === 'shakex' && <ListingForm key={this.props.name}
+        resource={this.props.resource} disabled={disabled} onStage={this.onStageSale} />}
+    </section>;
   }
 }
 
@@ -638,6 +681,7 @@ export default withRouter(
         network: state.wallet.network,
         walletId: state.wallet.wid,
         walletGeneration: state.wallet.requestGeneration || 0,
+        shakedexListings: state.exchange.listings,
         deeplinkParams,
       };
     },
