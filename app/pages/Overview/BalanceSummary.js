@@ -3,6 +3,15 @@ import {BigNumber} from 'bignumber.js';
 import {I18nContext} from '../../utils/i18n';
 import {displayBalance} from '../../utils/balances';
 import {balanceReadiness} from '../../utils/balanceReadiness';
+import {shell} from '../../renderer/electron';
+import {getSafeExternalUrl} from '../../utils/urlPolicy';
+
+export function balanceGuideUrl(locale) {
+  const prefix = new Map([
+    ['zh-CN', '/zh'], ['ru-RU', '/ru'], ['th-TH', '/th'],
+  ]).get(locale) || '';
+  return `https://bobwallet.org${prefix}/docs/wallet-balances/`;
+}
 
 export function balanceSnapshotReady(props) {
   return balanceReadiness(props) === 'ready';
@@ -12,6 +21,7 @@ export default function BalanceSummary(props) {
   const {t} = useContext(I18nContext);
   const readiness = balanceReadiness(props);
   const ready = readiness === 'ready';
+  const guideUrl = balanceGuideUrl(props.locale);
   const value = amount => ready
     ? `${new BigNumber(displayBalance(amount, false, 2)).toFormat(2)} HNS`
     : t('balanceUpdating');
@@ -42,5 +52,10 @@ export default function BalanceSummary(props) {
       <p>{t('balanceBurnHelp')}</p>
       <p>{t('balanceSpendableHelp')}</p>
     </details>
+    <a className="overview__balance-guide" href={guideUrl} onClick={event => {
+      event.preventDefault();
+      const safeUrl = getSafeExternalUrl(guideUrl);
+      if (safeUrl) shell.openExternal(safeUrl);
+    }}>{t('balanceGuideLink')}</a>
   </section>;
 }

@@ -38,6 +38,7 @@ const ACTIVE_LISTING_STATUSES = new Set([
 @withRouter
 @connect(
   (state) => ({
+    locale: state.app.locale,
     spendableBalance: state.wallet.balance.spendable,
     confirmedBalance: state.wallet.balance.confirmed,
     unconfirmedBalance: state.wallet.balance.unconfirmed,

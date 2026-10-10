@@ -186,7 +186,7 @@ const screens = {
   backup: [Backup, '/new-wallet'],
   password: [Password, '/new-wallet'],
   overview: [Overview, '/overview'],
-  balance: [() => <div className="overview"><BalanceSummary walletName="fixture-only"
+  balance: [() => <div className="overview"><BalanceSummary locale={localeName} walletName="fixture-only"
     walletType="standard" balanceReady={true} progress={1}
     spendableBalance={123456789012345} lockedUnconfirmed={1000000000000}
     confirmedBalance={124456789012345} unconfirmedBalance={124456789012345} /></div>, '/overview'],
