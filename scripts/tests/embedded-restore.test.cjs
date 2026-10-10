@@ -59,6 +59,18 @@ for (const {nodeMode, delayedAck, scenario} of [
         && action.payload.target === 20 && action.payload.ready === false));
       assert.equal(second.wallets.length, 5);
       assert(second.evidence.balances.every(wallet => wallet.confirmed > 0 && wallet.historyCount > 0));
+      assert(second.evidence.balances[0].confirmed > second.evidence.balances[1].confirmed);
+      assert(second.evidence.balances.every(wallet =>
+        wallet.unconfirmed === wallet.spendable + wallet.lockedUnconfirmed));
+      assert.deepEqual(second.selectionSnapshots.map(snapshot => snapshot.walletId),
+        ['acceptance-primary', 'acceptance-secondary', 'acceptance-primary']);
+      assert.deepEqual(second.selectionSnapshots.map(snapshot => snapshot.confirmed), [
+        second.evidence.balances[0].confirmed,
+        second.evidence.balances[1].confirmed,
+        second.evidence.balances[0].confirmed,
+      ]);
+      assert.notEqual(second.selectionSnapshots[0].balanceContext,
+        second.selectionSnapshots[2].balanceContext, 'A-B-A selection has a new backend generation');
       assert.equal(second.evidence.facility, 'embedded-NodeService-WalletService');
       assert.equal(second.evidence.packagedBackendStatus, 'NOT TESTED');
       assert.equal(second.realProfileAccessed, false);

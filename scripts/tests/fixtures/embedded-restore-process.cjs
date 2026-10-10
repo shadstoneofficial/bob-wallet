@@ -114,6 +114,18 @@ const watchdog = setTimeout(() => {process.stderr.write('Embedded source fixture
       assert(await services.wallet.service.node.wdb.get(walletId));
     }
     const evidence = result.sourceFixture;
+    let selectionSnapshots = null;
+    if (evidence.status === 'EMBEDDED REPLAY COMPLETE') {
+      selectionSnapshots = [];
+      for (const walletId of ['acceptance-primary', 'acceptance-secondary', 'acceptance-primary']) {
+        services.wallet.service.setWallet(walletId);
+        const account = await services.wallet.service.getAccountInfo();
+        assert.equal(account.wid, walletId);
+        selectionSnapshots.push({walletId, balanceContext: account.balanceContext,
+          confirmed: account.balance.confirmed, unconfirmed: account.balance.unconfirmed,
+          lockedUnconfirmed: account.balance.lockedUnconfirmed});
+      }
+    }
     const rescanActions = actions.filter(action => action.payload?.activeRequestIds);
     if (evidence.backendState.status === 'failed') {
       assert(rescanActions.some(action => action.payload.status === 'failed'
@@ -121,7 +133,7 @@ const watchdog = setTimeout(() => {process.stderr.write('Embedded source fixture
     }
     assert.equal(monitor.snapshot().length, 0, JSON.stringify(monitor.snapshot()));
     process.stdout.write(`EMBEDDED_RESTORE_RESULT ${JSON.stringify({evidence, rescanActions,
-      wallets: result.walletIds, delayedAcknowledgements,
+      wallets: result.walletIds, selectionSnapshots, delayedAcknowledgements,
       failures: monitor.snapshot(), realProfileAccessed: false})}\n`);
   } finally {
     await services.node.service.stop();

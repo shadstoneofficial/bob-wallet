@@ -3,6 +3,7 @@ import {applyMiddleware, combineReducers, createStore} from 'redux';
 import thunk from 'redux-thunk';
 import walletReducer, {INVALIDATE_WALLET_REQUESTS, SET_WALLET, SET_BALANCE} from '../walletReducer';
 import {balanceSnapshotReady} from '../../pages/Overview/BalanceSummary';
+import {balanceReadiness} from '../../utils/balanceReadiness';
 
 import walletClient from '../../utils/walletClient';
 import {sendRedeemAll} from '../names';
@@ -82,7 +83,17 @@ test('balance disclosure distinguishes unknown from zero and rejects cross-walle
   t.ok(balanceSnapshotReady(props), 'pending snapshot reconciles independently of confirmed total');
   t.notOk(balanceSnapshotReady({...props, balanceReady: false}), 'transition is unknown');
   t.notOk(balanceSnapshotReady({...props, walletSync: true}), 'rescan is updating');
+  t.equal(balanceReadiness({...props, walletSync: true}), 'wallet-rescanning', 'rescan reason is inspectable');
+  t.equal(balanceReadiness({...props, balanceReady: false}), 'wallet-snapshot-pending', 'missing snapshot is inspectable');
+  t.notOk(balanceSnapshotReady({...props, chain: {progress: 0.99996, synced: false}}),
+    'rounded sync progress alone cannot disclose a balance');
+  t.ok(balanceSnapshotReady({...props, chain: {progress: 0.99996, synced: true}}),
+    'authoritative synchronized state can disclose a complete wallet snapshot');
+  t.equal(balanceReadiness({...props, chain: {progress: 0.99996, synced: true,
+    height: 19, bestPeerHeight: 20}}), 'chain-behind-peer', 'lagging peer height wins');
   t.notOk(balanceSnapshotReady({...props, lockedUnconfirmed: undefined}), 'missing lock is not zero');
+  t.equal(balanceReadiness({...props, spendableBalance: 71}), 'wallet-amounts-disagree',
+    'mismatched arithmetic remains hidden');
   t.ok(balanceSnapshotReady({...props, spendableBalance: 0, lockedUnconfirmed: 0, unconfirmedBalance: 0, confirmedBalance: 0}), 'known zero is valid');
   const state = {...walletReducer(undefined, {}), wid: 'fixture-b', network: 'regtest', balanceReady: true};
   t.equal(walletReducer(state, {type: SET_BALANCE, payload: {walletId: 'fixture-a', network: 'regtest'}}), state, 'another wallet balance rejected');

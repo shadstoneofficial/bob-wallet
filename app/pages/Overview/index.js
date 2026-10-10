@@ -17,6 +17,7 @@ import { MARKETPLACE_STATUS } from '../../utils/marketplaceRequest';
 import { I18nContext } from '../../utils/i18n';
 import {fetchWalletStats} from '../../ducks/walletStats';
 import BalanceSummary from './BalanceSummary';
+import {balanceReadiness} from '../../utils/balanceReadiness';
 import './overview.scss';
 
 const analytics = aClientStub(() => require('electron').ipcRenderer);
@@ -45,6 +46,7 @@ const ACTIVE_LISTING_STATUSES = new Set([
     balanceReady: state.wallet.balanceReady,
     height: state.node.chain.height,
     progress: state.node.chain.progress,
+    chain: state.node.chain,
     network: state.wallet.network || state.node.network,
     hnsPrice: state.node.hnsPrice,
     showUsdValue: state.app.showUsdValue,
@@ -85,6 +87,7 @@ export default class Overview extends Component {
     balanceReady: PropTypes.bool,
     height: PropTypes.number,
     progress: PropTypes.number,
+    chain: PropTypes.object,
     network: PropTypes.string,
     hnsPrice: PropTypes.object,
     showUsdValue: PropTypes.bool,
@@ -363,7 +366,7 @@ export default class Overview extends Component {
   renderActionCenter(items) {
     const { t } = this.context;
     if (this.props.walletStats.isLoading || this.props.walletStats.error
-      || !this.props.balanceReady || this.props.walletSync || this.props.progress < 1) {
+      || balanceReadiness(this.props) !== 'ready') {
       return <section className="overview__section">
         <h3>{t('overviewActionCenter')}</h3>
         <p>{t('balanceUpdating')}</p>

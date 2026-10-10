@@ -2,24 +2,23 @@ import React, {useContext} from 'react';
 import {BigNumber} from 'bignumber.js';
 import {I18nContext} from '../../utils/i18n';
 import {displayBalance} from '../../utils/balances';
+import {balanceReadiness} from '../../utils/balanceReadiness';
 
 export function balanceSnapshotReady(props) {
-  return props.balanceReady === true && !props.walletSync
-    && props.progress >= 1
-    && ['spendableBalance', 'lockedUnconfirmed', 'confirmedBalance', 'unconfirmedBalance']
-      .every(key => Number.isSafeInteger(props[key]) && props[key] >= 0)
-    && props.spendableBalance + props.lockedUnconfirmed === props.unconfirmedBalance;
+  return balanceReadiness(props) === 'ready';
 }
 
 export default function BalanceSummary(props) {
   const {t} = useContext(I18nContext);
-  const ready = balanceSnapshotReady(props);
+  const readiness = balanceReadiness(props);
+  const ready = readiness === 'ready';
   const value = amount => ready
     ? `${new BigNumber(displayBalance(amount, false, 2)).toFormat(2)} HNS`
     : t('balanceUpdating');
   const kind = props.walletWatchOnly ? 'overviewWalletWatchOnly'
     : props.walletType === 'multisig' ? 'overviewWalletMultisig' : 'overviewWalletStandard';
-  return <section className="overview__hero overview__balance" aria-label={t('balanceDetails')}>
+  return <section className="overview__hero overview__balance" aria-label={t('balanceDetails')}
+    data-balance-readiness={readiness}>
     <div className="overview__hero-main">
       <span className="overview__hero-kicker">{t('balanceSpendableNow')}</span>
       <span className="overview__hero-amount">{value(props.spendableBalance)}</span>

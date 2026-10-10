@@ -10,6 +10,14 @@ const deny = () => {throw new Error('Source replay test forbids every socket.');
 net.Socket.prototype.connect = net.connect = net.createConnection = net.Server.prototype.listen = deny;
 dgram.createSocket = deny;
 const {installProductRuntime, getProductRuntime} = require('../../app/background/packagedAcceptance/productRuntime');
+const {BLOCK_ALLOCATION, BLOCK_WALLET_INDEXES} = require('../../app/background/packagedAcceptance/embeddedRestore');
+
+test('embedded restore funds generated wallets with fixed unequal regtest history', () => {
+  assert.deepEqual(BLOCK_ALLOCATION, [8, 5, 4, 2, 1]);
+  assert.equal(BLOCK_WALLET_INDEXES.length, 20);
+  assert.deepEqual(BLOCK_ALLOCATION.map((_, index) =>
+    BLOCK_WALLET_INDEXES.filter(value => value === index).length), BLOCK_ALLOCATION);
+});
 
 for (const scenario of ['restore-full', 'restore-spv']) {
   test(`retained in-memory fixture invokes actual reviewed ${scenario} replay`, {timeout: 30000}, async () => {
