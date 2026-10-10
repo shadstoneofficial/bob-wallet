@@ -96,6 +96,7 @@ test('packaged restore fixture waits for hydrated SPV target and request identit
     }
     if (request === './productRuntime' && parent?.filename === fixturePath) {
       return {getProductRuntime: () => ({
+        async attachWalletService() {},
         async initializeRestore() {
           restoreObserved = true;
           const state = wdb.bobRescanState;

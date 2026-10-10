@@ -1,10 +1,11 @@
-import React, {useEffect, useMemo, useState} from 'react';
+import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {useStore} from 'react-redux';
 import {AuctionBasket} from '../../pages/AuctionBasket';
 import {sendBidMany, sendRegisterAll} from '../../ducks/names';
 import {RegisterAll} from '../../components/RegisterAll';
 import walletClient from '../../utils/walletClient';
-import {GET_PASSPHRASE} from '../../ducks/walletReducer';
+import {GET_PASSPHRASE, SET_WALLET_NETWORK} from '../../ducks/walletReducer';
+import {invalidateWalletRequests, setWallet} from '../../ducks/walletActions';
 import {makeClient} from '../ipc/ipc';
 import ListingForm from '../../addons/shakex/ListingForm';
 import ShakeX from '../../addons/shakex';
@@ -35,9 +36,24 @@ export default function InteractiveFixture() {
   const [basketClears, setBasketClears] = useState(0);
   const [saleRoute, setSaleRoute] = useState('');
   const [blockedWrites, setBlockedWrites] = useState(0);
+  const appliedWallet = useRef(null);
+  const appliedStep = useRef(-1);
+  const applyFixture = value => {
+    if (value.state.controlStep < appliedStep.current) return;
+    appliedStep.current = value.state.controlStep;
+    if (appliedWallet.current !== value.walletId) {
+      store.dispatch(invalidateWalletRequests(value.walletId));
+      store.dispatch({type: SET_WALLET_NETWORK, payload: 'regtest'});
+      store.dispatch(setWallet({wid: value.walletId, type: 'hot', balance: {
+        confirmed: 0, unconfirmed: 0, lockedConfirmed: 0, lockedUnconfirmed: 0,
+      }}));
+      appliedWallet.current = value.walletId;
+    }
+    setFixture(value);
+  };
   useEffect(() => {
     let active = true;
-    const update = () => acceptance.describe().then(value => {if(active)setFixture(value);})
+    const update = () => acceptance.describe().then(value => {if(active)applyFixture(value);})
       .catch(error => {if(active)setNotice(error.message);});
     update();
     const timer = setInterval(update, 500);
@@ -51,8 +67,7 @@ export default function InteractiveFixture() {
       && fixture?.state.controlStep === 1 && name === names[0] ? '2' : '1', blindAmount: '1',
   }])), [names, fixture?.plan.fixtureType, fixture?.state.controlStep]);
   if (!fixture) return <main><p>Preparing isolated acceptance fixture...</p><p role="alert">{notice}</p></main>;
-  const getState = () => ({...store.getState(), wallet:{...store.getState().wallet,
-    wid:fixture.walletId,network:'regtest',requestGeneration:0,type:'hot',watchOnly:false}});
+  const getState = () => store.getState();
   const dispatch = action => {
     if (typeof action === 'function') return action(dispatch, getState);
     if (action?.type === GET_PASSPHRASE) return action.payload.resolve();
@@ -77,15 +92,17 @@ export default function InteractiveFixture() {
     {CONTROL_LABELS[fixture.plan.fixtureType] && fixture.state.controlStep <
       (fixture.plan.fixtureType.endsWith('-switch') ? 2 : 1) &&
       <button type="button" onClick={() => acceptance.advance().then(() => acceptance.describe())
-        .then(setFixture).catch(error => setNotice(error.message))}>
+        .then(applyFixture).catch(error => setNotice(error.message))}>
         {CONTROL_LABELS[fixture.plan.fixtureType]}
       </button>}
     <button type="button" onClick={()=>setVisible(value=>!value)}>{fixture.registration
       ? (visible?'Leave registrations':'Return to registrations') : (visible?'Leave basket':'Return to basket')}</button>
     <pre data-testid="acceptance-state">{JSON.stringify(fixture.state,null,2)}</pre>
+    <output data-testid="acceptance-renderer-generation">{store.getState().wallet.requestGeneration}</output>
     <output data-testid="acceptance-basket-clears">{basketClears}</output>
     {fixture.registration && <pre data-testid="acceptance-register-state">{JSON.stringify(fixture.registration,null,2)}</pre>}
-    {visible && fixture.registration && <RegisterAll walletId={fixture.walletId} network="regtest" requestGeneration={0}
+    {visible && fixture.registration && <RegisterAll walletId={fixture.walletId} network="regtest"
+      requestGeneration={store.getState().wallet.requestGeneration}
       getStatus={context=>walletClient.getRegisterAllStatus(context)}
       cancel={context=>walletClient.cancelRegisterAll(context)}
       submit={(isCurrent,operationId)=>sendRegisterAll(isCurrent,operationId)(dispatch,getState)} />}
@@ -103,7 +120,8 @@ export default function InteractiveFixture() {
     {review && <pre data-testid="acceptance-resource-review">{JSON.stringify(review,null,2)}</pre>}
     <ShakeX />
     {fixture.plan.fixtureType === 'owned-name-sell' && <div className="my-domain">
-      <Records name="fixture-owned" network="regtest" walletId={fixture.walletId} walletGeneration={0}
+      <Records name="fixture-owned" network="regtest" walletId={fixture.walletId}
+        walletGeneration={store.getState().wallet.requestGeneration}
         domain={{isOwner: true, info: {registered: true}}} resource={FIXED_RESOURCE}
         currentHeight={1000} editable sellingOptions transferring={false} deeplinkParams={{}}
         showSuccess={() => {}} sendUpdate={() => {setBlockedWrites(count => count + 1); throw new Error('Acceptance DNS write blocked.');}}

@@ -17,6 +17,7 @@ function createProductRuntime(config, db) {
     ? require('./registerRuntime').createRegisterRuntime(plan, db) : null;
   let state;
   let pending;
+  let walletService;
   let preparedAttempt = null;
   let approvedAttempt = null;
   const fixedScope = () => ({
@@ -38,6 +39,7 @@ function createProductRuntime(config, db) {
         scenario: config.scenario, preparationCalls: 0, cancellationCalls: 0,
         inertBoundaryCalls: 0, uncertain: false, liveBroadcastCalls: 0,
         controlStep: 0, selectedWallet: 'acceptance-primary', historyLookupCalls: 0,
+        backendGuardRejections: 0,
       };
       if (state.scenario !== config.scenario) reject('profile scenario change');
     }
@@ -83,7 +85,7 @@ function createProductRuntime(config, db) {
         if (state.uncertain || state.inertBoundaryCalls) reject('persisted inert boundary duplicate');
         if (pending) reject('overlapping preparation');
         if (plan.fixtureType === 'basket-expired' && state.controlStep) reject('expired reviewed name');
-        if (plan.fixtureType === 'basket-wallet-switch' && state.controlStep) reject('stale wallet context');
+        if (plan.fixtureType === 'basket-wallet-switch' && !walletService) reject('missing disposable wallet service');
         state.preparationCalls += 1;
         preparedAttempt = null;
         approvedAttempt = null;
@@ -94,12 +96,22 @@ function createProductRuntime(config, db) {
           throw error;
         }
         if (plan.fixtureType === 'basket-delayed' || plan.fixtureType === 'basket-wallet-switch') {
+          const backendAttempt = plan.fixtureType === 'basket-wallet-switch' ? {
+            cancelled: false, node: walletService.node, walletId: walletService.name,
+            selectionGeneration: walletService.walletSelectionGeneration,
+            backendGeneration: walletService.rescanBackendGeneration,
+          } : null;
           delayed = new Promise((resolve, rejectPromise) => {
-            const timer = setTimeout(() => {
+            const timer = setTimeout(async () => {
               pending = null;
-              if (plan.fixtureType === 'basket-wallet-switch' && state.controlStep) {
-                rejectPromise(new Error('Controlled wallet switch invalidated preparation.'));
-                return;
+              if (backendAttempt) {
+                try {walletService._assertBidManyCurrent(backendAttempt);}
+                catch (error) {
+                  state.backendGuardRejections = (state.backendGuardRejections || 0) + 1;
+                  await save();
+                  rejectPromise(error);
+                  return;
+                }
               }
               preparedAttempt = attemptId;
               resolve({attemptId, scope: fixedScope()});
@@ -166,6 +178,22 @@ function createProductRuntime(config, db) {
   } : {};
   return {
     walletMethods: {...walletMethods, ...registration?.walletMethods},
+    async attachWalletService(service) {
+      await load();
+      if (service?.networkName !== 'regtest' || service.node?.wdb?.network?.type !== 'regtest'
+          || typeof service.setWallet !== 'function'
+          || typeof service._assertBidManyCurrent !== 'function') reject('non-disposable wallet service');
+      if (service.name !== state.selectedWallet) {
+        const switching = ['basket-wallet-switch', 'register-wallet-switch'].includes(plan.fixtureType);
+        if (!switching || !['acceptance-primary', 'acceptance-secondary'].includes(state.selectedWallet)) {
+          reject('unexpected disposable wallet selection');
+        }
+        service.setWallet(state.selectedWallet);
+      }
+      if (service.name !== state.selectedWallet) reject('disposable wallet selection was not restored');
+      walletService = service;
+      if (registration) await registration.attachWalletService(service);
+    },
     nodeMethods: names.length ? {
       async getNameInfo(name) {
         if (!names.includes(name)) reject('non-fixture name');
@@ -186,9 +214,18 @@ function createProductRuntime(config, db) {
         if ((!switching && !oneStep) || state.controlStep >= (switching ? 2 : 1)) {
           reject('unsupported or repeated fixture transition');
         }
-        state.controlStep += 1;
-        if (switching) state.selectedWallet = state.controlStep === 1
-          ? 'acceptance-secondary' : 'acceptance-primary';
+        const nextStep = state.controlStep + 1;
+        if (switching) {
+          if (!walletService) reject('missing disposable wallet service');
+          const next = nextStep === 1 ? 'acceptance-secondary' : 'acceptance-primary';
+          const previousGeneration = walletService.walletSelectionGeneration;
+          walletService.setWallet(next);
+          if (walletService.name !== next || walletService.walletSelectionGeneration <= previousGeneration) {
+            reject('wallet service did not change selection generation');
+          }
+          state.selectedWallet = next;
+        }
+        state.controlStep = nextStep;
         await save();
         return {controlStep: state.controlStep, selectedWallet: state.selectedWallet};
       });
@@ -208,6 +245,7 @@ function createProductRuntime(config, db) {
       await queue;
       await load();
       return {plan, walletId: state.selectedWallet || 'acceptance-primary', state: {...state},
+        backendSelectionGeneration: walletService?.walletSelectionGeneration ?? null,
         registration: registration ? await registration.describe() : null,
         restoreEvidence, listings: FIXED_LISTINGS, packagedStatus: 'NOT TESTED'};
     },

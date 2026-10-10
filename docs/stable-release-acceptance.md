@@ -4,6 +4,8 @@ Status: source integration and independent review completed on 2026-10-08; fresh
 
 The follow-up source-only acceptance branch adds fixed cases for overlapping restore/import, reviewed basket expiry and scope drift, basket and Register All wallet A-B-A, exact-versus-wrong candidate ID reconciliation, and the actual owned-name selling chooser. See `docs/packaged-acceptance-harness.md` for the exact scenario matrix and external runner procedure. These source tests do not change the signed v2.3.15 binaries or close any packaged gate; the release remains on hold.
 
+2026-10-10 follow-up source check: 1,423 product assertions, 14 service tests and 79 acceptance-harness tests pass. Production renderer compilation, nine sync fixture invocations and the locale check also pass. The expected failing SPV baseline remains an explicit control; the corrected startup fixture reports no backend error. These results do not cover a newly signed executable or an installed-app test.
+
 ## Verified source checkpoint
 
 - Combined source tests: 1,423 product assertions, 14 service lifecycle tests and 64 acceptance-harness tests passed. The final acceptance DB key-type hardening was separately rerun through all 64 harness tests.
@@ -13,7 +15,7 @@ The follow-up source-only acceptance branch adds fixed cases for overlapping res
 - Independent review found and resolved the Clear-draft uncertainty-lock bypass, successful residual-draft lock, reacquired-name relisting route and acceptance DB binary-key bypass.
 - Tests used mocks or isolated disposable data. No existing wallet profile, secret or live transaction was accessed.
 
-The registration fixture uses real UI, thunk, IPC and journal with a MOCKED WalletService proxy and INERT signing/transport. Actual service method tests remain a separate source-level layer. Do not present this combination as packaged real-transport verification.
+The registration fixture uses real UI, thunk and IPC. Exact-ID status now calls the real WalletService status endpoint and journal with fixed inert `getTX` responses; send/construction/transport remain mocked or inert. The basket fixture still mocks transaction-history lookup below its real coordinator. Do not present either as production history parsing, packaged real-transport verification, or signed-package acceptance.
 
 ## Scope
 

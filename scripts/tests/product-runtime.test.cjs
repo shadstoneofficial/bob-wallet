@@ -7,6 +7,7 @@ const test = require('node:test');
 const {createProductRuntime} = require('../../app/background/packagedAcceptance/productRuntime');
 const {buildControlledScenarioPlan} = require('../../app/background/packagedAcceptance/scenarios');
 const {wrapAcceptanceDbMethods, wrapAcceptanceWalletMethods, BLOCKED_WALLET_METHODS} = require('../../app/background/packagedAcceptance/policy');
+const {disposableWalletService} = require('./fixtures/disposable-wallet-service.cjs');
 
 function memoryDb() {
   const values=new Map();
@@ -97,10 +98,36 @@ test('fixed fixture transitions reject arguments, repetition, and unsupported sc
   await assert.rejects(expired.advance(),{code:'ERR_PACKAGED_ACCEPTANCE_POLICY'});
   const ordinary=createProductRuntime({scenario:'multiwallet'},memoryDb());
   await assert.rejects(ordinary.advance(),{code:'ERR_PACKAGED_ACCEPTANCE_POLICY'});
-  const switching=createProductRuntime({scenario:'basket-wallet-switch'},memoryDb());
+  const switchingDb=memoryDb();
+  const switching=createProductRuntime({scenario:'basket-wallet-switch'},switchingDb);
+  const service=disposableWalletService();
+  await switching.attachWalletService(service);
   assert.equal((await switching.advance()).selectedWallet,'acceptance-secondary');
+  const reopened=createProductRuntime({scenario:'basket-wallet-switch'},switchingDb);
+  const reopenedService=disposableWalletService();
+  await reopened.attachWalletService(reopenedService);
+  assert.equal(reopenedService.name,'acceptance-secondary');
   assert.equal((await switching.advance()).selectedWallet,'acceptance-primary');
+  assert.equal(service.walletSelectionGeneration,2);
   await assert.rejects(switching.advance(),{code:'ERR_PACKAGED_ACCEPTANCE_POLICY'});
+});
+
+test('actual WalletService stale-selection guard rejects delayed A-B-A without component cancellation', {timeout: 20000}, async()=>{
+  const runtime=createProductRuntime({scenario:'basket-wallet-switch'},memoryDb());
+  const service=disposableWalletService();
+  await runtime.attachWalletService(service);
+  const pending=runtime.walletMethods.prepareBidMany(payload('basket-wallet-switch'),attempt);
+  const rejected=assert.rejects(pending,{code:'BASKET_SCOPE_CHANGED'});
+  await new Promise(resolve=>setImmediate(resolve));
+  await runtime.advance();await runtime.advance();
+  await rejected;
+  const result=await runtime.describe();
+  assert.equal(service.name,'acceptance-primary');
+  assert.equal(service.walletSelectionGeneration,2);
+  assert.equal(result.state.backendGuardRejections,1);
+  assert.equal(result.state.preparationCalls,1);
+  assert.equal(result.state.inertBoundaryCalls,0);
+  assert.equal(result.state.liveBroadcastCalls,0);
 });
 
 test('basket reconciliation requires the exact candidate ID and cannot construct twice',async()=>{
@@ -125,21 +152,39 @@ test('basket reconciliation requires the exact candidate ID and cannot construct
 
 test('registration reconciliation resolves only the exact recorded candidate ID',async()=>{
   for(const [scenario,unlocked] of [['register-reconcile-exact',true],['register-reconcile-wrong',false]]){
-    const runtime=createProductRuntime({scenario},memoryDb());
+    const db=memoryDb();
+    const runtime=createProductRuntime({scenario},db);
+    await runtime.attachWalletService(disposableWalletService());
     const context={walletId:'acceptance-primary',network:'regtest',operationId:'fixture-op'};
     const first=await runtime.walletMethods.sendRegisterAll(undefined,context);
     assert.equal(first.retryLocked,true);
     assert.equal(first.entries[0].status,'unknown');
-    assert.equal((await runtime.walletMethods.getRegisterAllStatus(context)).retryLocked,true);
+    const missing=await runtime.walletMethods.getRegisterAllStatus(context);
+    assert.equal(missing.retryLocked,true);
+    assert.equal((await runtime.describe()).registration.historyCandidateTxid,null);
     await runtime.advance();
     const after=await runtime.walletMethods.getRegisterAllStatus(context);
     assert.equal(after.retryLocked,!unlocked);
     assert.equal(after.entries[0].status,unlocked?'submitted':'unknown');
-    const evidence=(await runtime.describe()).registration;
-    assert.equal(evidence.constructionCalls,1);
-    assert.equal(evidence.inertBoundaryCalls,1);
+    const reopened=createProductRuntime({scenario},db);
+    await reopened.attachWalletService(disposableWalletService());
+    const persisted=await reopened.walletMethods.getRegisterAllStatus(context);
+    assert.equal(persisted.retryLocked,!unlocked);
+    assert.equal(persisted.entries[0].status,unlocked?'submitted':'unknown');
+    const resumed=await reopened.walletMethods.sendRegisterAll(undefined,{...context,operationId:'resume'});
+    if(unlocked){
+      assert.equal(resumed.status,'complete');
+      assert.equal(resumed.entries.filter(entry=>entry.status==='submitted').length,38);
+      assert.equal((await reopened.describe()).registration.constructionCalls,38);
+    }else{
+      assert.equal(resumed.retryLocked,true);
+      assert.equal((await reopened.describe()).registration.constructionCalls,1);
+    }
+    const evidence=(await reopened.describe()).registration;
+    assert.equal(evidence.inertBoundaryCalls,unlocked?38:1);
     assert.equal(evidence.liveBroadcastCalls,0);
     assert.equal(evidence.signatureCalls,0);
+    assert.equal(evidence.statusEndpoint,'real-WalletService.getRegisterAllStatus');
   }
 });
 

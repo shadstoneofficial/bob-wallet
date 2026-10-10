@@ -12,6 +12,7 @@ function createRegisterRuntime(plan, db) {
   const walletId = 'acceptance-primary';
   let state;
   let delay;
+  let walletService;
   const journal = new RegisterAllJournal({
     get: key => db.get(`${JOURNAL_PREFIX}${key}`),
     put: (key, value) => db.put(`${JOURNAL_PREFIX}${key}`, value),
@@ -36,18 +37,11 @@ function createRegisterRuntime(plan, db) {
     async getRegisterAllStatus(context) {
       check(context);
       await load();
-      return journal.status(context, async txid => {
-        state.historyLookupCalls += 1;
-        const control = await db.get(CONTROL_KEY);
-        const offered = control?.controlStep === 1 && plan.fixtureType.startsWith('register-reconcile-')
-          ? plan.fixtureType === 'register-reconcile-exact'
-            ? crypto.createHash('sha256').update(`inert-register:${plan.registrationNames[0]}`).digest('hex')
-            : 'bd'.repeat(32)
-          : null;
-        state.historyCandidateTxid = offered;
-        await save();
-        return offered === txid;
-      });
+      if (walletService) return walletService.getRegisterAllStatus(context);
+      if (plan.fixtureType.startsWith('register-reconcile-')) {
+        throw new Error('Exact-ID fixture requires the disposable WalletService status endpoint.');
+      }
+      return journal.status(context, async () => false);
     },
     async cancelRegisterAll(context) {
       check(context, true);
@@ -65,8 +59,17 @@ function createRegisterRuntime(plan, db) {
         throw new Error('Disposable registration fixture does not accept credentials.');
       }
       await load();
+      const selectionGeneration = walletService?.walletSelectionGeneration;
+      const node = walletService?.node;
       return journal.run(context, {
-        assertCurrent: () => check(context, true),
+        assertCurrent: () => {
+          check(context, true);
+          if (walletService && (walletService.name !== context.walletId
+              || walletService.walletSelectionGeneration !== selectionGeneration
+              || walletService.node !== node)) {
+            throw new Error('The wallet backend changed. Register All has stopped.');
+          }
+        },
         getNames: async () => plan.registrationNames.filter(name => !state.acceptedNames.includes(name)),
         submit: async (name, hooks) => {
           if (!plan.registrationNames.includes(name)) throw new Error('Non-fixture registration blocked.');
@@ -91,7 +94,9 @@ function createRegisterRuntime(plan, db) {
           state.inertBoundaryCalls++;
           if (plan.fixtureType !== 'register-ambiguous') state.acceptedNames.push(name);
           await save();
-          if (plan.fixtureType === 'register-ambiguous' || plan.fixtureType.startsWith('register-reconcile-')) {
+          if (plan.fixtureType === 'register-ambiguous'
+              || (plan.fixtureType.startsWith('register-reconcile-')
+                && name === plan.registrationNames[0])) {
             throw new Error('Controlled ambiguous registration result; no real signature or broadcast occurred.');
           }
           return {txid: () => txid};
@@ -99,9 +104,35 @@ function createRegisterRuntime(plan, db) {
       });
     },
   };
-  return {walletMethods, async describe() {
+  return {walletMethods, async attachWalletService(service) {
+    await load();
+    if (typeof service.getRegisterAllStatus !== 'function'
+        || typeof service._registerAllContext !== 'function'
+        || !service.node?.wdb?.get) throw new Error('Disposable WalletService status endpoint is missing.');
+    const wallet = await service.node.wdb.get(walletId);
+    if (!wallet || typeof wallet.getTX !== 'function') throw new Error('Disposable registration wallet is missing.');
+    service.registerAllJournal = journal;
+    if (plan.fixtureType.startsWith('register-reconcile-')) {
+      const expected = crypto.createHash('sha256')
+        .update(`inert-register:${plan.registrationNames[0]}`).digest('hex');
+      wallet.getTX = async hash => {
+        const requested = Buffer.isBuffer(hash) ? hash.toString('hex') : '';
+        if (requested !== expected) return null;
+        state.historyLookupCalls += 1;
+        const control = await db.get(CONTROL_KEY);
+        const offered = control?.controlStep === 1
+          ? plan.fixtureType === 'register-reconcile-exact' ? expected : 'bd'.repeat(32)
+          : null;
+        state.historyCandidateTxid = offered;
+        await save();
+        return offered === requested ? {hash: Buffer.from(requested, 'hex')} : null;
+      };
+    }
+    walletService = service;
+  }, async describe() {
     await load();
     return {...state, journal: 'real-RegisterAllJournal', walletServiceProxy: 'MOCKED',
+      statusEndpoint: walletService ? 'real-WalletService.getRegisterAllStatus' : 'NOT ATTACHED',
       transport: 'INERT', packagedStatus: 'NOT TESTED'};
   }};
 }
