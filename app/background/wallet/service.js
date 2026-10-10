@@ -24,7 +24,7 @@ import {
 import {STOP, SET_CUSTOM_RPC_STATUS} from '../../ducks/nodeReducer';
 import {showSuccess, showError} from '../../ducks/notifications';
 import {getNamesForRegisterAll} from "./create-register-all";
-import {getStats} from "./stats";
+import {getWalletStats} from "./stats";
 import {
   applyRegisterAuthority,
   getRegisterAuthority,
@@ -2484,10 +2484,13 @@ class WalletService {
     return ret;
   };
 
-  getStats = async () => {
+  getStats = async (context = {}) => {
     const {wdb} = this.node;
-    const wallet = await wdb.get(this.name);
-    return getStats(wallet);
+    return getWalletStats(wdb, this.name, {
+      requestId: context.requestId,
+      generation: context.generation,
+      selectionContext: `${this.rescanBackendGeneration}:${this.walletSelectionGeneration}:${wdb.height}`,
+    });
   };
 
   handleUnsafeUpdateAccountDepth = async (req, res) => {

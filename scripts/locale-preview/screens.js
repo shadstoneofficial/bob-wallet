@@ -68,6 +68,7 @@ Object.assign(state.node, {
 });
 Object.assign(state.app, {locale: localeName, customLocale: null, theme: dark ? 'dark' : 'light'});
 state.walletStats.isLoading = false;
+state.walletStats.status = 'ready';
 for (const group of [state.walletStats.lockedBalance, state.walletStats.actionableInfo]) {
   for (const value of Object.values(group)) {
     for (const key of Object.keys(value)) value[key] = key === 'block' ? 1100 : 0;
@@ -193,6 +194,10 @@ const screens = {
   password: [Password, '/new-wallet'],
   overview: [Overview, '/overview'],
   balance: [() => <div className="overview"><BalanceSummary locale={localeName} walletName="fixture-only"
+    walletStats={{...state.walletStats, status: query.get('summary') || 'ready',
+      isLoading: ['loading', 'slow'].includes(query.get('summary')),
+      error: query.get('summary') === 'failed' ? 'timeout' : null,
+      elapsedMs: ['slow', 'failed'].includes(query.get('summary')) ? 35000 : 0}}
     walletType="standard" balanceReady={true} progress={1}
     spendableBalance={123456789012345} lockedUnconfirmed={1000000000000}
     confirmedBalance={124456789012345} unconfirmedBalance={124456789012345} /></div>, '/overview'],

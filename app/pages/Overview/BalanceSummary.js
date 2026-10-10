@@ -5,6 +5,7 @@ import {displayBalance} from '../../utils/balances';
 import {balanceReadiness} from '../../utils/balanceReadiness';
 import {shell} from '../../renderer/electron';
 import {getSafeExternalUrl} from '../../utils/urlPolicy';
+import AuctionSummaryStatus, {auctionSummaryTotal} from './AuctionSummaryStatus';
 
 export function balanceGuideUrl(locale) {
   const prefix = new Map([
@@ -22,6 +23,7 @@ export default function BalanceSummary(props) {
   const readiness = balanceReadiness(props);
   const ready = readiness === 'ready';
   const guideUrl = balanceGuideUrl(props.locale);
+  const auctionTotal = ready ? auctionSummaryTotal(props.walletStats) : null;
   const value = amount => ready
     ? `${new BigNumber(displayBalance(amount, false, 2)).toFormat(2)} HNS`
     : t('balanceUpdating');
@@ -37,16 +39,20 @@ export default function BalanceSummary(props) {
         <span className="overview__hero-meta">~${(props.spendableBalance / 1e6 * props.hnsPrice.value).toFixed(2)} {props.hnsPrice.currency || 'USD'}</span>}
     </div>
     <div className="overview__balance-locked">
-      <span className="overview__hero-kicker">{t('balanceCurrentlyLocked')}</span>
-      <span className="overview__hero-chip-value">{value(props.lockedUnconfirmed)}</span>
-      <p>{t('balanceLockedSummary')}</p>
+      <span className="overview__hero-kicker">{t('overviewLockedAuctions')}</span>
+      {auctionTotal === null
+        ? <AuctionSummaryStatus stats={props.walletStats} onRetry={props.onRetryStats} waiting={!ready} />
+        : <span className="overview__hero-chip-value">{new BigNumber(displayBalance(auctionTotal, false, 2)).toFormat(2)} HNS</span>}
+      <p>{t('auctionSummaryScope')}</p>
     </div>
     <details className="overview__balance-details">
       <summary>{t('balanceDetails')}</summary>
       <dl>
+        <dt>{t('balanceAllCovenantLocks')}</dt><dd>{value(props.lockedUnconfirmed)}</dd>
         <dt>{t('balanceConfirmedTotal')}</dt><dd>{value(props.confirmedBalance)}</dd>
         <dt>{t('balanceCurrentTotal')}</dt><dd>{value(props.unconfirmedBalance)}</dd>
       </dl>
+      <p>{t('balanceLockedSummary')}</p>
       <p>{t('balanceTotalsHelp')}</p>
       <p>{t('balanceEquationHelp')}</p>
       <p>{t('balanceBurnHelp')}</p>

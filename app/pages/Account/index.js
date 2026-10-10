@@ -19,6 +19,7 @@ import * as nodeActions from "../../ducks/node";
 import { fetchTransactions } from "../../ducks/walletActions";
 import {I18nContext} from "../../utils/i18n";
 import {fetchWalletStats} from '../../ducks/walletStats';
+import AuctionSummaryStatus from '../Overview/AuctionSummaryStatus';
 
 const analytics = aClientStub(() => require("electron").ipcRenderer);
 
@@ -36,6 +37,9 @@ const analytics = aClientStub(() => require("electron").ipcRenderer);
     walletInitialized: state.wallet.initialized,
     walletType: state.wallet.type,
     walletStats: state.walletStats,
+    walletId: state.wallet.wid,
+    balanceReady: state.wallet.balanceReady,
+    walletSync: state.wallet.walletSync,
   }),
   (dispatch) => ({
     fetchWallet: () => dispatch(walletActions.fetchWallet()),
@@ -96,6 +100,10 @@ export default class Account extends Component {
     if (
       this.props.height !== prevProps.height
       || this.props.walletHeight !== prevProps.walletHeight
+      || this.props.walletId !== prevProps.walletId
+      || this.props.network !== prevProps.network
+      || this.props.balanceReady !== prevProps.balanceReady
+      || this.props.walletSync !== prevProps.walletSync
     ) {
       this.updateStatsAndBalance();
     }
@@ -113,7 +121,7 @@ export default class Account extends Component {
     try {
       await this.props.fetchWalletStats();
     } catch (error) {
-      console.error(error);
+      console.warn('Auction summary unavailable; see correlated auction-summary diagnostics.');
     }
   }
 
@@ -206,6 +214,8 @@ export default class Account extends Component {
       lockedBalance.revealable.HNS ||
       lockedBalance.finished.HNS
     );
+    const summaryUnavailable = isLoadingStats || this.props.walletStats.error
+      || this.props.balanceReady === false || this.props.walletSync;
 
     return (
       <div className="account__header">
@@ -223,9 +233,14 @@ export default class Account extends Component {
         </div>
 
         {/* Locked Balance - In bids */}
+        {summaryUnavailable ? <div className="account__header__section">
+          <span className="label">{t('overviewLockedAuctions')}</span>
+          <AuctionSummaryStatus stats={this.props.walletStats} onRetry={() => this.updateStatsAndBalance()}
+            waiting={this.props.balanceReady === false || this.props.walletSync} />
+        </div> : <>
         {lockedBalance.bidding.HNS > 0 ? (
           <div className="account__header__section">
-            <span className="label">{t('locked')}</span>
+            <span className="label">{t('overviewLockedAuctions')}</span>
             <p className="amount">
               {displayBalance(lockedBalance.bidding.HNS, true, 2)}
             </p>
@@ -244,7 +259,7 @@ export default class Account extends Component {
         {/* Locked Balance - In Reveal */}
         {lockedBalance.revealable.HNS > 0 ? (
           <div className="account__header__section">
-            <span className="label">{t('locked')}</span>
+            <span className="label">{t('overviewLockedAuctions')}</span>
             <p className="amount">
               {displayBalance(lockedBalance.revealable.HNS, true, 2)}
             </p>
@@ -263,7 +278,7 @@ export default class Account extends Component {
         {/* Locked Balance - Finished */}
         {lockedBalance.finished.HNS > 0 ? (
           <div className="account__header__section">
-            <span className="label">{t('locked')}</span>
+            <span className="label">{t('overviewLockedAuctions')}</span>
             <p className="amount">
               {displayBalance(lockedBalance.finished.HNS, true, 2)}
             </p>
@@ -280,7 +295,7 @@ export default class Account extends Component {
         {/* No Locked HNS (or still loading) */}
         {noLockedHNS ? (
           <div className="account__header__section">
-            <span className="label">{t('locked')}</span>
+            <span className="label">{t('overviewLockedAuctions')}</span>
             <p
               className={c("amount", {
                 account__transactions__loading: isLoadingStats,
@@ -295,6 +310,7 @@ export default class Account extends Component {
         ) : (
           ""
         )}
+        </>}
       </div>
     );
   }
