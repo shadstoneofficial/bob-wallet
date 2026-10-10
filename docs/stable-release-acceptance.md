@@ -1,10 +1,10 @@
 # Next stable release acceptance
 
-Status: source integration and independent review completed on 2026-10-08; fresh signed-package acceptance remains pending. This is a release gate, not a passed packaged-acceptance report.
+Status: source integration and independent review completed on 2026-10-10; fresh v2.3.16 signed-package acceptance remains pending. This is a release gate, not a passed packaged-acceptance report.
 
-The follow-up source-only acceptance branch adds fixed cases for overlapping restore/import, reviewed basket expiry and scope drift, basket and Register All wallet A-B-A, exact-versus-wrong candidate ID reconciliation, and the actual owned-name selling chooser. See `docs/packaged-acceptance-harness.md` for the exact scenario matrix and external runner procedure. These source tests do not change the signed v2.3.15 binaries or close any packaged gate; the release remains on hold.
+The follow-up source-only acceptance work adds fixed cases for overlapping restore/import, reviewed basket expiry and scope drift, basket and Register All wallet A-B-A, exact-versus-wrong candidate ID reconciliation, and the actual owned-name selling chooser. See `docs/packaged-acceptance-harness.md` for the exact scenario matrix and external runner procedure. These source tests do not change the signed v2.3.15 binaries or close any v2.3.16 packaged gate; the release remains on hold.
 
-2026-10-10 follow-up source check: 1,423 product assertions, 14 service tests and 79 acceptance-harness tests pass. Production renderer compilation, nine sync fixture invocations and the locale check also pass. The expected failing SPV baseline remains an explicit control; the corrected startup fixture reports no backend error. These results do not cover a newly signed executable or an installed-app test.
+2026-10-10 combined source check: 1,438 product assertions, 14 service tests and 79 acceptance-harness tests pass. Production renderer compilation, nine sync fixture invocations and the locale check also pass. The expected failing SPV baseline remains an explicit control; the corrected startup fixture reports no backend error. These results do not cover a newly signed executable or an installed-app test.
 
 ## Verified source checkpoint
 
