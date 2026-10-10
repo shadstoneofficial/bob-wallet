@@ -10,6 +10,9 @@ const STATE_KEY = 'acceptance-embedded-restore-v1';
 const JOURNAL_KEY = Buffer.from('ff626f622d72657363616e2d7631', 'hex');
 const WALLET_IDS = ['acceptance-primary', 'acceptance-secondary',
   'acceptance-restore-03', 'acceptance-restore-04', 'acceptance-restore-05'];
+const BLOCK_ALLOCATION = [8, 5, 4, 2, 1];
+const BLOCK_WALLET_INDEXES = BLOCK_ALLOCATION.flatMap((count, index) => Array(count).fill(index));
+assert.strictEqual(BLOCK_WALLET_INDEXES.length, 20);
 const waitForDisk = () => new Promise(resolve => setTimeout(resolve, 10));
 
 async function initializeEmbeddedRestore(services, config) {
@@ -31,9 +34,15 @@ async function initializeEmbeddedRestore(services, config) {
   const balances = async () => Promise.all(WALLET_IDS.map(async walletId => {
     const wallet = await wdb.get(walletId);
     assert(wallet, 'Selectable generated wallet missing.');
-    const balance = await wallet.getBalance();
+    const account = await wallet.getAccount('default');
+    const balance = (await wallet.getBalance(account.accountIndex)).getJSON();
     const history = await wallet.getHistory();
-    return {walletId, confirmed: balance.confirmed, historyCount: history.length};
+    const spendable = balance.unconfirmed - balance.lockedUnconfirmed;
+    assert([balance.confirmed, balance.unconfirmed, balance.lockedUnconfirmed, spendable]
+      .every(amount => Number.isSafeInteger(amount) && amount >= 0),
+    'Generated wallet must have a coherent nonnegative balance snapshot.');
+    return {walletId, confirmed: balance.confirmed, unconfirmed: balance.unconfirmed,
+      lockedUnconfirmed: balance.lockedUnconfirmed, spendable, historyCount: history.length};
   }));
   let state = await services.db.get(STATE_KEY);
   if (!state) {
@@ -48,7 +57,7 @@ async function initializeEmbeddedRestore(services, config) {
     try {
       if (node.spv) {await blocks.open(); await miningChain.open(); await miner.open();}
       for (let i = 0; i < 20; i++) {
-        miner.addresses.length = 0; miner.addresses.push(addresses[i % addresses.length]);
+        miner.addresses.length = 0; miner.addresses.push(addresses[BLOCK_WALLET_INDEXES[i]]);
         const job = await miner.cpu.createJob(); job.refresh();
         const block = await job.mineAsync();
         assert.strictEqual(block.txs.length, 1, 'Only a generated coinbase is permitted.');
@@ -63,6 +72,8 @@ async function initializeEmbeddedRestore(services, config) {
     }
     const expected = await balances();
     assert(expected.every(value => value.confirmed > 0 && value.historyCount > 0));
+    assert(expected[0].confirmed > expected[1].confirmed,
+      'Disposable primary wallet must have a distinct larger balance.');
     state = {version: 1, scenario: config.scenario, phase: 'generated', target: 20,
       requestId: crypto.randomBytes(16).toString('hex'), history, expected};
     await services.db.put(STATE_KEY, state);
@@ -146,4 +157,4 @@ async function initializeEmbeddedRestore(services, config) {
   return snapshot('EMBEDDED REPLAY COMPLETE');
 }
 
-module.exports = {initializeEmbeddedRestore, WALLET_IDS, STATE_KEY};
+module.exports = {initializeEmbeddedRestore, WALLET_IDS, BLOCK_ALLOCATION, BLOCK_WALLET_INDEXES, STATE_KEY};
