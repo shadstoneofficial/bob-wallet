@@ -123,6 +123,7 @@ test('real service ambiguous send stays locked after restart and missing history
   assert.equal(result.retryLocked, true);
   const restarted = fixture(f.store);
   assert.equal((await restarted.service.getRegisterAllStatus(context)).retryLocked, true);
+  assert.equal((await restarted.service.getRegisterAllStatus({...context, preflight: true})).operation.retryLocked, true);
   await restarted.service.sendRegisterAll('fixture', {...context, operationId: 'retry'});
   assert.deepEqual(restarted.calls.construct, []);
 });
