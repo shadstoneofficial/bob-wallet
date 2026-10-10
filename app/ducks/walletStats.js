@@ -1,4 +1,5 @@
 import walletClient from '../utils/walletClient';
+import {INVALIDATE_WALLET_REQUESTS, LOCK_WALLET, SET_WALLET_NETWORK} from './walletReducer';
 
 export const WALLET_STATS_REQUEST = 'app/walletStats/request';
 export const WALLET_STATS_SUCCESS = 'app/walletStats/success';
@@ -38,9 +39,13 @@ export default function walletStatsReducer(
   {type, payload} = {},
 ) {
   switch (type) {
+    case INVALIDATE_WALLET_REQUESTS:
+    case LOCK_WALLET:
+    case SET_WALLET_NETWORK:
+      return getInitialState();
     case WALLET_STATS_REQUEST:
       return {
-        ...state,
+        ...getInitialState(),
         isLoading: true,
         requestId: payload.requestId,
         error: null,
@@ -94,18 +99,31 @@ export const invalidateRedeemableStats = () => ({
   payload: {requestId: ++nextRequestId},
 });
 
-export const fetchWalletStats = () => async (dispatch) => {
+export const fetchWalletStats = () => async (dispatch, getState) => {
+  const wallet = getState().wallet;
+  if (wallet.requestWallet || wallet.balanceReady === false) return;
+  const wid = wallet.requestWallet || wallet.wid;
+  const generation = wallet.requestGeneration || 0;
+  const network = wallet.network;
+  const isCurrent = () => {
+    const current = getState().wallet;
+    return (current.requestWallet || current.wid) === wid
+      && (current.requestGeneration || 0) === generation
+      && current.network === network;
+  };
   const requestId = ++nextRequestId;
   dispatch({type: WALLET_STATS_REQUEST, payload: {requestId}});
 
   try {
     const stats = await walletClient.getStats();
+    if (!isCurrent()) return;
     dispatch({
       type: WALLET_STATS_SUCCESS,
       payload: {requestId, stats},
     });
     return stats;
   } catch (error) {
+    if (!isCurrent()) return;
     dispatch({
       type: WALLET_STATS_FAILURE,
       payload: {requestId, error: error.message},

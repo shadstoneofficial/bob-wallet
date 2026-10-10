@@ -19,6 +19,35 @@ const rows = [{name: 'harm', bid: 2400000000, lockup: 5000000000},
 const txid = 'aa'.repeat(32);
 const deferred = () => {let resolve; const promise = new Promise(res => {resolve = res;}); return {resolve, promise};};
 
+test('balance refresh and account snapshot reject stale wallet generations', async () => {
+  const actions = [];
+  const service = {name: 'fixture-a', networkName: 'regtest',
+    walletSelectionGeneration: 1, rescanBackendGeneration: 2};
+  for (const name of ['getAccountInfo', 'refreshWalletInfo']) {
+    const method = walletClass.body.body.find(node => node.key.name === name);
+    service[name] = new Function('dispatchToMainWindow', 'SET_BALANCE',
+      `return function(){return (${source.slice(method.value.start, method.value.end)});};`)(
+      action => actions.push(action), 'balance').call(service);
+  }
+  let pending = deferred();
+  service.node = {wdb: {get: async () => ({getAccount: async () => ({accountIndex: 0,
+    getJSON: balance => ({balance})}), getBalance: () => pending.promise})}};
+  const old = service.refreshWalletInfo();
+  service.name = 'fixture-b'; service.walletSelectionGeneration++;
+  service.name = 'fixture-a'; service.walletSelectionGeneration++;
+  pending.resolve({unconfirmed: 100});
+  await old;
+  assert.equal(actions.length, 0, 'late A-B-A balance never dispatched');
+  pending = deferred();
+  const current = service.refreshWalletInfo();
+  pending.resolve({unconfirmed: 200});
+  await current;
+  assert.equal(actions.length, 1);
+  assert.equal(actions[0].payload.walletId, 'fixture-a');
+  assert.equal(actions[0].payload.balanceContext, '2:3');
+  assert.equal(actions[0].payload.unconfirmed, 200);
+});
+
 function fixture() {
   const counts = {construct: 0, sign: 0, broadcast: 0, locks: 0, reserved: 0};
   const values = new Map();
