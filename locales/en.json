@@ -1,4 +1,9 @@
 {
+  "registrationLeaveWarning": "Leaving this page pauses the remaining registrations. You can return and resume.",
+  "registrationNoWork": "No names are currently eligible for registration.",
+  "registrationPreflightTimeout": "Checking registration eligibility took too long. No transaction was sent. Try again.",
+  "registrationHistory": "Completed registration receipts",
+  "registrationPendingConfirmation": "Submitted. Waiting for confirmation; do not submit these names again.",
   "balanceGuideLink": "Understand these balances",
   "balanceSpendableNow": "Spendable now",
   "balanceCurrentlyLocked": "Currently locked",

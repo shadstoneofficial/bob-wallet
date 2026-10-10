@@ -164,7 +164,6 @@ export default class Account extends Component {
 
         {this.renderBalance()}
         {this.renderCards()}
-        <RegisterAll />
 
         {/* Transactions */}
         <div className="account__transactions">
@@ -314,10 +313,10 @@ export default class Account extends Component {
       renewable,
       transferring,
       finalizable,
-      registerable,
     } = this.props.walletStats.actionableInfo;
 
     return (
+      <Fragment>
       <div className="cards__container">
         {/* Revealable Card */}
         {revealable.num ? (
@@ -382,28 +381,6 @@ export default class Account extends Component {
           ""
         )}
 
-        {/* Registerable Card */}
-        {registerable.num ? (
-          <ActionCard
-            color="yellow"
-            text={
-              <Fragment>
-                <strong>{t('register')}</strong> {registerable.num}{" "}
-                {t('domains')}
-              </Fragment>
-            }
-            subtext={
-              <Fragment>
-                {registerable.verified
-                  ? t('registerCardWarning', Math.round(registerable.HNS / 1e6))
-                  : t('registerCardVerifyWarning')}
-              </Fragment>
-            }
-          />
-        ) : (
-          ""
-        )}
-
         {/* Finalizable Card */}
         {finalizable?.domains?.length ? (
           <ActionCard
@@ -445,6 +422,8 @@ export default class Account extends Component {
           ""
         )}
       </div>
+      <RegisterAll />
+      </Fragment>
     );
   }
 }

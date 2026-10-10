@@ -113,6 +113,12 @@ class RegistrationReview extends RegisterAll {
         {name: 'fixture-third', status: 'queued', stage: 'queued', txid: null},
       ],
     }};
+    const phase = query.get('phase');
+    if (phase === 'idle') this.state.operation = null;
+    if (phase === 'complete') this.state.operation = {
+      status: 'complete', settledComplete: true, confirmedComplete: true, eligibleCount: 0,
+      entries: [{name: 'fixture-first', status: 'submitted', stage: 'submitted', txid: 'a'.repeat(64)}],
+    };
   }
 }
 const fixtureListings = [
@@ -194,7 +200,7 @@ const screens = {
   receive: [Receive, '/receive'],
   basket: [Basket, '/auction-basket'],
   review: [BasketReview, '/auction-basket'],
-  registration: [RegistrationReview, '/bids'],
+  registration: [() => <RegistrationReview eligibilityReady registerable={{num: 3, HNS: 1000000, verified: false}} />, '/bids'],
   open: [OpenBasket, '/open-basket'],
   domains: [Domains, '/domains'],
   marketplace: [Exchange, '/exchange'],

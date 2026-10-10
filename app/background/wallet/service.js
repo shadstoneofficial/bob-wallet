@@ -1756,8 +1756,34 @@ class WalletService {
 
   getRegisterAllStatus = async (expected) => {
     const context = this._registerAllContext(expected);
-    const wallet = await this.node.wdb.get(context.walletId);
-    return this.registerAllJournal.status(context, async txid => !!await wallet.getTX(Buffer.from(txid, 'hex')));
+    const node = this.node;
+    const generation = this.walletSelectionGeneration;
+    const backendGeneration = this.rescanBackendGeneration;
+    const assertCurrent = () => {
+      this._registerAllContext(context);
+      if (this.node !== node || this.walletSelectionGeneration !== generation
+          || this.rescanBackendGeneration !== backendGeneration)
+        throw new Error('The wallet changed while checking registrations.');
+    };
+    const wallet = await node.wdb.get(context.walletId);
+    assertCurrent();
+    const findTransaction = async txid => {
+      assertCurrent();
+      const tx = await wallet.getTX(Buffer.from(txid, 'hex'));
+      assertCurrent();
+      return tx;
+    };
+    const operation = await this.registerAllJournal.status(context, findTransaction,
+      async txid => {
+        const tx = await findTransaction(txid);
+        return !!tx && Number.isInteger(tx.height) && tx.height >= 0;
+      });
+    assertCurrent();
+    if (!expected?.preflight && operation?.status !== 'complete') return operation;
+    const eligible = await getNamesForRegisterAll(wallet);
+    assertCurrent();
+    if (!expected?.preflight) return {...operation, eligibleCount: eligible.length};
+    return {operation, eligibleCount: eligible.length};
   };
 
   cancelRegisterAll = (context) => this.registerAllJournal.cancel(context);
