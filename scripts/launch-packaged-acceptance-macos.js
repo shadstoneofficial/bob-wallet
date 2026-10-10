@@ -11,16 +11,23 @@ const {
 } = require('../app/background/packagedAcceptance/scenarios');
 
 const CASES = [
-  ['packagedStartup', 'READY', 'Launch, renderer, local regtest services and structured error monitoring.'],
-  ['persistentRestart', 'READY', 'Quit and reopen the same disposable profile.'],
-  ['multiwalletSwitching', 'READY', 'Two generated, encrypted disposable wallets.'],
-  ['localeSelectionPersistence', 'NOT TESTED', 'Manual English/Chinese/Russian/Thai selection, layout and restart required.'],
-  ['auctionRealErrorRetry', 'SOURCE PRODUCT PATH READY', 'Real UI/action/coordinator with inert wallet boundary; packaged UI remains NOT TESTED.'],
-  ['basket20NameDelayedConstruction', 'SOURCE PRODUCT PATH READY', 'Real 20-name cancellation and completed inert-ID/clear path; packaged UI remains NOT TESTED.'],
-  ['basketAmbiguousOutcomeLock', 'SOURCE PRODUCT PATH READY', 'Real action lock and draft reuse with inert boundary; packaged UI remains NOT TESTED.'],
-  ['shakeXReviewAndDnsPreservation', 'SOURCE PRODUCT PATH READY', 'Fixed listing/resource DOM review passes; packaged UI remains NOT TESTED.'],
-  ['sequentialRestore', 'SOURCE EMBEDDED PATH READY', 'Actual disposable disk profile passes separate-process quit/reuse; packaged backend remains NOT TESTED.'],
-  ['overlappingRestore', 'SOURCE FIXTURE READY', 'Actual reviewed replay/overlap source checks pass; packaged backend remains NOT TESTED.'],
+  ['packagedStartup', 'NOT TESTED', 'Launch, renderer, local regtest services and structured error monitoring.'],
+  ['persistentRestart', 'NOT TESTED', 'Quit and reopen the same disposable profile.'],
+  ['multiwalletSwitching', 'NOT TESTED', 'Two generated, encrypted disposable wallets.'],
+  ['localeSelectionPersistence', 'NOT TESTED', 'Manual English, Chinese, Russian and Thai selection, layout and restart.'],
+  ['auctionRealErrorRetry', 'SOURCE ONLY', 'Real UI/action/coordinator with inert wallet boundary; packaged UI untested.'],
+  ['basket20NameDelayedConstruction', 'SOURCE ONLY', 'Real 20-name cancellation and completed inert-ID/clear path; packaged UI untested.'],
+  ['basketAmbiguousOutcomeLock', 'SOURCE ONLY', 'Real action lock and draft reuse with inert boundary; packaged UI untested.'],
+  ['basketExpiredAfterReview', 'SOURCE ONLY', 'Expired first name blocks construction of reviewed basket.'],
+  ['basketScopeMismatch', 'SOURCE ONLY', 'Changed first bid invalidates reviewed scope.'],
+  ['basketWalletABA', 'SOURCE ONLY', 'Wallet A-B-A cancels delayed preparation without late inert boundary.'],
+  ['basketExactCandidate', 'SOURCE ONLY', 'Exact history ID reconciles; wrong ID stays locked.'],
+  ['registerExactCandidate', 'SOURCE ONLY', 'Exact journal candidate reconciles; wrong ID stays locked.'],
+  ['registerWalletABA', 'SOURCE ONLY', 'Wallet A-B-A cancels delayed registration without stale receipt.'],
+  ['ownedNameSellChooser', 'SOURCE ONLY', 'Actual Records chooser separates Shakedex and ShakeX without DNS/listing writes.'],
+  ['shakeXReviewAndDnsPreservation', 'SOURCE ONLY', 'Fixed listing/resource DOM review passes; packaged UI untested.'],
+  ['sequentialRestore', 'SOURCE ONLY', 'Actual disposable disk profile passes separate-process quit/reuse; packaged backend untested.'],
+  ['overlappingRestore', 'SOURCE ONLY', 'Actual SPV admission rejects overlapping rescan, seed import and name import during replay.'],
 ];
 
 function usage() {

@@ -96,6 +96,7 @@ test('packaged restore fixture waits for hydrated SPV target and request identit
     }
     if (request === './productRuntime' && parent?.filename === fixturePath) {
       return {getProductRuntime: () => ({
+        async attachWalletService() {},
         async initializeRestore() {
           restoreObserved = true;
           const state = wdb.bobRescanState;
@@ -521,11 +522,21 @@ test('controlled scenarios are fixed, regtest-only, and contain no signing or br
     'auction-retry',
     'basket-20-delayed',
     'basket-ambiguous',
+    'basket-expired',
+    'basket-reconcile-exact',
+    'basket-reconcile-wrong',
+    'basket-scope-mismatch',
+    'basket-wallet-switch',
     'multiwallet',
+    'owned-name-sell',
     'register-ambiguous',
     'register-cancel',
     'register-partial',
+    'register-reconcile-exact',
+    'register-reconcile-wrong',
+    'register-wallet-switch',
     'restore-full',
+    'restore-overlap',
     'restore-spv',
   ]);
   for (const scenario of Object.keys(SCENARIO_DEFINITIONS)) {

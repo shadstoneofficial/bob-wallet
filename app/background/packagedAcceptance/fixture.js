@@ -95,6 +95,7 @@ async function seedDisposableMultiwallet(services, config) {
   walletService.setWallet(wanted[0]);
   const scenarioPlan = buildControlledScenarioPlan(config.scenario);
   const runtime = require('./productRuntime').getProductRuntime();
+  if (runtime) await runtime.attachWalletService(walletService);
   const sourceFixture = runtime && scenarioPlan.fixtureType === 'restore-history'
     ? await runtime.initializeRestore(services)
     : runtime && scenarioPlan.evidenceClass === 'source-product-path'
