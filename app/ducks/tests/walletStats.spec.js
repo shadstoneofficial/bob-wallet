@@ -2,7 +2,11 @@ import test from 'tape';
 import {applyMiddleware, combineReducers, createStore} from 'redux';
 import thunk from 'redux-thunk';
 import walletReducer, {INVALIDATE_WALLET_REQUESTS, SET_WALLET, SET_BALANCE} from '../walletReducer';
-import {balanceSnapshotReady} from '../../pages/Overview/BalanceSummary';
+import BalanceSummary, {balanceSnapshotReady, balanceGuideUrl} from '../../pages/Overview/BalanceSummary';
+import React from 'react';
+import {mount} from 'enzyme';
+import {shell} from '../../renderer/electron';
+import {I18nContext} from '../../utils/i18n';
 import {balanceReadiness} from '../../utils/balanceReadiness';
 
 import walletClient from '../../utils/walletClient';
@@ -28,6 +32,37 @@ const stats = (redeemable, registerable = 0, revealable = 0) => ({
     transferring: {domains: [], block: null},
     finalizable: {domains: []},
   },
+});
+
+test('balance guide is localized, accessible while loading, and opens only the fixed external URL', t => {
+  for (const [locale, prefix] of [['en-US', ''], ['zh-CN', '/zh'], ['ru-RU', '/ru'], ['th-TH', '/th'],
+    ['fr-FR', ''], ['custom', ''], ['../../wallet-secret', ''], [undefined, '']]) {
+    t.equal(balanceGuideUrl(locale), `https://bobwallet.org${prefix}/docs/wallet-balances/`);
+  }
+  const original = shell.openExternal;
+  const opened = [];
+  shell.openExternal = url => opened.push(url);
+  let wrapper;
+  try {
+    wrapper = mount(<I18nContext.Provider value={{t: key => key}}>
+      <BalanceSummary locale="zh-CN" walletName="private-wallet" balanceReady={false} />
+    </I18nContext.Provider>);
+    const link = wrapper.find('a.overview__balance-guide');
+    t.equal(link.length, 1, 'one visible native keyboard-accessible link');
+    t.equal(wrapper.find('details').prop('open'), undefined, 'details remain collapsed by default');
+    t.equal(link.parents('details').length, 0, 'help is visible without expanding details');
+    t.equal(link.text(), 'balanceGuideLink', 'localized label');
+    let prevented = false;
+    link.simulate('click', {preventDefault: () => {prevented = true;}});
+    t.ok(prevented, 'does not navigate the wallet renderer');
+    t.deepEqual(opened, ['https://bobwallet.org/zh/docs/wallet-balances/'], 'opens once without wallet data');
+    wrapper.setProps({value: {t: key => key}, children: <BalanceSummary locale="th-TH" balanceReady={false} />});
+    t.equal(wrapper.find('a').prop('href'), balanceGuideUrl('th-TH'), 'updates with selected locale');
+  } finally {
+    wrapper?.unmount();
+    shell.openExternal = original;
+  }
+  t.end();
 });
 
 function deferred() {
