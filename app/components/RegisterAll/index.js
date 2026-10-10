@@ -157,7 +157,8 @@ export default connect(state => ({
   network: state.wallet.network,
   requestGeneration: state.wallet.requestGeneration,
   registerable: state.walletStats.actionableInfo.registerable,
-  eligibilityReady: state.wallet.balanceReady && !state.walletStats.isLoading && !state.walletStats.error,
+  eligibilityReady: state.wallet.balanceReady && !state.wallet.walletSync
+    && state.node.chain.progress >= 0.9999 && !state.walletStats.isLoading && !state.walletStats.error,
 }), dispatch => ({
   submit: (isCurrent, operationId) => dispatch(sendRegisterAll(isCurrent, operationId)),
   cancel: context => walletClient.cancelRegisterAll(context),

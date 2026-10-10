@@ -45,6 +45,16 @@ test('registration empty/confirmed UI has no start button; pending and uncertain
   t.end();
 });
 
+test('registration recovery remains visible while synchronization blocks new work', t => {
+  const component = fixture({eligibilityReady: false});
+  component.state.operation = {status: 'paused', retryLocked: true, entries: [{name: 'one', status: 'unknown', txid: 'aa'.repeat(32)}]};
+  t.notOk(component.canStart());
+  t.ok(renderToStaticMarkup(component.render()).includes('registrationUncertain'));
+  component.state.operation.running = true;
+  t.ok(renderToStaticMarkup(component.render()).includes('registrationStop'), 'Stop remains available');
+  t.end();
+});
+
 test('registration authoritative preflight precedes password and rejects empty, uncertain or switched scope', async t => {
   const originalStatus = walletClient.getRegisterAllStatus;
   const originalSend = walletClient.sendRegisterAll;

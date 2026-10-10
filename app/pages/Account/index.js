@@ -172,6 +172,7 @@ export default class Account extends Component {
 
         {this.renderBalance()}
         {this.renderCards()}
+        <RegisterAll />
 
         {/* Transactions */}
         <div className="account__transactions">
@@ -332,7 +333,6 @@ export default class Account extends Component {
     } = this.props.walletStats.actionableInfo;
 
     return (
-      <Fragment>
       <div className="cards__container">
         {/* Revealable Card */}
         {revealable.num ? (
@@ -438,8 +438,6 @@ export default class Account extends Component {
           ""
         )}
       </div>
-      <RegisterAll />
-      </Fragment>
     );
   }
 }
