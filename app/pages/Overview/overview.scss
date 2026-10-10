@@ -31,7 +31,7 @@
 
   &__hero-main {
     flex: 1 1 14rem;
-    min-width: 12rem;
+    min-width: 0;
   }
 
   &__hero-kicker {
@@ -49,7 +49,8 @@
     font-size: 1.85rem;
     font-weight: 700;
     line-height: 1.15;
-    letter-spacing: -0.02em;
+    letter-spacing: 0;
+    overflow-wrap: anywhere;
     color: inherit;
   }
 
@@ -59,6 +60,23 @@
     font-size: 0.8rem;
     color: $manatee-gray;
     line-height: 1.35;
+  }
+
+  &__balance-locked {
+    flex: 1 1 14rem;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    p { font-size: 0.8rem; line-height: 1.5; }
+  }
+
+  &__balance-details {
+    flex-basis: 100%;
+    min-width: 0;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    summary { cursor: pointer; color: $azure-blue; }
+    dl { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.6rem; }
+    dd { margin: 0; overflow-wrap: anywhere; }
   }
 
   &__hero-side {

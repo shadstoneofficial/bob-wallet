@@ -1,6 +1,8 @@
 import test from 'tape';
 import {applyMiddleware, combineReducers, createStore} from 'redux';
 import thunk from 'redux-thunk';
+import walletReducer, {INVALIDATE_WALLET_REQUESTS, SET_WALLET, SET_BALANCE} from '../walletReducer';
+import {balanceSnapshotReady} from '../../pages/Overview/BalanceSummary';
 
 import walletClient from '../../utils/walletClient';
 import {sendRedeemAll} from '../names';
@@ -42,6 +44,61 @@ function createStatsStore() {
     applyMiddleware(thunk),
   );
 }
+
+test('wallet stats clear on selection and reject late A-B-A completions', async t => {
+  const original = walletClient.getStats;
+  const store = createStore(combineReducers({walletStats: walletStatsReducer, wallet: walletReducer}), applyMiddleware(thunk));
+  const select = wid => {
+    store.dispatch({type: INVALIDATE_WALLET_REQUESTS, payload: wid});
+    store.dispatch({type: SET_WALLET, payload: {wid, balance: {}}});
+  };
+  select('fixture-a');
+  walletClient.getStats = () => Promise.resolve(stats(3));
+  await store.dispatch(fetchWalletStats());
+  const pending = deferred();
+  walletClient.getStats = () => pending.promise;
+  const old = store.dispatch(fetchWalletStats());
+  select('fixture-b');
+  t.equal(store.getState().walletStats.lockedBalance.finished.HNS, null, 'old auction amounts disappear immediately');
+  store.dispatch({type: INVALIDATE_WALLET_REQUESTS, payload: 'fixture-c'});
+  let calls = 0;
+  walletClient.getStats = () => {calls++; return Promise.resolve(stats(9));};
+  await store.dispatch(fetchWalletStats());
+  t.equal(calls, 0, 'no stats request during backend selection transition');
+  select('fixture-a');
+  pending.resolve(stats(99));
+  await old;
+  t.equal(store.getState().walletStats.lockedBalance.finished.HNS, null, 'same wallet name does not revive old generation');
+  walletClient.getStats = () => Promise.resolve(stats(2));
+  await store.dispatch(fetchWalletStats());
+  t.equal(store.getState().walletStats.actionableInfo.redeemable.num, 2, 'new generation is accepted');
+  walletClient.getStats = original;
+  t.end();
+});
+
+test('balance disclosure distinguishes unknown from zero and rejects cross-wallet updates', t => {
+  const props = {balanceReady: true, walletSync: false, progress: 1,
+    spendableBalance: 70, lockedUnconfirmed: 30, unconfirmedBalance: 100, confirmedBalance: 90};
+  t.ok(balanceSnapshotReady(props), 'pending snapshot reconciles independently of confirmed total');
+  t.notOk(balanceSnapshotReady({...props, balanceReady: false}), 'transition is unknown');
+  t.notOk(balanceSnapshotReady({...props, walletSync: true}), 'rescan is updating');
+  t.notOk(balanceSnapshotReady({...props, lockedUnconfirmed: undefined}), 'missing lock is not zero');
+  t.ok(balanceSnapshotReady({...props, spendableBalance: 0, lockedUnconfirmed: 0, unconfirmedBalance: 0, confirmedBalance: 0}), 'known zero is valid');
+  const state = {...walletReducer(undefined, {}), wid: 'fixture-b', network: 'regtest', balanceReady: true};
+  t.equal(walletReducer(state, {type: SET_BALANCE, payload: {walletId: 'fixture-a', network: 'regtest'}}), state, 'another wallet balance rejected');
+  t.notOk(walletReducer(state, {type: INVALIDATE_WALLET_REQUESTS, payload: 'fixture-a'}).balanceReady, 'selection hides prior snapshot');
+  const current = {...state, balanceContext: '2:3'};
+  t.equal(walletReducer(current, {type: SET_BALANCE, payload: {walletId: 'fixture-b', network: 'regtest', balanceContext: '2:1'}}), current, 'queued old same-wallet IPC generation rejected');
+  const payload = {walletId: 'fixture-b', network: 'regtest', balanceContext: '2:3',
+    confirmed: 100, unconfirmed: 90, lockedConfirmed: 20, lockedUnconfirmed: 30};
+  t.equal(walletReducer(current, {type: SET_BALANCE, payload}).balance.spendable, 60, 'current-context update accepted with unchanged accounting');
+  const restarted = walletReducer(current, {type: SET_WALLET, payload: {
+    wid: 'fixture-b', balanceContext: '4:1', balance: payload}});
+  t.equal(restarted.balanceContext, '4:1', 'new account snapshot restores backend context');
+  t.equal(walletReducer(restarted, {type: SET_BALANCE,
+    payload: {...payload, balanceContext: '4:1', unconfirmed: 80}}).balance.spendable, 50, 'new backend balance updates resume');
+  t.end();
+});
 
 test('stale wallet statistics cannot restore redeemed action cards', async t => {
   const originalGetStats = walletClient.getStats;

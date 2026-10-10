@@ -16,6 +16,7 @@ import { BIDS_FILTER_NEED_REVEAL, NAME_STATES } from '../../constants/names';
 import { MARKETPLACE_STATUS } from '../../utils/marketplaceRequest';
 import { I18nContext } from '../../utils/i18n';
 import {fetchWalletStats} from '../../ducks/walletStats';
+import BalanceSummary from './BalanceSummary';
 import './overview.scss';
 
 const analytics = aClientStub(() => require('electron').ipcRenderer);
@@ -40,6 +41,8 @@ const ACTIVE_LISTING_STATUSES = new Set([
     confirmedBalance: state.wallet.balance.confirmed,
     unconfirmedBalance: state.wallet.balance.unconfirmed,
     lockedConfirmed: state.wallet.balance.lockedConfirmed,
+    lockedUnconfirmed: state.wallet.balance.lockedUnconfirmed,
+    balanceReady: state.wallet.balanceReady,
     height: state.node.chain.height,
     progress: state.node.chain.progress,
     network: state.wallet.network || state.node.network,
@@ -78,6 +81,8 @@ export default class Overview extends Component {
     confirmedBalance: PropTypes.number,
     unconfirmedBalance: PropTypes.number,
     lockedConfirmed: PropTypes.number,
+    lockedUnconfirmed: PropTypes.number,
+    balanceReady: PropTypes.bool,
     height: PropTypes.number,
     progress: PropTypes.number,
     network: PropTypes.string,
@@ -123,6 +128,9 @@ export default class Overview extends Component {
     if (
       this.props.height !== prevProps.height
       || this.props.walletHeight !== prevProps.walletHeight
+      || this.props.walletId !== prevProps.walletId
+      || this.props.network !== prevProps.network
+      || this.props.balanceReady !== prevProps.balanceReady
     ) {
       this.updateStats();
     }
@@ -349,111 +357,18 @@ export default class Overview extends Component {
   }
 
   renderHero() {
-    const { t } = this.context;
-    const {
-      spendableBalance,
-      confirmedBalance,
-      unconfirmedBalance,
-      showUsdValue,
-      hnsPrice,
-      walletType,
-      walletWatchOnly,
-      wallets,
-    } = this.props;
-    const { lockedBalance } = this.props.walletStats;
-
-    const lockedBidding = lockedBalance?.bidding?.HNS || 0;
-    const lockedRevealable = lockedBalance?.revealable?.HNS || 0;
-    const lockedFinished = lockedBalance?.finished?.HNS || 0;
-    const lockedTotal = lockedBidding + lockedRevealable + lockedFinished;
-
-    const usd = (amount) =>
-      ((amount * (hnsPrice?.value || 0)) / 1e6).toFixed(2);
-
-    const walletKind = walletWatchOnly
-      ? t('overviewWalletWatchOnly')
-      : walletType === 'multisig'
-        ? t('overviewWalletMultisig')
-        : t('overviewWalletStandard');
-
-    const metaParts = [
-      this.getWalletDisplayName(),
-      walletKind,
-      t('overviewLocalWallets', String(wallets?.length || 1)),
-    ];
-    if (showUsdValue) {
-      metaParts.push(`~$${usd(spendableBalance || 0)} ${hnsPrice?.currency || 'USD'}`);
-    }
-
-    return (
-      <div className="overview__hero">
-        <div className="overview__hero-main">
-          <span className="overview__hero-kicker">{t('overviewSpendable')}</span>
-          <span className="overview__hero-amount">
-            {displayBalance(spendableBalance || 0, true, 2)}
-          </span>
-          <span className="overview__hero-meta">{metaParts.join(' · ')}</span>
-        </div>
-
-        <div className="overview__hero-side">
-          <div
-            className="overview__hero-chip"
-            role="button"
-            tabIndex={0}
-            onClick={() => this.go('/account')}
-            onKeyDown={(e) => e.key === 'Enter' && this.go('/account')}
-          >
-            <span className="overview__hero-chip-label">{t('overviewConfirmed')}</span>
-            <span className="overview__hero-chip-value">
-              {displayBalance(confirmedBalance || 0, true, 2)}
-            </span>
-          </div>
-          <div
-            className="overview__hero-chip"
-            role="button"
-            tabIndex={0}
-            onClick={() => this.go('/account')}
-            onKeyDown={(e) => e.key === 'Enter' && this.go('/account')}
-          >
-            <span className="overview__hero-chip-label">{t('overviewUnconfirmed')}</span>
-            <span className="overview__hero-chip-value">
-              {displayBalance(unconfirmedBalance || 0, true, 2)}
-            </span>
-          </div>
-          <div
-            className="overview__hero-chip"
-            role="button"
-            tabIndex={0}
-            onClick={() => this.go('/bids')}
-            onKeyDown={(e) => e.key === 'Enter' && this.go('/bids')}
-          >
-            <span className="overview__hero-chip-label">{t('overviewLockedAuctions')}</span>
-            <span className="overview__hero-chip-value">
-              {displayBalance(lockedTotal, true, 2)}
-            </span>
-          </div>
-          <div
-            className="overview__hero-chip"
-            role="button"
-            tabIndex={0}
-            onClick={() => this.go('/bids')}
-            onKeyDown={(e) => e.key === 'Enter' && this.go('/bids')}
-          >
-            <span className="overview__hero-chip-label">{t('overviewLockedBidding')}</span>
-            <span className="overview__hero-chip-value">
-              {displayBalance(lockedBidding, true, 2)}
-              {lockedBalance?.bidding?.num
-                ? ` · ${lockedBalance.bidding.num}`
-                : ''}
-            </span>
-          </div>
-        </div>
-      </div>
-    );
+    return <BalanceSummary {...this.props} walletName={this.getWalletDisplayName()} />;
   }
 
   renderActionCenter(items) {
     const { t } = this.context;
+    if (this.props.walletStats.isLoading || this.props.walletStats.error
+      || !this.props.balanceReady || this.props.walletSync || this.props.progress < 1) {
+      return <section className="overview__section">
+        <h3>{t('overviewActionCenter')}</h3>
+        <p>{t('balanceUpdating')}</p>
+      </section>;
+    }
     const count = items.length;
 
     return (

@@ -414,14 +414,20 @@ class WalletService {
 
   getAccountInfo = async () => {
     if (!this.name) return null;
-    const wallet = await this.node.wdb.get(this.name);
+    const name = this.name;
+    const selectionGeneration = this.walletSelectionGeneration;
+    const backendGeneration = this.rescanBackendGeneration;
+    const wallet = await this.node.wdb.get(name);
     if (!wallet) return null;
 
     const account = await wallet.getAccount('default');
     const balance = await wallet.getBalance(account.accountIndex);
+    if (name !== this.name || selectionGeneration !== this.walletSelectionGeneration
+      || backendGeneration !== this.rescanBackendGeneration) return null;
     return {
-      wid: this.name,
       ...account.getJSON(balance),
+      wid: name,
+      balanceContext: `${backendGeneration}:${selectionGeneration}`,
     };
   };
 
@@ -2610,14 +2616,20 @@ class WalletService {
 
   refreshWalletInfo = async () => {
     if (!this.name) return;
-
+    const name = this.name;
+    const selectionGeneration = this.walletSelectionGeneration;
+    const backendGeneration = this.rescanBackendGeneration;
+    const network = this.networkName;
     const accountInfo = await this.getAccountInfo();
 
-    if (!accountInfo) return;
+    if (!accountInfo || accountInfo.wid !== name || this.name !== name
+      || this.walletSelectionGeneration !== selectionGeneration
+      || this.rescanBackendGeneration !== backendGeneration) return;
 
     dispatchToMainWindow({
       type: SET_BALANCE,
-      payload: accountInfo.balance,
+      payload: {...accountInfo.balance, walletId: name, network,
+        balanceContext: accountInfo.balanceContext},
     });
   };
 

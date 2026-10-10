@@ -19,6 +19,7 @@ import ImportWarning from '../../app/pages/Onboarding/ImportSeedWarning';
 import Backup from '../../app/pages/Onboarding/BackUpSeedWarning';
 import Password from '../../app/pages/Onboarding/CreatePassword';
 import Overview from '../../app/pages/Overview';
+import BalanceSummary from '../../app/pages/Overview/BalanceSummary';
 import Send from '../../app/components/SendModal';
 import Receive from '../../app/components/ReceiveModal';
 import Basket, {AuctionBasket} from '../../app/pages/AuctionBasket';
@@ -48,6 +49,7 @@ Object.assign(state.wallet, {
   network: 'regtest',
   isLocked: false,
   initialized: true,
+  balanceReady: true,
   wallets: ['fixture-only'],
   walletsDetails: {'fixture-only': {type: 'standard'}},
   receiveAddress: 'FIXTURE-NOT-A-VALID-ADDRESS',
@@ -184,6 +186,10 @@ const screens = {
   backup: [Backup, '/new-wallet'],
   password: [Password, '/new-wallet'],
   overview: [Overview, '/overview'],
+  balance: [() => <div className="overview"><BalanceSummary walletName="fixture-only"
+    walletType="standard" balanceReady={true} progress={1}
+    spendableBalance={123456789012345} lockedUnconfirmed={1000000000000}
+    confirmedBalance={124456789012345} unconfirmedBalance={124456789012345} /></div>, '/overview'],
   send: [Send, '/send'],
   receive: [Receive, '/receive'],
   basket: [Basket, '/auction-basket'],

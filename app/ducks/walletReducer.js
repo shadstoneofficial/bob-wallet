@@ -34,6 +34,8 @@ export function getInitialState() {
     phraseMismatch: false,
     isFetching: false,
     initialized: false,
+    balanceReady: false,
+    balanceContext: null,
     network: '',
     balance: {
       confirmed: 0,
@@ -89,6 +91,8 @@ export default function walletReducer(state = getInitialState(), {type, payload}
     case SET_WALLET:
       return {
         ...state,
+        balanceReady: true,
+        balanceContext: payload.balanceContext || null,
         transactions: state.wid === payload.wid
           ? state.transactions
           : new Map(),
@@ -117,12 +121,16 @@ export default function walletReducer(state = getInitialState(), {type, payload}
     case INVALIDATE_WALLET_REQUESTS:
       return {
         ...state,
+        balanceReady: false,
         requestGeneration: state.requestGeneration + 1,
         requestWallet: payload || state.wid,
         isFetching: false,
         pendingTransactionsWarning: null,
       };
     case SET_BALANCE:
+      if (!state.balanceReady || payload.walletId !== state.wid
+        || payload.network !== state.network || state.requestWallet
+        || !state.balanceContext || payload.balanceContext !== state.balanceContext) return state;
       return {
         ...state,
         balance: {
@@ -142,11 +150,13 @@ export default function walletReducer(state = getInitialState(), {type, payload}
     case SET_WALLET_NETWORK:
       return {
         ...state,
+        balanceReady: false,
         network: payload,
       };
     case LOCK_WALLET:
       return {
         ...state,
+        balanceReady: false,
         isLocked: true,
       };
     case UNLOCK_WALLET:
