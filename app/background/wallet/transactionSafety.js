@@ -3,14 +3,18 @@ const {Lock} = require('bmutex');
 export class WalletMutationCoordinator {
   constructor() {
     this.lock = new Lock();
+    this.pending = 0;
   }
 
   async run(task) {
-    const unlock = await this.lock.lock();
+    this.pending++;
+    let unlock;
     try {
+      unlock = await this.lock.lock();
       return await task();
     } finally {
-      unlock();
+      if (unlock) unlock();
+      this.pending--;
     }
   }
 }

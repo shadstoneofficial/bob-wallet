@@ -65,6 +65,8 @@ export class NodeService extends EventEmitter {
   } = {}) {
     super();
 
+    this.stopWallet = async () => {};
+    this.stopPromise = null;
     this.height = 0;
     this.hsd = null;
     this.client = null;
@@ -527,13 +529,13 @@ export class NodeService extends EventEmitter {
 
   async closeRPCClients() {
     const clients = [...new Set([this.client, this.transactionClient].filter(Boolean))];
-    this.client = null;
-    this.transactionClient = null;
-
     let firstError = null;
     for (const client of clients) {
       try {
         await client.close();
+        // Failed closures must retain their handles for shutdown recovery.
+        if (this.client === client) this.client = null;
+        if (this.transactionClient === client) this.transactionClient = null;
       } catch (error) {
         firstError = firstError || error;
       }
@@ -542,11 +544,16 @@ export class NodeService extends EventEmitter {
     if (firstError) throw firstError;
   }
 
-  async stop() {
+  stop() {
+    if (!this.stopPromise) {
+      this.stopPromise = Promise.resolve().then(() => this.stopResources())
+        .finally(() => { this.stopPromise = null; });
+    }
+    return this.stopPromise;
+  }
+
+  async stopResources() {
     const hsd = this.hsd;
-    this.hsd = null;
-    this.connectionType = null;
-    this.height = 0;
 
     let firstError = null;
     try {
@@ -558,13 +565,19 @@ export class NodeService extends EventEmitter {
     if (hsd) {
       try {
         await hsd.close();
+        if (this.hsd === hsd) this.hsd = null;
       } catch (error) {
         firstError = firstError || error;
       }
     }
 
-    this.emit('stopped');
     if (firstError) throw firstError;
+    // Custom RPC owns a separate wallet node. EventEmitter does not await
+    // async listeners, so wallet closure is an explicit shutdown barrier.
+    await this.stopWallet();
+    this.connectionType = null;
+    this.height = 0;
+    this.emit('stopped');
   }
 
   async reset() {

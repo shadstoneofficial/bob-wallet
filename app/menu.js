@@ -1,9 +1,22 @@
-import { app, Menu, shell } from 'electron';
-import showMainWindow, { getMainWindow } from './mainWindow';
+import { app, Menu, shell, dialog } from 'electron';
+import showMainWindow, { getMainWindow, dispatchToMainWindow, waitForMainWindowReady } from './mainWindow';
 const pkg = require('../package.json');
 const Path = require('path');
 
 export default class MenuBuilder {
+  constructor({checkUpdates} = {}) { this.checkUpdates = checkUpdates; }
+  openUpdates = async () => {
+    try {
+      showMainWindow();
+      await waitForMainWindowReady();
+      dispatchToMainWindow({type: '@@router/CALL_HISTORY_METHOD', payload: {
+        method: 'push', args: ['/settings/general'],
+      }});
+      if (this.checkUpdates) await this.checkUpdates();
+    } catch (error) {
+      dialog.showErrorBox('Unable to check for updates', error.message || String(error));
+    }
+  };
   buildMenu() {
 
     // https://www.electronjs.org/docs/all#appsetaboutpaneloptionsoptions
@@ -60,6 +73,10 @@ export default class MenuBuilder {
         {
           label: 'About Bob',
           role: 'about'
+        },
+        {
+          label: 'Check for updates…',
+          click: this.openUpdates,
         },
         {type: 'separator'},
         {label: 'Services', submenu: []},
@@ -237,6 +254,7 @@ export default class MenuBuilder {
       {
         label: 'Help',
         submenu: [
+          {label: 'Check for updates…', click: this.openUpdates},
           {
             label: "About Bob",
             click: () => {

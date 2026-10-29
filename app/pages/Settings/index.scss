@@ -1,5 +1,14 @@
 @import '../../variables';
 
+.settings-updates {
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid rgba(128, 128, 128, .25);
+  overflow-wrap: anywhere;
+  h2 { font-size: 1.125rem; font-weight: 500; }
+  p { line-height: 1.6; }
+  button { margin: .25rem .5rem .25rem 0; white-space: normal; }
+}
+
 .settings {
   @extend %col-nowrap;
   flex: 1 1 auto;

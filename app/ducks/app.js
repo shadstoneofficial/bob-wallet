@@ -27,13 +27,13 @@ export const checkForUpdates = () => async (dispatch) => {
   const latestRelease = await settingsClient.getLatestRelease();
   if (!latestRelease) return;
 
-  const canUpdate = semver.gt(latestRelease.tag_name.replace(/$v/i, ''), pkg.version);
+  const canUpdate = semver.valid(latestRelease.tag_name) && semver.gt(latestRelease.tag_name, pkg.version);
   if (canUpdate) {
     dispatch({
       type: SET_UPDATE_AVAILABLE,
       payload: {
         version: latestRelease.tag_name,
-        url: `https://github.com/kyokan/bob-wallet/releases/tag/${latestRelease.tag_name}`,
+        url: `https://github.com/shadstoneofficial/bob-wallet/releases/tag/${latestRelease.tag_name}`,
       },
     });
   }
