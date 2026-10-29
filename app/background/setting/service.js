@@ -4,6 +4,7 @@ import {
   normalizeLiquiditySpotHost,
 } from '../../constants/liquiditySpotChannels';
 import {fetchLiquidityChannel} from './safeChannelFetch';
+import {fetchLatestRelease} from '../updates/releases';
 
 const EXPLORER = 'setting/explorer';
 const LOCALE = 'setting/locale';
@@ -68,13 +69,7 @@ export async function setShowUsdValue(showUsdValue) {
 
 export async function getLatestRelease() {
   try {
-    const releases = await (
-      await fetch(
-        'https://api.github.com/repos/kyokan/bob-wallet/releases'
-      )
-    ).json();
-    const latest = releases.filter(r => !r.draft && !r.prerelease)[0];
-    return latest;
+    return await fetchLatestRelease();
   } catch (error) {
     console.error(error);
     return null;

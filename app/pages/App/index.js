@@ -106,7 +106,6 @@ class App extends Component {
       this.setState({isLoading: false});
       return;
     }
-    this.props.checkForUpdates();
     await this.props.startNode();
     await this.props.initHip2();
     this.props.watchActivity();

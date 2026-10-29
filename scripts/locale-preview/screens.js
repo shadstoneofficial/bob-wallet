@@ -28,6 +28,8 @@ import OpenBasket from '../../app/pages/OpenBasket';
 import Domains from '../../app/pages/DomainManager';
 import Exchange, {Exchange as ExchangeScreen} from '../../app/pages/Exchange';
 import Settings from '../../app/pages/Settings';
+import Updates from '../../app/pages/Settings/Updates';
+import '../../app/pages/Settings/index.scss';
 import RevealSeed from '../../app/pages/Settings/RevealSeedModal';
 import {FinalizeWithPaymentModal} from '../../app/pages/MyDomain/FinalizeWithPaymentModal';
 import {Records} from '../../app/components/Records';
@@ -179,6 +181,13 @@ class AddonsReview extends Addons {
 }
 function CatalogReview() {return <AddonsReview location={{pathname: '/addons'}} history={{push: noop}} deeplinkParams={{}} />;}
 const screens = {
+  updates: [class extends Updates {
+    constructor(props) {
+      super(props);
+      this.state = {stage: query.get('phase') || 'downloaded', version: '2.3.19', target: '2.3.20',
+        installable: true, url: 'https://github.com/shadstoneofficial/bob-wallet/releases/tag/v2.3.20'};
+    }
+  }, '/settings/general'],
   selling: [() => <div className="my-domain"><Records name="fixture" network="regtest"
     domain={{isOwner: true, info: {registered: true}}} resource={{records: []}}
     currentHeight={1000} editable sellingOptions transferring={false} deeplinkParams={{}}
