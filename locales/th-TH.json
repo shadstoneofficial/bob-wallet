@@ -1,4 +1,5 @@
 {
+  "updatesInstalled": "ติดตั้งแล้ว: %s",
   "updatesStage_disabled": "ปิดการอัปเดตในโปรไฟล์พัฒนาและทดสอบ",
   "updatesClose": "ปิด Bob ให้เสร็จ",
   "updatesTitle": "อัปเดตแอป",

@@ -1,4 +1,5 @@
 {
+  "updatesInstalled": "Installed: %s",
   "updatesStage_disabled": "Updates are disabled in development and test profiles.",
   "updatesClose": "Finish closing Bob",
   "updatesTitle": "App updates",

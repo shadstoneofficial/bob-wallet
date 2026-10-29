@@ -1,16 +1,21 @@
-import { app, Menu, shell } from 'electron';
-import showMainWindow, { getMainWindow, dispatchToMainWindow } from './mainWindow';
+import { app, Menu, shell, dialog } from 'electron';
+import showMainWindow, { getMainWindow, dispatchToMainWindow, waitForMainWindowReady } from './mainWindow';
 const pkg = require('../package.json');
 const Path = require('path');
 
 export default class MenuBuilder {
   constructor({checkUpdates} = {}) { this.checkUpdates = checkUpdates; }
-  openUpdates = () => {
-    showMainWindow();
-    dispatchToMainWindow({type: '@@router/CALL_HISTORY_METHOD', payload: {
-      method: 'push', args: ['/settings/general'],
-    }});
-    if (this.checkUpdates) Promise.resolve(this.checkUpdates()).catch(() => {});
+  openUpdates = async () => {
+    try {
+      showMainWindow();
+      await waitForMainWindowReady();
+      dispatchToMainWindow({type: '@@router/CALL_HISTORY_METHOD', payload: {
+        method: 'push', args: ['/settings/general'],
+      }});
+      if (this.checkUpdates) await this.checkUpdates();
+    } catch (error) {
+      dialog.showErrorBox('Unable to check for updates', error.message || String(error));
+    }
   };
   buildMenu() {
 

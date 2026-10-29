@@ -1,4 +1,5 @@
 {
+  "updatesInstalled": "已安装：%s",
   "updatesStage_disabled": "开发和测试配置中已禁用更新。",
   "updatesClose": "完成关闭 Bob",
   "updatesTitle": "应用更新",

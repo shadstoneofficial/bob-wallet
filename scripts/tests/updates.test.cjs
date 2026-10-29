@@ -238,5 +238,31 @@ test('updater view renders all four locales and discards late responses after un
     assert(!html.includes('undefined'));
     view.state = {stage: 'downloading', progress: 25};
     assert(!require('react-dom/server').renderToStaticMarkup(view.render()).includes('<button'));
+    view.state = {stage: 'idle', version: '2.3.19'};
+    const idle = require('react-dom/server').renderToStaticMarkup(view.render());
+    assert(idle.includes(strings.updatesInstalled.replace('%s', '2.3.19')));
+    assert(!idle.includes('Latest checked'));
   }
+});
+
+test('menu waits for a reopened renderer before navigation and checking', async () => {
+  const source = fs.readFileSync(path.join(__dirname, '../../app/menu.js'), 'utf8');
+  const compiled = require('@babel/core').transformSync(source, {configFile: false, babelrc: false,
+    presets: [['@babel/preset-env', {targets: {node: 'current'}}]]}).code;
+  const calls = [];
+  let ready;
+  const exports = {};
+  new Function('require', 'exports', compiled)(name => {
+    if (name === 'electron') return {dialog: {showErrorBox: () => calls.push('error')}};
+    if (name === './mainWindow') return {__esModule: true,
+      default: () => calls.push('show'), waitForMainWindowReady: () => new Promise(resolve => {ready = resolve;}),
+      dispatchToMainWindow: action => calls.push(action.payload.args[0])};
+    if (name === '../package.json') return require('../../package.json');
+    return require(name);
+  }, exports);
+  const menu = new exports.default({checkUpdates: async () => calls.push('check')});
+  const request = menu.openUpdates();
+  assert.deepEqual(calls, ['show']);
+  ready(); await request;
+  assert.deepEqual(calls, ['show', '/settings/general', 'check']);
 });

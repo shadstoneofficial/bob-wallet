@@ -38,7 +38,7 @@ export default class Updates extends React.Component {
     return <section className="settings-updates" aria-labelledby="updates-title">
       <h2 id="updates-title">{t('updatesTitle')}</h2>
       <p>{t('updatesManual')}</p>
-      {version && <p>{t('updatesVersion', version, target || version)}</p>}
+      {version && <p>{target ? t('updatesVersion', version, target) : t('updatesInstalled', version)}</p>}
       <p role="status" aria-live="polite">{t(`updatesStage_${stage}`)}
         {stage === 'downloading' && ` ${Math.round(progress || 0)}%`}</p>
       {(error || transportError) && <p role="alert">{error || transportError}</p>}

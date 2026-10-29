@@ -1,4 +1,5 @@
 {
+  "updatesInstalled": "Установлено: %s",
   "updatesStage_disabled": "Обновления отключены в профилях разработки и тестирования.",
   "updatesClose": "Завершить закрытие Bob",
   "updatesTitle": "Обновления приложения",

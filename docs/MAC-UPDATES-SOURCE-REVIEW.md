@@ -28,6 +28,8 @@ Scope: manual Mac update delivery; no package/signing/publication performed.
   development cannot invoke the live update flow.
 - The UI renders text and an official release link, not release-supplied HTML.
   Unmount guards discard late responses; backend state survives navigation.
+  Menu navigation waits for renderer readiness when reopening a closed window;
+  the idle view does not claim a latest-checked version before a check completes.
 
 This is a same-agent source review, not independent security or packaged acceptance.
 Reviewers should focus on shutdown/quit ordering, concurrent admission, native
@@ -44,7 +46,7 @@ publisher/version verification and the real two-version upgrade matrix in
 - Production renderer and main/updater Babel compilation passed. Static locale
   preview compilation passed. Chinese/Russian/Thai key, placeholder, URL and
   technical-token parity checks passed.
-- All 13 final updater tests pass, covering IPC fencing, native handoff with mocked Electron,
+- All 14 final updater tests pass, covering IPC fencing, native handoff with mocked Electron,
   manifest integrity, cleanup failures, controller-level late completion after
   download/native-staging timeouts, and component unmount behavior.
 - Narrow/wide light/dark **visual review NOT TESTED**: browser control is disabled
