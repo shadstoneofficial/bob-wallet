@@ -95,7 +95,7 @@ class WalletService {
   constructor() {
     nodeService.on('start remote', this._useWalletNode);
     nodeService.on('start local', this._usePlugin);
-    nodeService.on('stopped', this._onNodeStop);
+    nodeService.stopWallet = this._onNodeStop;
     this.nodeService = nodeService;
     this.lastProgressUpdate = 0;
     this.lastKnownChainHeight = 0;

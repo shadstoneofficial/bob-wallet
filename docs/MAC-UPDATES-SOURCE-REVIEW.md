@@ -68,3 +68,9 @@ the older builder keeps its own compatible nested dependency.
 (`bcurl`, `bsock`, `bweb`, `hsd`, `shakedex`), zero high/moderate/low entries.
 This is not a zero-advisory release; retain the existing protocol-specific
 mitigation and limitations in `dependency-audit-2026-10-04.md`.
+
+## Follow-up: partial resource shutdown (2026-10-29)
+
+The builder's independent re-review found that NodeService discarded failed RPC/HSD close handles. Shutdown now clears each handle only after its close resolves, retains failures for retry, and reports stopped only after successful cleanup. Concurrent stop attempts share one promise. Custom RPC's separate wallet-node shutdown is now an awaited barrier rather than an unawaited EventEmitter listener. Recovery never reopens RPC admission or stages an update.
+
+Regression coverage uses inert resources with the real NodeService: mixed successful/failed closes, persistent failures, async wallet-close rejection/delay, and a node that clears its opened flag before failing. In that last case a subsequent close may reject again: this remains a visible, fenced failure, not evidence of successful shutdown. Native HSD failure recovery is not established by mocked resources. Independent re-review and signed upgrade acceptance remain required.
