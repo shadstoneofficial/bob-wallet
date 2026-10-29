@@ -19,7 +19,7 @@
   "updatesStage_installing": "正在关闭钱包并准备更新，请稍候。",
   "updatesStage_error": "检查更新失败，可以重试。",
   "updatesStage_downloadFailed": "下载失败。请重启 Bob 后重试，或使用官方下载页面。",
-  "updatesStage_installFailed": "更新安装已停止。关闭过程可能尚未完成，钱包操作仍被阻止。请勿重试交易；请在 Bob 关闭后重新打开。",
+  "updatesStage_installFailed": "更新未能完成，钱包操作仍被阻止。如果 macOS 已开始暂存更新，仍可能完成准备。请完成关闭 Bob，然后重新打开并检查版本。",
   "registrationLeaveWarning": "离开此页面会暂停剩余的注册。您可以返回后继续。",
   "registrationNoWork": "当前没有符合注册条件的域名。",
   "registrationPreflightTimeout": "检查注册条件耗时过长。尚未发送任何交易。请重试。",

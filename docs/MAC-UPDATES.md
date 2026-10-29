@@ -24,6 +24,13 @@ partially failed shutdown keeps wallet RPCs blocked; Finish closing Bob retries
 orderly shutdown, without retrying a transaction or starting another download.
 Pending receipts, profiles, keys and Shakedex backups are never cleared by updater code.
 
+Once the user explicitly requests installation and native staging begins, Squirrel
+does not expose a reliable cancellation API. If native staging times out, it may
+still finish preparing that authorized update. Bob does not issue a late restart,
+but a subsequent quit can apply a natively staged update. The wallet has already
+closed before this boundary; do not describe a staging timeout as proof that the
+old app will remain installed. Reopen Bob and check its displayed version.
+
 GitHub release/version/asset URLs, file name, architecture, size and SHA-512 metadata
 are checked before download. SHA-512 verifies transport integrity, not authorship.
 macOS's native Squirrel verifier must accept the signed application before install.
@@ -65,8 +72,10 @@ Verify these cases with exact old/new SHAs and checksums:
    without changing the installed app or wallet data.
 4. Install is rejected during signing, broadcast, queued mutations, restore,
    rescan and registration work. New RPCs cannot enter after shutdown admission.
-5. Shutdown/native staging failures and timeouts do not install unexpectedly or
-   reopen wallet operations. Late events cannot trigger a restart.
+5. Shutdown failures never start native staging. Native staging failures/timeouts
+   retain blocked wallet operations and clearly report the uncertain staging
+   outcome. Late events cannot trigger an app-initiated restart; exercise the
+   native subsequent-quit behavior described above.
 6. EN/Chinese/Russian/Thai, narrow/wide light/dark; Windows/Linux manual fallback.
 
 Native verification and installer replacement are NOT TESTED by Node tests or

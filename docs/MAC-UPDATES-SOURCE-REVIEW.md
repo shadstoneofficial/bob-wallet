@@ -17,6 +17,10 @@ Scope: manual Mac update delivery; no package/signing/publication performed.
 - Download cancellation closes the local proxy, including late download events.
   Timeouts do not attach any late automatic-install continuation. Failed shutdown
   never reopens financial RPC admission. A recovery close retries shutdown only.
+  Once explicitly requested native staging begins, Squirrel may complete it even
+  after our timeout; a subsequent quit can apply that authorized staged update.
+  The wallet is already closed. This native cancellation limitation is disclosed
+  in the UI/runbook and requires real packaged acceptance.
 - The updater does not read, delete, migrate or rewrite wallet profiles/receipts.
   Existing node shutdown code owns database closure. Private acceptance mode and
   development cannot invoke the live update flow.

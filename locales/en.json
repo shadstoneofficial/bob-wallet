@@ -19,7 +19,7 @@
   "updatesStage_installing": "Closing the wallet and preparing the update. Please wait.",
   "updatesStage_error": "The update check failed. You can try again.",
   "updatesStage_downloadFailed": "Download failed. Restart Bob before trying again, or use the official download page.",
-  "updatesStage_installFailed": "Update installation stopped. Wallet operations remain blocked because shutdown may be incomplete. Do not retry transactions; reopen Bob after it has closed.",
+  "updatesStage_installFailed": "Update could not finish. Wallet operations remain blocked. If macOS staging began, it may still finish preparing the authorized update. Finish closing Bob, then reopen it and check the version.",
   "registrationLeaveWarning": "Leaving this page pauses the remaining registrations. You can return and resume.",
   "registrationNoWork": "No names are currently eligible for registration.",
   "registrationPreflightTimeout": "Checking registration eligibility took too long. No transaction was sent. Try again.",
