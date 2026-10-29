@@ -9,9 +9,12 @@ export function deadline(promise, milliseconds, label) {
 
 // All dependencies are injected so safety tests never import Electron or a wallet.
 export class UpdateController {
-  constructor({version, arch, enabled, installable, fetchRelease, makeUpdater, gate, isBusy, shutdown, quit}) {
+  constructor({version, arch, enabled, installable, fetchRelease, makeUpdater, gate, isBusy, shutdown, quit, timeouts = {}}) {
     Object.assign(this, {version, arch, enabled, installable, fetchRelease, makeUpdater, gate, isBusy, shutdown, quit});
     this.state = {stage: enabled ? 'idle' : 'disabled', version};
+    // Internal dependency injection for deterministic tests; never supplied by IPC.
+    this.timeouts = {check: 20000, metadata: 30000, download: 30 * 60 * 1000,
+      shutdown: 60000, stage: 120000, ...timeouts};
   }
 
   async getState() {
@@ -23,7 +26,7 @@ export class UpdateController {
     if (!['idle', 'available', 'current', 'error'].includes(this.state.stage)) return this.getState();
     this.state = {stage: 'checking', version: this.version};
     try {
-      this.release = validateRelease(await deadline(this.fetchRelease(), 20000, 'Release check'), this.version, this.arch);
+      this.release = validateRelease(await deadline(this.fetchRelease(), this.timeouts.check, 'Release check'), this.version, this.arch);
       this.state = {stage: this.release.available ? 'available' : 'current', version: this.version,
         target: this.release.version, url: this.release.url, notes: this.release.notes,
         installable: this.installable && this.release.installable};
@@ -38,9 +41,9 @@ export class UpdateController {
       this.updater = this.makeUpdater(this.release, progress => {
         if (this.state.stage === 'downloading') this.state.progress = Math.max(0, Math.min(100, progress));
       });
-      const info = await deadline(this.updater.check(), 30000, 'Update metadata check');
+      const info = await deadline(this.updater.check(), this.timeouts.metadata, 'Update metadata check');
       validateUpdateInfo(info, this.release);
-      await deadline(this.updater.download(), 30 * 60 * 1000, 'Update download');
+      await deadline(this.updater.download(), this.timeouts.download, 'Update download');
       this.state = {...this.state, stage: 'downloaded', progress: 100};
     } catch (error) {
       // Cleanup failures must not hide the original failure or leave the UI
@@ -63,8 +66,8 @@ export class UpdateController {
     try {
       // Close the wallet before native staging: Squirrel can install staged updates
       // on a subsequent normal quit. No native staging occurs while the wallet runs.
-      await deadline(this.shutdown(), 60000, 'Wallet shutdown');
-      await deadline(this.updater.stage(), 120000, 'macOS update verification');
+      await deadline(this.shutdown(), this.timeouts.shutdown, 'Wallet shutdown');
+      await deadline(this.updater.stage(), this.timeouts.stage, 'macOS update verification');
       this.updater.install();
     } catch (error) {
       // A partial shutdown must never reopen financial RPC admission or auto-install.
@@ -76,7 +79,7 @@ export class UpdateController {
   async close() {
     if (this.state.stage !== 'installFailed') throw new Error('Close recovery is not available.');
     try {
-      await deadline(this.shutdown(), 60000, 'Wallet shutdown');
+      await deadline(this.shutdown(), this.timeouts.shutdown, 'Wallet shutdown');
       this.quit();
     } catch (error) { this.state.error = error.message; }
     return this.getState();

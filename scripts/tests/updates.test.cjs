@@ -108,6 +108,25 @@ test('bounded wait rejects without executing any late install continuation', asy
   await assert.rejects(deadline(new Promise(() => {}), 5, 'fixture'), /timed out/);
 });
 
+test('late download and native staging completion cannot resume a timed-out install', async () => {
+  for (const stage of ['download', 'stage']) {
+    let finish;
+    const late = new Promise(resolve => {finish = resolve;});
+    const calls = [];
+    const c = fixture({timeouts: {[stage]: 5}, makeUpdater: () => ({
+      check: async () => info(), download: () => stage === 'download' ? late : Promise.resolve(),
+      stage: () => stage === 'stage' ? late : Promise.resolve(),
+      install: () => calls.push('install'), cancel: () => calls.push('cancel'),
+    })}).controller;
+    await c.check(); await c.download();
+    if (stage === 'stage') await c.install();
+    assert.equal(c.state.stage, stage === 'download' ? 'downloadFailed' : 'installFailed');
+    finish(); await new Promise(resolve => setImmediate(resolve));
+    assert(!calls.includes('install'));
+    assert.equal(c.state.stage, stage === 'download' ? 'downloadFailed' : 'installFailed');
+  }
+});
+
 test('real RPC admission releases sync, callback, rejected and resolved calls; blocks late mutations', async () => {
   const source = fs.readFileSync(path.join(__dirname, '../../app/background/ipc/ipc.js'), 'utf8');
   const compiled = require('@babel/core').transformSync(source, {configFile: false, babelrc: false,

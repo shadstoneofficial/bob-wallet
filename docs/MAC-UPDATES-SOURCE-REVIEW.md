@@ -44,8 +44,9 @@ publisher/version verification and the real two-version upgrade matrix in
 - Production renderer and main/updater Babel compilation passed. Static locale
   preview compilation passed. Chinese/Russian/Thai key, placeholder, URL and
   technical-token parity checks passed.
-- All 12 final updater tests pass, covering IPC fencing, native handoff with mocked Electron,
-  manifest integrity, error/timeout paths, and component unmount behavior.
+- All 13 final updater tests pass, covering IPC fencing, native handoff with mocked Electron,
+  manifest integrity, cleanup failures, controller-level late completion after
+  download/native-staging timeouts, and component unmount behavior.
 - Narrow/wide light/dark **visual review NOT TESTED**: browser control is disabled
   in this session. Inert previews are supplied via `npm run preview-locale`,
   `?screen=updates&locale=th-TH&theme=dark` (also en-US/zh-CN/ru-RU).
