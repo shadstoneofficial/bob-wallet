@@ -266,3 +266,52 @@ test('menu waits for a reopened renderer before navigation and checking', async 
   ready(); await request;
   assert.deepEqual(calls, ['show', '/settings/general', 'check']);
 });
+
+const {createShutdownSequence} = require('../../app/background/updates/shutdown');
+for (const failedStage of [1, 2]) {
+  test(`partial shutdown recovery resumes failed stage ${failedStage} without reopening admission`, async () => {
+    const attempts = [0, 0, 0];
+    let finished = false;
+    let quits = 0;
+    const shutdown = createShutdownSequence([
+      ...attempts.map((_, index) => async () => {
+        attempts[index]++;
+        if (index < failedStage && attempts[index] > 1) throw new Error('Already closed');
+        if (index === failedStage && attempts[index] === 1) throw new Error('Partial failure');
+      }),
+      () => {finished = true;},
+    ]);
+    const {controller: c, calls, gate} = fixture({shutdown, quit: () => {quits++;}});
+    await c.check(); await c.download(); await c.install();
+    assert.equal(c.state.stage, 'installFailed');
+    assert.equal(finished, false);
+    assert.throws(() => gate.enter('Wallet.send'), /closing/);
+    await c.close();
+    assert.equal(finished, true);
+    assert.equal(quits, 1);
+    assert.deepEqual(attempts, failedStage === 1 ? [1, 2, 1] : [1, 1, 2]);
+    assert.deepEqual(calls, ['download']); // Recovery only quits: no native staging/install.
+    assert.equal(gate.closing, true);
+    await shutdown();
+    assert.deepEqual(attempts, failedStage === 1 ? [1, 2, 1] : [1, 1, 2]);
+  });
+}
+test('shutdown timeout and concurrent recovery share the pending stage', async () => {
+  let release;
+  let started = 0;
+  let finished = 0;
+  const shutdown = createShutdownSequence([
+    () => {started++; return new Promise(resolve => {release = resolve;});},
+    () => {finished++;},
+  ]);
+  const pending = shutdown();
+  await assert.rejects(deadline(pending, 5, 'Shutdown'), /timed out/);
+  assert.equal(shutdown(), pending);
+  assert.equal(started, 1);
+  assert.equal(finished, 0);
+  release();
+  await pending;
+  await shutdown();
+  assert.equal(started, 1);
+  assert.equal(finished, 1);
+});

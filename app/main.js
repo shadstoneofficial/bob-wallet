@@ -361,20 +361,19 @@ if (isPrimaryInstance) {
 
     let didFireQuitHandlers = false;
     let updateShutdown = false;
-    let updateShutdownPromise;
+    const finishUpdateShutdown = require('./background/updates/shutdown').createShutdownSequence([
+      () => services.shakedex.closeDB(),
+      () => services.node.service.stop(),
+      () => services.db.close(),
+      () => { didFireQuitHandlers = true; },
+    ]);
     let updatesController;
     if (!isPackagedTestMode) {
       updatesController = require('./background/updates/service').start(server, {
         app, testMode: false, wallet: services.wallet.service,
         shutdown: async () => {
           updateShutdown = true;
-          if (!updateShutdownPromise) updateShutdownPromise = (async () => {
-            await services.shakedex.closeDB();
-            await services.node.service.stop();
-            await services.db.close();
-            didFireQuitHandlers = true;
-          })().catch(error => { updateShutdownPromise = null; throw error; });
-          return updateShutdownPromise;
+          return finishUpdateShutdown();
         },
       });
     }
