@@ -43,7 +43,9 @@ export class UpdateController {
       await deadline(this.updater.download(), 30 * 60 * 1000, 'Update download');
       this.state = {...this.state, stage: 'downloaded', progress: 100};
     } catch (error) {
-      this.updater?.cancel();
+      // Cleanup failures must not hide the original failure or leave the UI
+      // claiming that a download is still running indefinitely.
+      try { this.updater?.cancel(); } catch (_) { /* This attempt stays unusable. */ }
       // Do not reuse a possibly still completing native attempt in this process.
       this.state = {...this.state, stage: 'downloadFailed', error: error.message};
     }

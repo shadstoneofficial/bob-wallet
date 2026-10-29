@@ -15,6 +15,8 @@ Scope: manual Mac update delivery; no package/signing/publication performed.
   asynchronous shutdown. Both queued and active wallet mutations count as busy.
   Sync throws, callbacks and Promise settlement release admission exactly once.
 - Download cancellation closes the local proxy, including late download events.
+  A cleanup exception cannot leave the controller in its downloading state or
+  mask the original network/metadata failure; a dedicated regression covers this.
   Timeouts do not attach any late automatic-install continuation. Failed shutdown
   never reopens financial RPC admission. A recovery close retries shutdown only.
   Once explicitly requested native staging begins, Squirrel may complete it even
@@ -42,7 +44,7 @@ publisher/version verification and the real two-version upgrade matrix in
 - Production renderer and main/updater Babel compilation passed. Static locale
   preview compilation passed. Chinese/Russian/Thai key, placeholder, URL and
   technical-token parity checks passed.
-- All 11 final updater tests pass, covering IPC fencing, native handoff with mocked Electron,
+- All 12 final updater tests pass, covering IPC fencing, native handoff with mocked Electron,
   manifest integrity, error/timeout paths, and component unmount behavior.
 - Narrow/wide light/dark **visual review NOT TESTED**: browser control is disabled
   in this session. Inert previews are supplied via `npm run preview-locale`,

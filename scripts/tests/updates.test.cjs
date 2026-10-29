@@ -91,6 +91,19 @@ test('download failure cancels and cannot be installed or blindly restarted', as
   assert.equal(c.state.stage, 'downloadFailed');
   await assert.rejects(c.install()); await assert.rejects(c.download());
 });
+
+test('cancellation cleanup failure still exposes the original download failure', async () => {
+  const c = fixture({makeUpdater: () => ({
+    check: async () => info(),
+    download: async () => {throw new Error('Connection interrupted');},
+    cancel: () => {throw new Error('Proxy cleanup failed');},
+  })}).controller;
+  await c.check();
+  const result = await c.download();
+  assert.equal(result.stage, 'downloadFailed');
+  assert.equal(result.error, 'Connection interrupted');
+  await assert.rejects(c.install(), /Download/);
+});
 test('bounded wait rejects without executing any late install continuation', async () => {
   await assert.rejects(deadline(new Promise(() => {}), 5, 'fixture'), /timed out/);
 });
