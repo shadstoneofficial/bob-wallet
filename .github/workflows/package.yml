@@ -71,6 +71,10 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Test notarization ticket retries
+        if: matrix.platform.signed_macos
+        run: bash scripts/tests/staple-retry.test.sh
+
       - name: Build signed, notarized, and stapled macOS package
         if: matrix.platform.signed_macos
         run: ${{ matrix.platform.cmd_package }}
