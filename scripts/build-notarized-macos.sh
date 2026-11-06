@@ -246,7 +246,7 @@ staple_and_verify_app() {
     local app_path="$1"
     local arch="$2"
     echo "Stapling notarization ticket for ${arch}: ${app_path}"
-    xcrun stapler staple "${app_path}"
+    bash "$(dirname "$0")/staple-notarization-ticket.sh" "${app_path}"
     xcrun stapler validate "${app_path}"
 
     echo "Verifying Gatekeeper assessment for ${arch}"
@@ -288,7 +288,7 @@ create_dmg() {
     poll_notarization "${arch}-dmg"
 
     echo "Stapling notarization ticket for ${arch} DMG: ${dmg_path}"
-    xcrun stapler staple "${dmg_path}"
+    bash "$(dirname "$0")/staple-notarization-ticket.sh" "${dmg_path}"
     xcrun stapler validate "${dmg_path}"
     spctl --assess --type open --context context:primary-signature --verbose "${dmg_path}"
 }
