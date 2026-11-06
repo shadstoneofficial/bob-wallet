@@ -316,6 +316,10 @@ done
 for arch in "${MAC_ARCHES[@]}"; do
     app_path="$(app_path_for_arch "${arch}")"
     staple_and_verify_app "${app_path}" "${arch}"
+    # ZIP the already signed, notarized and stapled app; no second app build.
+    update_zip="${OUTPUT_DIR}/Bob.LearnHNS-${VERSION}-${arch}.zip"
+    ditto -c -k --sequesterRsrc --keepParent "${app_path}" "${update_zip}"
+    node scripts/write-mac-update-manifest.cjs "${OUTPUT_DIR}" "${VERSION}" "${arch}"
     create_dmg "${app_path}" "${arch}"
 done
 

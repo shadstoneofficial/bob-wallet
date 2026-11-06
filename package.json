@@ -22,7 +22,7 @@
     "clean": "./scripts/clean.sh",
     "test:sync": "node scripts/sync/run.cjs",
     "pretest": "webpack --config ./configs/webpack.config.test.babel.js",
-    "test": "tape -r jsdom-global/register ./test-dist/test.js && node --test scripts/tests/basket-service.test.cjs scripts/tests/register-all-service.test.cjs && npm run test:packaged-harness",
+    "test": "tape -r jsdom-global/register ./test-dist/test.js && node --test scripts/tests/basket-service.test.cjs scripts/tests/register-all-service.test.cjs scripts/tests/updates.test.cjs && npm run test:packaged-harness",
     "test:packaged-harness": "node --test scripts/tests/packaged-acceptance.test.cjs scripts/tests/product-runtime.test.cjs scripts/tests/interactive-product.test.cjs scripts/tests/restore-runtime.test.cjs scripts/tests/embedded-restore.test.cjs scripts/tests/acceptance-routes.test.cjs scripts/tests/renderer-boundary.test.cjs scripts/tests/dependency-hardening.test.cjs scripts/tests/websocket-policy.test.cjs",
     "add-locale": "node scripts/add-locale.js",
     "check-all-locales": "node scripts/check-all-locales.js",
@@ -33,6 +33,7 @@
   "build": {
     "productName": "Bob LearnHNS",
     "appId": "com.learnhns.Bob",
+    "extraResources": [{"from": "resources/manual-update.yml", "to": "manual-update.yml"}],
     "protocols": {
       "name": "bob-wallet",
       "schemes": [
@@ -113,6 +114,7 @@
   "keywords": [],
   "homepage": "https://bobwallet.io/",
   "overrides": {
+    "electron-updater": {"js-yaml": "4.3.2"},
     "@babel/runtime": "7.26.10",
     "ajv@^6": "6.14.0",
     "bdb": "1.6.2",
@@ -172,6 +174,8 @@
     "webpack-dev-server": "4.11.1"
   },
   "dependencies": {
+    "electron-updater": "6.8.11",
+    "builder-util-runtime": "9.7.0",
     "@rithvikvibhu/connected-react-router": "6.9.3",
     "@sentry/electron": "7.15.0",
     "bcrypto": "5.4.0",

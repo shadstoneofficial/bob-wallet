@@ -64,6 +64,7 @@ export function makeServer(
   actionLogger = message => console.log(message),
 ) {
   const methods = {};
+  let admissionGate = null;
 
   const handler = (event, data) => {
     if (!authorize(event)) {
@@ -101,7 +102,12 @@ export function makeServer(
       params = data.params;
     }
 
+    let release = () => {};
+    let completed = false;
     const cb = (err, res) => {
+      if (completed) return;
+      completed = true;
+      release();
       if (err) {
         actionLogger(formatActionLog(
           data.method,
@@ -111,7 +117,7 @@ export function makeServer(
         ));
         log('Sending IPC method error.', sanitizeData(data, method), err);
         log('Stack:', err.stack);
-        Sentry.captureException(err);
+        if (err.code !== 'UPDATE_CLOSING') Sentry.captureException(err);
         return sendToRenderer(makeError(err.code || -1, err.message, data.id));
       }
       actionLogger(formatActionLog(
@@ -124,14 +130,19 @@ export function makeServer(
     };
 
     log('Executing IPC method.', sanitizeData(data, method));
-    const maybePromise = method.apply(null, [...params, cb]);
-    if (maybePromise.then) {
-      maybePromise.then((res) => cb(null, res))
-        .catch((err) => cb(err));
-    }
+    try {
+      release = admissionGate ? admissionGate.enter(data.method) : release;
+      const maybePromise = method.apply(null, [...params, cb]);
+      if (maybePromise && typeof maybePromise.then === 'function') {
+        maybePromise.then((res) => cb(null, res)).catch((err) => cb(err));
+      } else if (maybePromise !== undefined || method.length <= params.length) {
+        cb(null, maybePromise);
+      }
+    } catch (error) { cb(error); }
   };
 
   const server = {
+    setAdmissionGate(gate) { admissionGate = gate; },
     withMethod(service, name, method) {
       methods[`${service}.${name}`] = method;
     },
@@ -150,7 +161,7 @@ export function makeServer(
   return server;
 }
 
-export function makeClient(ipcRendererInjector, sName, methods) {
+export function makeClient(ipcRendererInjector, sName, methods, timeoutMs = 0) {
   const mkSend = mName => (...params) => {
     const ipcRenderer = ipcRendererInjector();
     const id = ++lastId;
@@ -158,6 +169,7 @@ export function makeClient(ipcRendererInjector, sName, methods) {
     log('Dispatching IPC method call.', id, mName);
 
     return new Promise((resolve, reject) => {
+      let timer;
       const handler = (event, data) => {
         const jsonData = JSON.parse(data);
         if (jsonData.id !== id) {
@@ -165,6 +177,7 @@ export function makeClient(ipcRendererInjector, sName, methods) {
         }
 
         ipcRenderer.off(SIGIL, handler);
+        clearTimeout(timer);
 
         if (jsonData.error) {
           log('Received IPC error.', id, mName, jsonData.result);
@@ -175,13 +188,21 @@ export function makeClient(ipcRendererInjector, sName, methods) {
         return resolve(jsonData.result);
       };
 
-      ipcRenderer.send(SIGIL, {
+      ipcRenderer.on(SIGIL, handler);
+      if (timeoutMs) timer = setTimeout(() => {
+        ipcRenderer.off(SIGIL, handler);
+        reject(new Error('Request timed out.'));
+      }, timeoutMs);
+      try { ipcRenderer.send(SIGIL, {
         jsonrpc: '2.0',
         method: `${sName}.${mName}`,
         params,
         id,
-      });
-      ipcRenderer.on(SIGIL, handler);
+      }); } catch (error) {
+        clearTimeout(timer);
+        ipcRenderer.off(SIGIL, handler);
+        reject(error);
+      }
     });
   };
 

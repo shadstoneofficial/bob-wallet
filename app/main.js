@@ -360,6 +360,23 @@ if (isPrimaryInstance) {
     });
 
     let didFireQuitHandlers = false;
+    let updateShutdown = false;
+    const finishUpdateShutdown = require('./background/updates/shutdown').createShutdownSequence([
+      () => services.shakedex.closeDB(),
+      () => services.node.service.stop(),
+      () => services.db.close(),
+      () => { didFireQuitHandlers = true; },
+    ]);
+    let updatesController;
+    if (!isPackagedTestMode) {
+      updatesController = require('./background/updates/service').start(server, {
+        app, testMode: false, wallet: services.wallet.service,
+        shutdown: async () => {
+          updateShutdown = true;
+          return finishUpdateShutdown();
+        },
+      });
+    }
 
     async function finishPackagedAcceptanceShutdown() {
       packagedErrorMonitor.setPhase('shutdown');
@@ -393,6 +410,7 @@ if (isPrimaryInstance) {
         return;
       }
       event.preventDefault();
+      if (updateShutdown) return;
       didFireQuitHandlers = true;
 
       if (isPackagedAcceptanceTest) {
@@ -435,7 +453,7 @@ if (isPrimaryInstance) {
       runtimeModules.sendDeeplinkToMainWindow(pendingStartupDeeplinks.shift());
     }
 
-    const menuBuilder = new runtimeModules.MenuBuilder();
+    const menuBuilder = new runtimeModules.MenuBuilder({checkUpdates: () => updatesController?.check()});
     menuBuilder.buildMenu();
 
     await runPackagedSmokeTest(firstWindow, services);

@@ -178,3 +178,110 @@ test('shutdown closes local and Custom RPC resources without fixture data', asyn
   t.equal(custom.transactionClient, null);
   t.end();
 });
+
+// Use the real NodeService stop implementation with inert resources only.
+test('partial node shutdown retains failed handles and retries only unfinished closures', async t => {
+  const service = new NodeService({nodeClientClass: FixtureNodeClient});
+  const calls = {rpc: 0, transaction: 0, hsd: 0};
+  const rpc = {close: async () => {if (++calls.rpc === 1) throw new Error('RPC close failed');}};
+  const transaction = {close: async () => {calls.transaction++;}};
+  const hsd = {close: async () => {if (++calls.hsd === 1) throw new Error('HSD close failed');}};
+  service.client = rpc;
+  service.transactionClient = transaction;
+  service.hsd = hsd;
+  service.connectionType = ConnectionTypes.P2P;
+  let stopped = 0;
+  service.on('stopped', () => {stopped++;});
+  try {await service.stop(); t.fail('must reject partial closure');}
+  catch (error) {t.equal(error.message, 'RPC close failed');}
+  t.equal(service.client, rpc, 'failed RPC handle survives');
+  t.equal(service.hsd, hsd, 'failed HSD handle survives');
+  t.equal(service.transactionClient, null, 'successful handle is cleared');
+  t.equal(stopped, 0, 'no stopped notification on failure');
+  await service.stop();
+  t.deepEqual(calls, {rpc: 2, transaction: 1, hsd: 2});
+  t.equal(service.client, null);
+  t.equal(service.hsd, null);
+  t.equal(stopped, 1);
+  await service.stop();
+  t.deepEqual(calls, {rpc: 2, transaction: 1, hsd: 2}, 'completed handles are not closed again');
+  t.end();
+});
+
+test('persistent node close failure keeps updater shutdown fenced and prevents staging', async t => {
+  const {createShutdownSequence} = require('../../updates/shutdown');
+  const {UpdateController} = require('../../updates/controller');
+  const {UpdateGate} = require('../../updates/gate');
+  const service = new NodeService({nodeClientClass: FixtureNodeClient});
+  let mayClose = false;
+  let closes = 0;
+  service.hsd = {close: async () => {closes++; if (!mayClose) throw new Error('Still open');}};
+  let appClosed = 0;
+  let staged = 0;
+  let quit = 0;
+  const shutdown = createShutdownSequence([() => service.stop(), () => {appClosed++;}]);
+  const gate = new UpdateGate();
+  const c = new UpdateController({gate, isBusy: () => false, shutdown, quit: () => {quit++;}});
+  c.state = {stage: 'downloaded'};
+  c.updater = {stage: async () => {staged++;}, install: () => t.fail('unexpected install')};
+  await c.install();
+  await c.close();
+  t.equal(closes, 2, 'recovery retries the same still-open resource');
+  t.equal(c.state.stage, 'installFailed');
+  t.equal(appClosed, 0);
+  t.equal(staged, 0);
+  t.equal(quit, 0);
+  t.ok(gate.closing);
+  mayClose = true;
+  await c.close();
+  t.equal(closes, 3);
+  t.equal(service.hsd, null);
+  t.equal(appClosed, 1);
+  t.equal(quit, 1);
+  t.equal(staged, 0, 'Finish closing does not stage the update');
+  t.ok(gate.closing);
+  t.end();
+});
+
+
+test('node stop awaits wallet closure and shares concurrent shutdown attempts', async t => {
+  const service = new NodeService({nodeClientClass: FixtureNodeClient});
+  let release;
+  let walletCloses = 0;
+  let stopped = 0;
+  service.on('stopped', () => {stopped++;});
+  service.stopWallet = async () => {
+    walletCloses++;
+    if (walletCloses === 1) throw new Error('Wallet remains open');
+    await new Promise(resolve => {release = resolve;});
+  };
+  try {await service.stop(); t.fail('wallet failure must reject stop');}
+  catch (error) {t.equal(error.message, 'Wallet remains open');}
+  t.equal(stopped, 0);
+  const attempt = service.stop();
+  t.equal(service.stop(), attempt, 'concurrent stop shares one closure');
+  await new Promise(resolve => setTimeout(resolve, 0));
+  t.equal(walletCloses, 2);
+  t.equal(stopped, 0, 'stop has not finished while wallet closure is pending');
+  release();
+  await attempt;
+  t.equal(stopped, 1);
+  t.end();
+});
+
+
+test('a node that clears opened before failing stays retained and blocks shutdown', async t => {
+  const service = new NodeService({nodeClientClass: FixtureNodeClient});
+  const hsd = {opened: true, close: async () => {
+    if (!hsd.opened) throw new Error('Node is not open');
+    hsd.opened = false;
+    throw new Error('Database close failed');
+  }};
+  service.hsd = hsd;
+  for (const message of ['Database close failed', 'Node is not open']) {
+    try {await service.stop(); t.fail('must not infer closed from opened=false');}
+    catch (error) {t.equal(error.message, message);}
+    t.equal(service.hsd, hsd);
+  }
+  t.end();
+});

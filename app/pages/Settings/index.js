@@ -16,6 +16,7 @@ import * as nodeActions from '../../ducks/node';
 import NetworkPicker from '../NetworkPicker';
 import Hip2Picker from '../Hip2Picker';
 import ExplorerPicker from '../ExplorerPicker';
+import Updates from './Updates';
 import { clientStub as aClientStub } from '../../background/analytics/client';
 const pkg = require('../../../package.json');
 import c from "classnames";
@@ -1069,6 +1070,7 @@ export default class Settings extends Component {
         <Switch>
           <Route path="/settings/general">
             <>
+              <Updates />
               {this.renderSection(
                 t('settingGeneralTitle'),
                 t('settingGeneralDesc'),

@@ -169,6 +169,7 @@ jobs:
           path: |
             release/*.AppImage
             release/*.dmg
+            release/*.zip
             release/*.msi
             release/latest*.yml
             release/SHA256SUMS.txt
