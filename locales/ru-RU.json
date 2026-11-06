@@ -1369,5 +1369,19 @@
   "basketPrepareExactReview": "Подготовить для окончательной проверки",
   "basketRowSubmitted": "Отправлено в указанной выше транзакции.",
   "basketRowExpired": "Не отправлено: приём ставок завершён. Запись и суммы сохранены; в этой попытке ставка не отправлялась.",
-  "basketRowFailed": "Не отправлено. Попытка остановлена до рассылки транзакции; запись и суммы сохранены."
+  "basketRowFailed": "Не отправлено. Попытка остановлена до рассылки транзакции; запись и суммы сохранены.",
+  "marketplaceShortest": "Сначала короткие",
+  "marketplaceLongest": "Сначала длинные",
+  "marketplaceNewest": "Сначала новые",
+  "marketplaceMinLength": "Мин. символов",
+  "marketplaceMaxLength": "Макс. символов",
+  "marketplaceNumbers_any": "Цифры: любые",
+  "marketplaceNumbers_exclude": "Без цифр",
+  "marketplaceNumbers_include": "Содержит цифры",
+  "marketplaceNumbers_only": "Только цифры",
+  "marketplaceHyphens_any": "Дефисы: любые",
+  "marketplaceHyphens_exclude": "Без дефисов",
+  "marketplaceHyphens_include": "Содержит дефисы",
+  "marketplaceMatchingCount": "Показано %s · найдено объявлений: %s",
+  "marketplaceGlobalFilterHelp": "Фильтры и сортировка применяются ко всем объявлениям. Длина считается по декодированному имени без завершающей косой черты. Порядок по цене аукциона приблизительный; Bob проверяет цену перед покупкой."
 }

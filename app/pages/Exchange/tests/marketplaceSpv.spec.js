@@ -96,3 +96,33 @@ test('SPV mode renders timeout details and a visible Retry action', (t) => {
   t.equal(html.includes('marketplaceLoadedEmpty'), false);
   t.end();
 });
+
+test('buyer filter changes reset page and send the complete query to the channel', async t => {
+  const requests = [];
+  const pages = [];
+  const instance = new Exchange(getProps({
+    currentPage: 4,
+    auctions: [{id: 2, name: 'z-first'}, {id: 1, name: 'a-second'}],
+    setAuctionPage: page => pages.push(page),
+    getExchangeAuctions: (availability, filters) => {requests.push({availability, filters}); return Promise.resolve();},
+  }));
+  instance.setState = (change, callback) => {instance.state = {...instance.state, ...change}; if (callback) callback();};
+  instance.updateMarketplaceFilters({marketplaceMinLength: '3', marketplaceNumbers: 'only', marketplaceSort: 'price-desc'});
+  t.deepEqual(pages, [1]);
+  t.equal(requests[0].filters.min_length, '3');
+  t.equal(requests[0].filters.numbers, 'only');
+  t.equal(requests[0].filters.sort, 'price-desc');
+  t.deepEqual(instance.getVisibleMarketplaceAuctions().map(row => row.name), ['z-first', 'a-second'], 'component preserves global server order');
+  instance.clearMarketplaceFilters();
+  t.equal(requests[1].filters.min_length, '');
+  t.equal(requests[1].filters.numbers, 'any');
+  t.equal(requests[1].filters.hyphens, 'any');
+  t.equal(requests[1].filters.sort, 'name');
+  instance.updateMarketplaceFilters({marketplaceQuery: 'old'}, true);
+  instance.updateMarketplaceFilters({marketplaceQuery: 'new'}, true);
+  await new Promise(resolve => setTimeout(resolve, 350));
+  t.equal(requests.length, 3, 'text input is debounced');
+  t.equal(requests[2].filters.q, 'new');
+  instance.componentWillUnmount();
+  t.end();
+});

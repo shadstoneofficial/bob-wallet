@@ -1369,5 +1369,19 @@
   "basketPrepareExactReview": "Prepare for final review",
   "basketRowSubmitted": "Submitted in the transaction above.",
   "basketRowExpired": "Omitted: bidding ended. Entry and values retained; no bid sent by this attempt.",
-  "basketRowFailed": "Not submitted. This attempt stopped before broadcast; entry and values retained."
+  "basketRowFailed": "Not submitted. This attempt stopped before broadcast; entry and values retained.",
+  "marketplaceShortest": "Shortest first",
+  "marketplaceLongest": "Longest first",
+  "marketplaceNewest": "Newest first",
+  "marketplaceMinLength": "Min. characters",
+  "marketplaceMaxLength": "Max. characters",
+  "marketplaceNumbers_any": "Numbers: any",
+  "marketplaceNumbers_exclude": "No numbers",
+  "marketplaceNumbers_include": "Contains numbers",
+  "marketplaceNumbers_only": "Numbers only",
+  "marketplaceHyphens_any": "Hyphens: any",
+  "marketplaceHyphens_exclude": "No hyphens",
+  "marketplaceHyphens_include": "Contains hyphens",
+  "marketplaceMatchingCount": "%s shown · %s matching listings",
+  "marketplaceGlobalFilterHelp": "Filters and sorting apply to all listings. Characters use the decoded name, excluding the trailing slash. Auction price order is estimated; Bob verifies the price before purchase."
 }

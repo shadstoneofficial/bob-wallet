@@ -700,5 +700,19 @@
   "expiringEmpty": "No expiring domains found",
   "expiringIntro": "Review owned names by expiration date so renewals do not sneak up on you.",
   "expiringFullNodeNote": "Full-node mode can support deeper global expiration discovery in the future. This page currently focuses on names owned by this wallet.",
-  "expiringSpvNote": "SPV mode can track names owned by this wallet. Global expired-name discovery needs a full/indexed node or Shakedex channel."
+  "expiringSpvNote": "SPV mode can track names owned by this wallet. Global expired-name discovery needs a full/indexed node or Shakedex channel.",
+  "marketplaceShortest": "Más cortos primero",
+  "marketplaceLongest": "Más largos primero",
+  "marketplaceNewest": "Más recientes primero",
+  "marketplaceMinLength": "Mín. de caracteres",
+  "marketplaceMaxLength": "Máx. de caracteres",
+  "marketplaceNumbers_any": "Números: cualquiera",
+  "marketplaceNumbers_exclude": "Sin números",
+  "marketplaceNumbers_include": "Con números",
+  "marketplaceNumbers_only": "Solo números",
+  "marketplaceHyphens_any": "Guiones: cualquiera",
+  "marketplaceHyphens_exclude": "Sin guiones",
+  "marketplaceHyphens_include": "Con guiones",
+  "marketplaceMatchingCount": "Se muestran %s · %s anuncios coincidentes",
+  "marketplaceGlobalFilterHelp": "Los filtros y el orden se aplican a todos los anuncios. Los caracteres se cuentan en el nombre decodificado, sin la barra final. El orden por precio de subasta es estimado; Bob verifica el precio antes de comprar."
 }
