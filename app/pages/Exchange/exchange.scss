@@ -843,3 +843,24 @@ body.bob-theme-dark {
     }
   }
 }
+
+.exchange-marketplace-filters__length {
+  display: flex;
+  gap: .5rem;
+  flex: 1 1 14rem;
+  label { flex: 1; min-width: 0; font-size: .75rem; }
+  input {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid rgba($black, .15);
+    border-radius: .5rem;
+    padding: .7rem;
+  }
+}
+.exchange-marketplace-filters__help {
+  flex-basis: 100%;
+  font-size: .75rem;
+  color: $manatee-gray;
+  margin: 0;
+}

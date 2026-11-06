@@ -32,13 +32,19 @@ export function getMarketplaceAuctionsPath(
   page = 1,
   perPage = MARKETPLACE_PAGE_SIZE,
   availability = 'available',
+  filters = {},
 ) {
   const safePage = normalizeMarketplacePage(page);
   const safePerPage = Number.isSafeInteger(perPage) && perPage > 0
     ? perPage
     : MARKETPLACE_PAGE_SIZE;
   const safeAvailability = normalizeMarketplaceAvailability(availability);
-  return `api/v2/auctions?page=${safePage}&per_page=${safePerPage}&availability=${safeAvailability}`;
+  const query = Object.entries(filters)
+    .filter(([key, value]) => ['q', 'sort', 'mode', 'min_length', 'max_length', 'numbers', 'hyphens'].includes(key)
+      && value !== '' && value !== null && value !== undefined)
+    .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
+    .join('&');
+  return `api/v2/auctions?page=${safePage}&per_page=${safePerPage}&availability=${safeAvailability}${query ? `&${query}` : ''}`;
 }
 
 export function normalizeMarketplaceResponse(response = {}) {
@@ -58,8 +64,11 @@ export function normalizeMarketplaceResponse(response = {}) {
   };
 }
 
-export async function fetchMarketplaceAuctions(client, page = 1, availability = 'available') {
-  const response = await client.get(getMarketplaceAuctionsPath(page, MARKETPLACE_PAGE_SIZE, availability));
+export async function fetchMarketplaceAuctions(client, page = 1, availability = 'available', filters = {}) {
+  const response = await client.get(getMarketplaceAuctionsPath(page, MARKETPLACE_PAGE_SIZE, availability, filters));
+  if (Object.keys(filters).length && response.filterVersion !== 1) {
+    throw new Error('This channel does not support full-list filters yet. Update the channel or select a compatible channel in Marketplace settings.');
+  }
   return normalizeMarketplaceResponse(response);
 }
 

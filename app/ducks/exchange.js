@@ -100,9 +100,13 @@ export const setAuctionPage = (page) => ({
   payload: page,
 });
 
-export const getExchangeAuctions = (availability = 'available') => async (dispatch, getState) => {
+let marketplaceRequestSequence = 0;
+export const getExchangeAuctions = (availability = 'available', filters = {}) => async (dispatch, getState) => {
+  const requestId = ++marketplaceRequestSequence;
+  const requestKey = JSON.stringify([getState().exchange.currentPage, availability, filters]);
   dispatch({
     type: GET_EXCHANGE_AUCTIONS,
+    meta: {requestId, requestKey},
   });
 
   let auctions;
@@ -114,11 +118,12 @@ export const getExchangeAuctions = (availability = 'available') => async (dispat
   } = getState();
 
   try {
-    auctions = await shakedex.getExchangeAuctions(currentPage, availability);
+    auctions = await shakedex.getExchangeAuctions(currentPage, availability, filters);
   } catch (e) {
     const error = classifyMarketplaceError(e);
     dispatch({
       type: GET_EXCHANGE_AUCTIONS_ERR,
+      meta: {requestId},
       payload: {
         ...error,
       },
@@ -128,6 +133,7 @@ export const getExchangeAuctions = (availability = 'available') => async (dispat
 
   dispatch({
     type: GET_EXCHANGE_AUCTIONS_OK,
+    meta: {requestId},
     payload: {
       auctions: auctions.auctions,
       total: +auctions.total,
@@ -831,6 +837,10 @@ export default function (state = getInitialState(), action) {
     case GET_EXCHANGE_AUCTIONS:
       return {
         ...state,
+        ...(action.meta && action.meta.requestKey !== state.marketplaceRequestKey
+          ? {auctionIds: [], auctions: {}, total: 0} : {}),
+        marketplaceRequestId: action.meta?.requestId,
+        marketplaceRequestKey: action.meta?.requestKey,
         isLoading: true,
         isError: false,
         marketplaceStatus: MARKETPLACE_STATUS.LOADING,
@@ -838,6 +848,7 @@ export default function (state = getInitialState(), action) {
       };
 
     case GET_EXCHANGE_AUCTIONS_OK:
+      if (action.meta && action.meta.requestId !== state.marketplaceRequestId) return state;
       const auctionIds = [];
       const auctions = action.payload.auctions.reduce((acc, curr) => {
         auctionIds.push(curr.id);
@@ -857,6 +868,7 @@ export default function (state = getInitialState(), action) {
       };
 
     case GET_EXCHANGE_AUCTIONS_ERR:
+      if (action.meta && action.meta.requestId !== state.marketplaceRequestId) return state;
       return {
         ...state,
         isLoading: false,

@@ -169,10 +169,10 @@ export async function iteratePrefix(prefix, cb) {
   await iter.each(cb);
 }
 
-export async function getExchangeAuctions(currentPage = 1, availability = 'available') {
+export async function getExchangeAuctions(currentPage = 1, availability = 'available', filters = {}) {
   const marketClient = await getMarketClient();
   try {
-    return await fetchMarketplaceAuctions(marketClient, currentPage, availability);
+    return await fetchMarketplaceAuctions(marketClient, currentPage, availability, filters);
   } catch (error) {
     if (/timed?\s*out|timeout/i.test(`${error && error.message || ''}`)) {
       error.code = 'MARKETPLACE_TIMEOUT';
@@ -952,6 +952,9 @@ export async function finalizeCancel(nameLock, password) {
     out,
   );
 
+  // Retry the original cancellation notification once finalization is broadcast.
+  // The channel verifies chain evidence and may defer while confirmation is pending.
+  await notifyMarketListingCancelled(nameLock.name, nameLockCancel.transferTxHash);
   return out;
 }
 

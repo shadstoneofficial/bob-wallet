@@ -169,6 +169,10 @@ export class Exchange extends Component {
       marketplaceAvailabilityFilter: 'available',
       marketplaceModeFilter: 'all',
       marketplaceSort: 'name',
+      marketplaceMinLength: '',
+      marketplaceMaxLength: '',
+      marketplaceNumbers: 'any',
+      marketplaceHyphens: 'any',
       listingsQuery: '',
       listingsStatusFilter: 'all',
       listingsSort: 'name-asc',
@@ -188,6 +192,7 @@ export class Exchange extends Component {
     };
 
     this.marketStatusTimer = null;
+    this.marketplaceFilterTimer = null;
     this.sellerListingsRef = React.createRef();
   }
 
@@ -208,6 +213,7 @@ export class Exchange extends Component {
   }
 
   componentWillUnmount() {
+    clearTimeout(this.marketplaceFilterTimer);
     if (this.marketStatusTimer) {
       clearInterval(this.marketStatusTimer);
     }
@@ -292,9 +298,30 @@ export class Exchange extends Component {
     }
   }
 
-  async fetchShakedex(availability = this.state.marketplaceAvailabilityFilter) {
-    return this.props.getExchangeAuctions(availability);
+  async fetchShakedex() {
+    clearTimeout(this.marketplaceFilterTimer);
+    return this.props.getExchangeAuctions(this.state.marketplaceAvailabilityFilter, {
+      q: this.state.marketplaceQuery.trim(),
+      sort: this.state.marketplaceSort,
+      mode: this.state.marketplaceModeFilter,
+      min_length: this.state.marketplaceMinLength,
+      max_length: this.state.marketplaceMaxLength,
+      numbers: this.state.marketplaceNumbers,
+      hyphens: this.state.marketplaceHyphens,
+    });
   }
+
+  updateMarketplaceFilters = (changes, debounce = false) => {
+    clearTimeout(this.marketplaceFilterTimer);
+    this.props.setAuctionPage(1);
+    this.setState(changes, () => {
+      if (debounce) {
+        this.marketplaceFilterTimer = setTimeout(() => this.fetchShakedex(), 300);
+      } else {
+        this.fetchShakedex();
+      }
+    });
+  };
 
   async fetchChannelSettings() {
     try {
@@ -663,13 +690,16 @@ export class Exchange extends Component {
   }
 
   clearMarketplaceFilters = () => {
-    this.props.setAuctionPage(1);
-    this.setState({
+    this.updateMarketplaceFilters({
       marketplaceQuery: '',
       marketplaceAvailabilityFilter: 'available',
       marketplaceModeFilter: 'all',
       marketplaceSort: 'name',
-    }, () => this.fetchShakedex('available'));
+      marketplaceMinLength: '',
+      marketplaceMaxLength: '',
+      marketplaceNumbers: 'any',
+      marketplaceHyphens: 'any',
+    });
   };
 
   getMarketplaceAvailabilityItems() {
@@ -694,58 +724,21 @@ export class Exchange extends Component {
 
   getMarketplaceSortItems() {
     const { t } = this.context;
-
     return [
       { label: t('sortName'), value: 'name' },
+      { label: t('sortNameDesc'), value: 'name-desc' },
       { label: t('sortLowestPrice'), value: 'price-asc' },
       { label: t('sortHighestPrice'), value: 'price-desc' },
+      { label: t('marketplaceShortest'), value: 'length-asc' },
+      { label: t('marketplaceLongest'), value: 'length-desc' },
+      { label: t('marketplaceNewest'), value: 'newest' },
       { label: t('sortListingMode'), value: 'mode' },
     ];
   }
 
   getVisibleMarketplaceAuctions() {
-    const query = this.state.marketplaceQuery.trim().toLowerCase();
-    const availability = this.state.marketplaceAvailabilityFilter;
-    const mode = this.state.marketplaceModeFilter;
-    const sort = this.state.marketplaceSort;
-
-    const filtered = this.props.auctions.filter((auction) => {
-      const matchesQuery = !query || auction.name.toLowerCase().includes(query);
-      const isPending = isPendingAuction(auction);
-      const matchesAvailability = availability === 'all'
-        || (availability === 'available' && !isPending)
-        || (availability === 'pending' && isPending);
-      const isFixed = isFixedPriceAuction(auction);
-      const matchesMode = mode === 'all'
-        || (isPending && mode === 'fixed' && auction.listingMode === 'fixed-price')
-        || (mode === 'fixed' && isFixed)
-        || (mode === 'reverse' && !isFixed && !isPending);
-
-      return matchesQuery && matchesAvailability && matchesMode;
-    });
-
-    return [...filtered].sort((a, b) => {
-      if (sort === 'mode') {
-        const modeCompare = Number(isFixedPriceAuction(b)) - Number(isFixedPriceAuction(a));
-        return modeCompare || a.name.localeCompare(b.name);
-      }
-
-      if (sort === 'price-asc' || sort === 'price-desc') {
-        const aPrice = getKnownCurrentPrice(a, this.state.currentBidsMap);
-        const bPrice = getKnownCurrentPrice(b, this.state.currentBidsMap);
-
-        if (aPrice === null && bPrice === null) {
-          return a.name.localeCompare(b.name);
-        }
-
-        if (aPrice === null) return 1;
-        if (bPrice === null) return -1;
-
-        return sort === 'price-asc' ? aPrice - bPrice : bPrice - aPrice;
-      }
-
-      return a.name.localeCompare(b.name);
-    });
+    // The channel filters and orders the complete inventory before pagination.
+    return this.props.auctions;
   }
 
   getCurrentBidForAuction = async (auction) => {
@@ -1892,14 +1885,16 @@ export class Exchange extends Component {
     const isFiltered = Boolean(this.state.marketplaceQuery.trim())
       || this.state.marketplaceAvailabilityFilter !== 'available'
       || this.state.marketplaceModeFilter !== 'all'
-      || this.state.marketplaceSort !== 'name';
+      || this.state.marketplaceSort !== 'name'
+      || this.state.marketplaceMinLength !== '' || this.state.marketplaceMaxLength !== ''
+      || this.state.marketplaceNumbers !== 'any' || this.state.marketplaceHyphens !== 'any';
 
     return (
       <div className="exchange-marketplace-filters">
         <div className="exchange-marketplace-filters__search">
           <input
             value={this.state.marketplaceQuery}
-            onChange={(e) => this.setState({ marketplaceQuery: e.target.value })}
+            onChange={(e) => this.updateMarketplaceFilters({ marketplaceQuery: e.target.value }, true)}
             placeholder={t('searchMarketplaceListings')}
           />
         </div>
@@ -1907,28 +1902,42 @@ export class Exchange extends Component {
           className="exchange-marketplace-filters__availability"
           items={availabilityItems}
           currentIndex={Math.max(currentAvailabilityIndex, 0)}
-          onChange={(marketplaceAvailabilityFilter) => {
-            this.props.setAuctionPage(1);
-            this.setState({ marketplaceAvailabilityFilter }, () => {
-              this.fetchShakedex(marketplaceAvailabilityFilter);
-            });
-          }}
+          onChange={(marketplaceAvailabilityFilter) => this.updateMarketplaceFilters({ marketplaceAvailabilityFilter })}
         />
         <Dropdown
           className="exchange-marketplace-filters__mode"
           items={modeItems}
           currentIndex={Math.max(currentModeIndex, 0)}
-          onChange={(marketplaceModeFilter) => this.setState({ marketplaceModeFilter })}
+          onChange={(marketplaceModeFilter) => this.updateMarketplaceFilters({ marketplaceModeFilter })}
         />
         <Dropdown
           className="exchange-marketplace-filters__sort"
           items={sortItems}
           currentIndex={Math.max(currentSortIndex, 0)}
-          onChange={(marketplaceSort) => this.setState({ marketplaceSort })}
+          onChange={(marketplaceSort) => this.updateMarketplaceFilters({ marketplaceSort })}
         />
-        <div className="exchange-marketplace-filters__count">
-          {`${visibleCount} ${visibleCount === 1 ? t('listing') : t('listings')}`}
+        <div className="exchange-marketplace-filters__length">
+          <label>{t('marketplaceMinLength')}
+            <input type="number" min="1" max="63" step="1" value={this.state.marketplaceMinLength}
+              onChange={e => this.updateMarketplaceFilters({ marketplaceMinLength: e.target.value }, true)} />
+          </label>
+          <label>{t('marketplaceMaxLength')}
+            <input type="number" min="1" max="63" step="1" value={this.state.marketplaceMaxLength}
+              onChange={e => this.updateMarketplaceFilters({ marketplaceMaxLength: e.target.value }, true)} />
+          </label>
         </div>
+        <Dropdown className="exchange-marketplace-filters__mode"
+          items={['any', 'exclude', 'include', 'only'].map(value => ({value, label: t(`marketplaceNumbers_${value}`)}))}
+          currentIndex={['any', 'exclude', 'include', 'only'].indexOf(this.state.marketplaceNumbers)}
+          onChange={marketplaceNumbers => this.updateMarketplaceFilters({ marketplaceNumbers })} />
+        <Dropdown className="exchange-marketplace-filters__mode"
+          items={['any', 'exclude', 'include'].map(value => ({value, label: t(`marketplaceHyphens_${value}`)}))}
+          currentIndex={['any', 'exclude', 'include'].indexOf(this.state.marketplaceHyphens)}
+          onChange={marketplaceHyphens => this.updateMarketplaceFilters({ marketplaceHyphens })} />
+        <div className="exchange-marketplace-filters__count" aria-live="polite">
+          {t('marketplaceMatchingCount', String(visibleCount), String(this.props.total))}
+        </div>
+        <p className="exchange-marketplace-filters__help">{t('marketplaceGlobalFilterHelp')}</p>
         {isFiltered && (
           <button
             className="exchange-marketplace-filters__clear"
@@ -2479,22 +2488,6 @@ function isPendingAuction(auction) {
   return isPendingMarketplaceAuction(auction);
 }
 
-function getKnownCurrentPrice(auction, currentBidsMap) {
-  if (isPendingAuction(auction)) {
-    return auction.expectedPrice || null;
-  }
-
-  const currentBid = currentBidsMap.get(auction.id);
-
-  const buyableBid = getBuyableBid(auction, currentBid);
-
-  if (!buyableBid) {
-    return null;
-  }
-
-  return buyableBid.price;
-}
-
 export default connect(
   (state) => ({
     auctions: state.exchange.auctionIds.map(id => state.exchange.auctions[id]),
@@ -2521,7 +2514,7 @@ export default connect(
   }),
   (dispatch) => ({
     setAuctionPage: (page) => dispatch(setAuctionPage(page)),
-    getExchangeAuctions: (availability) => dispatch(getExchangeAuctions(availability)),
+    getExchangeAuctions: (availability, filters) => dispatch(getExchangeAuctions(availability, filters)),
     getExchangeFullfillments: (page) => dispatch(getExchangeFullfillments(page)),
     getExchangeListings: (page) => dispatch(getExchangeListings(page)),
     finalizeExchangeBid: (fulfillment) => dispatch(finalizeExchangeBid(fulfillment)),

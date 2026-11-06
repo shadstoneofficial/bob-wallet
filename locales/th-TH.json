@@ -1369,5 +1369,19 @@
   "basketPrepareExactReview": "เตรียมเพื่อตรวจสอบขั้นสุดท้าย",
   "basketRowSubmitted": "ส่งแล้วในธุรกรรมข้างต้น",
   "basketRowExpired": "ไม่ได้ส่ง: การประมูลสิ้นสุดแล้ว เก็บรายการและจำนวนเงินไว้ การลองครั้งนี้ไม่ได้ส่งราคาประมูล",
-  "basketRowFailed": "ไม่ได้ส่ง การลองครั้งนี้หยุดก่อนเผยแพร่ธุรกรรม เก็บรายการและจำนวนเงินไว้"
+  "basketRowFailed": "ไม่ได้ส่ง การลองครั้งนี้หยุดก่อนเผยแพร่ธุรกรรม เก็บรายการและจำนวนเงินไว้",
+  "marketplaceShortest": "สั้นที่สุดก่อน",
+  "marketplaceLongest": "ยาวที่สุดก่อน",
+  "marketplaceNewest": "ใหม่ที่สุดก่อน",
+  "marketplaceMinLength": "จำนวนอักขระขั้นต่ำ",
+  "marketplaceMaxLength": "จำนวนอักขระสูงสุด",
+  "marketplaceNumbers_any": "ตัวเลข: ทั้งหมด",
+  "marketplaceNumbers_exclude": "ไม่มีตัวเลข",
+  "marketplaceNumbers_include": "มีตัวเลข",
+  "marketplaceNumbers_only": "ตัวเลขเท่านั้น",
+  "marketplaceHyphens_any": "ขีดกลาง: ทั้งหมด",
+  "marketplaceHyphens_exclude": "ไม่มีขีดกลาง",
+  "marketplaceHyphens_include": "มีขีดกลาง",
+  "marketplaceMatchingCount": "แสดง %s · พบ %s รายการ",
+  "marketplaceGlobalFilterHelp": "ตัวกรองและการเรียงลำดับใช้กับทุกรายการ นับอักขระจากชื่อที่ถอดรหัสแล้วโดยไม่รวมเครื่องหมายทับท้ายชื่อ การเรียงตามราคาประมูลเป็นค่าประมาณ Bob จะตรวจสอบราคาก่อนซื้อ"
 }

@@ -123,3 +123,41 @@ test('marketplace view states distinguish initial load, refresh, timeout, and er
   t.equal(getMarketplaceViewState(MARKETPLACE_STATUS.LOADED, 0).showEmpty, true);
   t.end();
 });
+
+test('global marketplace filters travel to the channel without page-local fallback', async (t) => {
+  let requested;
+  const filters = {q: 'a & b', min_length: '3', max_length: '5', numbers: 'exclude', hyphens: 'include', sort: 'length-asc', mode: 'fixed'};
+  const result = await fetchMarketplaceAuctions({get: async path => {
+    requested = path;
+    return {filterVersion: 1, total: 42, auctions: [{id: 9, name: 'b-first'}, {id: 1, name: 'a-second'}]};
+  }}, 2, 'all', filters);
+  t.ok(requested.includes('q=a%20%26%20b'));
+  t.ok(requested.includes('min_length=3&max_length=5&numbers=exclude&hyphens=include&sort=length-asc&mode=fixed'));
+  t.ok(requested.includes('page=2'));
+  t.equal(result.total, 42, 'matching total comes from the channel');
+  t.deepEqual(result.auctions.map(row => row.id), [9, 1], 'server order is retained');
+  try {
+    await fetchMarketplaceAuctions({get: async () => ({total: 100, auctions: []})}, 1, 'all', filters);
+    t.fail('unsupported channel must not pretend to filter the whole inventory');
+  } catch (error) {
+    t.ok(error.message.includes('does not support full-list filters'));
+  }
+  t.end();
+});
+
+test('marketplace latest request wins and a changed query clears unrelated cached rows', t => {
+  let state = exchangeReducer(undefined, {type: GET_EXCHANGE_AUCTIONS_OK,
+    payload: {auctions: [{id: 1, name: 'old'}], total: 1}});
+  state = exchangeReducer(state, {type: GET_EXCHANGE_AUCTIONS, meta: {requestId: 1, requestKey: 'alpha'}});
+  t.deepEqual(state.auctionIds, [], 'changed query clears old inventory');
+  state = exchangeReducer(state, {type: GET_EXCHANGE_AUCTIONS, meta: {requestId: 2, requestKey: 'beta'}});
+  const latest = exchangeReducer(state, {type: GET_EXCHANGE_AUCTIONS_OK, meta: {requestId: 2},
+    payload: {auctions: [{id: 2, name: 'beta'}], total: 1}});
+  t.equal(exchangeReducer(latest, {type: GET_EXCHANGE_AUCTIONS_OK, meta: {requestId: 1},
+    payload: {auctions: [{id: 1, name: 'alpha'}], total: 999}}), latest, 'stale success ignored');
+  t.equal(exchangeReducer(latest, {type: GET_EXCHANGE_AUCTIONS_ERR, meta: {requestId: 1},
+    payload: {kind: MARKETPLACE_STATUS.ERROR, message: 'old error'}}), latest, 'stale failure ignored');
+  const refreshing = exchangeReducer(latest, {type: GET_EXCHANGE_AUCTIONS, meta: {requestId: 3, requestKey: 'beta'}});
+  t.deepEqual(refreshing.auctionIds, [2], 'same-query refresh keeps cached rows');
+  t.end();
+});
