@@ -954,7 +954,8 @@ export async function finalizeCancel(nameLock, password) {
 
   // Retry the original cancellation notification once finalization is broadcast.
   // The channel verifies chain evidence and may defer while confirmation is pending.
-  await notifyMarketListingCancelled(nameLock.name, nameLockCancel.transferTxHash);
+  // A channel outage must not delay reporting the successful wallet operation.
+  notifyMarketListingCancelled(nameLock.name, nameLockCancel.transferTxHash);
   return out;
 }
 
