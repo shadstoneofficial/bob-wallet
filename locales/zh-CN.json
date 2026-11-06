@@ -1369,5 +1369,19 @@
   "basketPrepareExactReview": "准备最终核对",
   "basketRowSubmitted": "已在上述交易中提交。",
   "basketRowExpired": "未提交：竞价已结束。条目和金额已保留；本次尝试未发送出价。",
-  "basketRowFailed": "未提交。本次尝试在广播前停止；条目和金额已保留。"
+  "basketRowFailed": "未提交。本次尝试在广播前停止；条目和金额已保留。",
+  "marketplaceShortest": "最短优先",
+  "marketplaceLongest": "最长优先",
+  "marketplaceNewest": "最新优先",
+  "marketplaceMinLength": "最少字符数",
+  "marketplaceMaxLength": "最多字符数",
+  "marketplaceNumbers_any": "数字：不限",
+  "marketplaceNumbers_exclude": "不含数字",
+  "marketplaceNumbers_include": "含有数字",
+  "marketplaceNumbers_only": "仅数字",
+  "marketplaceHyphens_any": "连字符：不限",
+  "marketplaceHyphens_exclude": "不含连字符",
+  "marketplaceHyphens_include": "含有连字符",
+  "marketplaceMatchingCount": "显示 %s 条 · 共 %s 条匹配的上架信息",
+  "marketplaceGlobalFilterHelp": "筛选和排序适用于全部上架信息。字符数按解码后的名称计算，不含末尾斜杠。拍卖价格排序使用估算值；Bob 会在购买前验证价格。"
 }
